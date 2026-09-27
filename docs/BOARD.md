@@ -84,10 +84,15 @@ QUEUE | row=12 | hostname CONFIRMED by the owner 2026-09-27: store.futuremagic.d
 QUEUE-CLOSED | row=16 | RESOLVED 2026-09-27: the owner created a PUBLIC repo instead and the first
   push landed (a20fc95 == origin/main). The private `Store` repo is orphaned; deleting it is
   housekeeping on the owner's side, nothing here points at it.
-QUEUE | row=18 | FLIP CONDITION for public visibility: these docs state the live perimeter in plain
-  language (one subdomain, one master key, no Cloudflare Access, a local bootstrap that mints keys,
-  shell = store root). Before the ingress is added (row 7), either make the repo private or move the
-  perimeter design out of the public docs.
+QUEUE | row=18 | Public visibility, DOWNGRADED by the dispatcher (ledger row 20). The docs do describe
+  the live perimeter in plain language, but the only perimeter is a 256-bit key stored hashed and the
+  hostname is discoverable via DNS/CT logs anyway, so obscurity does no work here. Public is the
+  recommended default; the case for private is tidiness, not security.
+QUEUE | row=20 | IF the repo is ever made private, the CREDENTIAL must change first: it is a classic
+  PAT with `x-oauth-scopes: public_repo, workflow` and no `repo`, so a private repo would 403. The
+  replacement must be written to BOTH ~/.git-credentials AND
+  ~/projects/Campaigner/.git/github-credentials (byte-identical today; it wins inside Campaigner).
+  BlasterMaster's helper just points at the global file and follows a rotation automatically.
 QUEUE | row=17 | the reconciler defect (row 15) is STILL upstream at Toolbox head 824a8b5 —
   scaffold/scripts/board.sh:53 and :60 keep the bare `git rev-parse`. Toolbox is outside this
   project, so it needs the owner's word before anyone touches it.
