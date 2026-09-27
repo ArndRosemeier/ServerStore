@@ -19,7 +19,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { openDatabase } from "../core/db.ts";
 import { errorBody, StoreError, toStoreError, type ErrorCode } from "../core/errors.ts";
-import { describeStores, mintKey, resolveKey, touchKey } from "../core/keys.ts";
+import { describeStores, findKeyById, listKeys, mintKey, resolveKey, revokeKey, touchKey } from "../core/keys.ts";
 import {
   assertNoTraversalSegments,
   parseExpiresAt,
@@ -71,23 +71,40 @@ class Auth {
   }
 
   /**
-   * 403 unless this key may mint at all.
+   * 403 unless this key may administer keys at all — mint, list or revoke.
    *
-   * WHO MAY MINT is the FIRST thing `POST /keys` decides (ledger row 39): only a key
-   * that holds `admin`. A store-scoped admin key mints within its own store (the
-   * game-backend flow); a master admin key mints any non-admin permission anywhere,
-   * and is the only key that may grant `admin`. This replaces the subset rule of
-   * ledger row 36 (`grantablePermissions` + the `lacks` check), which became
-   * UNREACHABLE once only admins may mint — `admin` implies every permission, so a
-   * subset check could never fire. Unreachable code that reads as a security control
-   * is a trap, so it was deleted rather than kept behind a comment. A future slice
-   * that lets a NON-admin key mint MUST reinstate the subset rule in the SAME commit
-   * (docs/SEAM-INDEX.md, "Who may MINT").
+   * WHO MAY ADMINISTER KEYS is the FIRST thing every key-administering route decides
+   * (ledger rows 39, 46): only a key that holds `admin`. `action` completes the
+   * message ("only an admin key may mint keys"), so the ONE predicate serves the mint,
+   * list and revoke routes and each refusal says which action it refused. The message
+   * of the mint case is pinned by M1 and is unchanged.
+   *
+   * This replaced the subset rule of ledger row 36 (`grantablePermissions` + the `lacks`
+   * check), which became UNREACHABLE once only admins may mint — `admin` implies every
+   * permission, so a subset check could never fire. Unreachable code that reads as a
+   * security control is a trap, so it was deleted rather than kept behind a comment. A
+   * future slice that lets a NON-admin key mint MUST reinstate the subset rule in the
+   * SAME commit (docs/SEAM-INDEX.md, "Who may MINT").
    */
-  requireAdmin(): void {
+  requireAdmin(action: string): void {
     if (!this.key.perms.includes("admin")) {
-      throw new StoreError("forbidden", "only an admin key may mint keys");
+      throw new StoreError("forbidden", `only an admin key may ${action}`);
     }
+  }
+
+  /**
+   * Does this key's SCOPE CONTAIN every store in `stores`?
+   *
+   * THE scope-containment predicate, and the only one (ledger row 46): the `POST /keys`
+   * store boundary, the `GET /keys` inventory filter and the `POST /keys/:id/revoke`
+   * scope boundary all route through it, so the three cannot drift apart. A key that
+   * spans every store (`["*"]`) contains every scope — including another `["*"]`; a
+   * scoped key never contains `["*"]`, and contains a set only when every member of it
+   * is in its own set.
+   */
+  holdsStores(stores: readonly string[]): boolean {
+    if (this.spansStores) return true;
+    return stores.every((store) => store !== ALL_STORES && this.key.stores.includes(store));
   }
 
   /**
@@ -244,7 +261,7 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     const auth = c.get("auth");
     // WHO MAY MINT (ledger row 39) — decided BEFORE the body is read, so a non-admin
     // key's request is refused with no parsing and no side effect at all.
-    auth.requireAdmin();
+    auth.requireAdmin("mint keys");
     const body = await readJsonObject(c.req.raw, deps.maxBytes);
     if (body.store !== undefined) {
       // The single-store field was replaced by the SET (ledger row 41). Named
@@ -266,11 +283,11 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
         throw new StoreError("forbidden", `an admin grant must be scoped to ["${ALL_STORES}"]`);
       }
     } else if (!auth.spansStores) {
-      // A scoped admin mints only WITHIN its own set: every requested store must be
-      // one the minter itself holds. (`["*"]` is never inside a scoped set.)
-      const outside = stores.filter(
-        (store) => store === ALL_STORES || !auth.key.stores.includes(store),
-      );
+      // A scoped admin mints only WITHIN its own set: every requested store must be one
+      // the minter itself holds. (`["*"]` is never inside a scoped set.) The containment
+      // test is the ONE shared predicate, so this boundary cannot drift from the one
+      // `GET /keys` filters by or the one `POST /keys/:id/revoke` enforces (ledger 46).
+      const outside = stores.filter((store) => !auth.holdsStores([store]));
       if (outside.length > 0) {
         throw new StoreError(
           "forbidden",
@@ -310,6 +327,80 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
       },
       201,
     );
+  });
+
+  // THE KEY LIFECYCLE (ledger row 46): listing and revocation live here, beside the
+  // mint route they are the other half of, and reuse the SAME scope predicate
+  // (`Auth.holdsStores`) that route already enforces. There is no second authorization
+  // path, and no key material ever leaves these handlers.
+  app.get("/keys", (c) => {
+    const auth = c.get("auth");
+    auth.requireAdmin("list keys");
+    // A MASTER sees every key. A STORE-SCOPED admin sees only the keys it could have
+    // minted — scope inside its own set — so it cannot enumerate credentials it could
+    // not have created. `["*"]` is never inside a scoped set, so a scoped admin never
+    // sees another master.
+    const keys = listKeys(ctx.db)
+      .filter((key) => auth.holdsStores(key.stores))
+      .map((key) => ({
+        id: key.id,
+        label: key.label,
+        stores: key.stores,
+        // `prefix` is `ssk_` + the first 8 characters of the PUBLIC `id` (the stored
+        // DISPLAY_PREFIX_LENGTH is 12); the secret begins after the id, so this carries
+        // no secret byte, and it is returned so a console shows the same handle the
+        // operator saw at mint without re-deriving it (ledger row 46).
+        prefix: key.prefix,
+        perms: key.perms,
+        createdAt: key.createdAt,
+        expiresAt: key.expiresAt,
+        lastUsedAt: key.lastUsedAt,
+        revokedAt: key.revokedAt,
+      }));
+    return c.json({ keys });
+  });
+
+  app.post("/keys/:id/revoke", (c) => {
+    const auth = c.get("auth");
+    auth.requireAdmin("revoke keys");
+    const id = c.req.param("id");
+    const target = findKeyById(ctx.db, id);
+    if (target === null) {
+      throw new StoreError("not_found", `no key with id ${JSON.stringify(id)}`);
+    }
+    // SELF-REVOCATION IS ALLOWED, deliberately rather than by accident (ledger row 46,
+    // pin L6): it is the caller's OWN credential, so the scope rules below do not apply
+    // to it — including for a store-scoped admin, whose own key holds `admin` and would
+    // otherwise be un-revokable by the rule beneath. It takes effect on the NEXT request
+    // (`resolveKey` refuses a revoked row) — docs/API.md warns that plainly.
+    if (target.id !== auth.key.id && !auth.spansStores) {
+      // A scoped admin revokes only keys it could have minted: scope inside its own set
+      // and never a key holding `admin`. Both halves read the ONE containment predicate.
+      if (!auth.holdsStores(target.stores)) {
+        throw new StoreError(
+          "forbidden",
+          `key is scoped to ${describeStores(auth.key.stores)}; ` +
+            `it may not revoke a key scoped to ${describeStores(target.stores)}`,
+        );
+      }
+      if (target.perms.includes("admin")) {
+        throw new StoreError(
+          "forbidden",
+          `key is scoped to ${describeStores(auth.key.stores)}; ` +
+            `only a master admin key may revoke a key holding 'admin'`,
+        );
+      }
+    }
+    const changed = revokeKey(ctx.db, id, deps.now);
+    // The timestamp comes from the ROW, never from the clock: on a second call
+    // `revokeKey` matches no row (`revoked_at IS NULL` is false), so the first call's
+    // timestamp is what this reports and it cannot move (pin L5). Re-reading also
+    // proves the write landed rather than trusting `changes`.
+    const revoked = findKeyById(ctx.db, id);
+    if (revoked === null || revoked.revokedAt === null) {
+      throw new StoreError("internal", `key ${id} could not be revoked`);
+    }
+    return c.json({ id, revokedAt: revoked.revokedAt, changed });
   });
 
   // WHO AM I — the caller's own identity and scope, and NEVER a secret (ledger rows

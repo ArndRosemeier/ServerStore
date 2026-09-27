@@ -68,8 +68,9 @@ or a log line — it would end up in access logs and browser history.
 - **A key is shown exactly once**, in the `201` response of `POST /keys` (or from the
   operator's local mint command). Only `sha256(key)` is stored. **A key can never be
   read back**: a lost key is *replaced*, not recovered — mint a new one. Keys may be
-  minted with an expiry (`expiresAt`); revoking a key today is an operator action on
-  the box (there is no revoke route yet).
+  minted with an expiry (`expiresAt`) and revoked through `POST /keys/{id}/revoke`
+  (admin-only; see Routes). Revocation takes effect on the **next request** — there is
+  no cache to invalidate and no restart.
 - **`401 unauthorized`** — no key was presented, or the presented key is **unknown,
   revoked or expired**. The three are deliberately indistinguishable to the caller;
   do not try to tell them apart.
@@ -84,6 +85,7 @@ or a log line — it would end up in access logs and browser history.
   | `PUT …/objects/{name}` | `write` or `admin` |
   | `DELETE …/objects/{name}` | `delete` or `admin` |
   | `GET /stores`, `POST /stores` | a **master admin** key: scope `["*"]` **and** `admin` |
+  | `GET /keys`, `POST /keys/{id}/revoke` | an **`admin`** key — see "Who may list and revoke" |
 
 - **A key's scope is a SET of stores.** At mint time you name the stores the key may
   touch (`"stores": ["game", "notes"]`), or `["*"]` for **every store** — the master
@@ -110,10 +112,17 @@ or a log line — it would end up in access logs and browser history.
   requires a **master admin caller and scope `["*"]`**, so neither a scoped admin key
   nor any non-admin key can create another admin. A request refused for any of these
   reasons mints nothing (no key row, no scope row, no side effect).
+- **Who may LIST and REVOKE.** Both lifecycle routes need a key that holds `admin`.
+  A **master admin** (`["*"]` + `admin`) lists every key and may revoke any key,
+  including another master's. A **store-scoped admin** lists only the keys whose scope
+  lies **inside its own set** — so it never sees another master, nor a key touching a
+  store it does not hold — and may revoke only keys **it could have minted**: scope
+  inside its own set and never a key holding `admin`. **A key may always revoke
+  itself**, which is the one deliberate exception, and it takes effect immediately.
 
 ## Routes
 
-All nine routes that exist. `{store}` and `{name}` are path placeholders. Request and
+Every route that exists. `{store}` and `{name}` are path placeholders. Request and
 response bodies are JSON unless the row says otherwise.
 
 | Method | Path | Who may call it | Request | Response | Statuses |
@@ -123,6 +132,8 @@ response bodies are JSON unless the row says otherwise.
 | `GET` | `/stores` | master admin key | — | `{"stores":[{"name","kind","createdAt"}]}` | `200`, `401`, `403` |
 | `POST` | `/stores` | master admin key | `{"name":"game","kind":"bytes"?}` | `{"store":{"name","kind","createdAt"}}` | `201`, `400`, `401`, `403`, `409` |
 | `POST` | `/keys` | an **`admin`** key — a store-scoped admin key only within its own set; an `admin` grant needs a master admin key and `["*"]` | `{"stores":[…],"perms":[…],"label"?,"expiresAt"?}` | `{"key":"ssk_…","id","prefix","stores","perms","expiresAt"}` | `201`, `400`, `401`, `403`, `404` |
+| `GET` | `/keys` | an **`admin`** key — a master admin sees every key, a store-scoped admin only keys inside its own set | — | `{"keys":[{"id","label","stores","prefix","perms","createdAt","expiresAt","lastUsedAt","revokedAt"}]}` | `200`, `401`, `403` |
+| `POST` | `/keys/{id}/revoke` | an **`admin`** key — a master admin may revoke any key, a store-scoped admin only keys it could have minted; a key may always revoke itself | — (no body) | `{"id","revokedAt","changed"}` | `200`, `401`, `403`, `404` |
 | `GET` | `/stores/{store}/objects` | `read` or `admin` on `{store}` | — | `{"objects":[{"store","name","sha256","size","createdAt"}]}` | `200`, `401`, `403`, `404` |
 | `PUT` | `/stores/{store}/objects/{name}` | `write` or `admin` on `{store}` | raw bytes (any `content-type`; ignored) | `{"store","name","sha256","size","createdAt"}` | `201`, `400`, `401`, `403`, `404`, `413` |
 | `GET` | `/stores/{store}/objects/{name}` | `read` or `admin` on `{store}` | — | raw bytes (+ `x-serverstore-sha256`) | `200`, `401`, `403`, `404` |
@@ -190,6 +201,40 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
   The `201` body is `{"key":"ssk_…","id","prefix","stores","perms","expiresAt"}`.
   `stores` is always the canonical scope (`["*"]`, or the names sorted). **The
   `key` field is the raw key. It is returned here and nowhere else, ever.**
+- **`GET /keys`** — the key inventory, ordered by creation then id. **Admin-only.**
+  Each entry has exactly these fields:
+  - `id` — the key's public lookup id (the same value `POST /keys` returned).
+  - `label` — the operator's label for the key.
+  - `stores` — the key's scope: `["*"]` for a master key, otherwise the store names it
+    may touch, sorted.
+  - `prefix` — the stored **display** prefix: `ssk_` plus the first 8 characters of
+    `id` (12 characters, the same string `POST /keys` returned). It is **not** key
+    material — the secret begins after the id, so this contains no byte of it — and it
+    is returned so a console shows the handle the operator saw at mint without
+    re-deriving it.
+  - `perms` — the key's permissions, in the canonical order.
+  - `createdAt`, `expiresAt`, `lastUsedAt`, `revokedAt` — ISO-8601, or `null`.
+
+  **Revoked keys are listed**, with `revokedAt` set, so the inventory doubles as the
+  audit view (`lastUsedAt` is the only per-key usage record). **The raw key, its secret
+  and its `sha256` are never in this body.** There is **no pagination**, and no filter,
+  sort or search parameter: the population is the operator's keys and one response is
+  the whole inventory. A store-scoped admin sees only the keys whose scope lies inside
+  its own set. `401` without a key; `403` for a valid key that does not hold `admin`.
+- **`POST /keys/{id}/revoke`** — revoke a key. **Admin-only** and **idempotent**. The
+  request carries **no body** (one is ignored), and the response is
+  `{"id","revokedAt","changed"}`: `changed` is `true` the first time and `false`
+  afterwards, and `revokedAt` is the timestamp **stored on the row** — a second call
+  never moves it. An unknown `id` is `404 not_found`. A **master admin** may revoke any
+  key, including another master's. A **store-scoped admin** may revoke only a key it
+  could have minted: a scope inside its own set (`403` otherwise) and not a key holding
+  `admin` (`403`).
+
+  **A key may revoke itself** — it is the caller's own credential, and the scope rules
+  do not apply to it. This takes effect on the **next request**: any later call with
+  that key is `401`, with no cache and no restart. Plan for it — revoking the last admin
+  key leaves the store administrable only by a key minted from the box
+  (`pnpm run admin:key`). **No key material is in the response.**
 - **`GET /stores/{store}/objects`** — all objects in the store, ordered by name.
   Fields: `store`, `name`, `sha256` (the content address), `size` (bytes),
   `createdAt`. No pagination: a store with many objects returns them all.
@@ -306,6 +351,19 @@ curl -s "$BASE/whoami" -H "Authorization: Bearer $PLAYER_KEY"
 # {"id":"…","label":"player-1","stores":["game"],"perms":["read","write","delete"],"expiresAt":null,"lastUsedAt":"2026-09-27T20:31:02.114Z"}
 ```
 
+The operator, holding `$ADMIN_KEY`, can see and revoke keys. Neither response carries
+key material:
+
+```bash
+# 8. The key inventory (admin only; revoked keys included, no secrets).
+curl -s "$BASE/keys" -H "Authorization: Bearer $ADMIN_KEY"
+# {"keys":[{"id":"…","label":"player-1","stores":["game"],"prefix":"ssk_…","perms":["read","write","delete"],"createdAt":"…","expiresAt":null,"lastUsedAt":"…","revokedAt":null}]}
+
+# 9. Revoke a key (admin only, idempotent; effective on the NEXT request).
+curl -s -X POST "$BASE/keys/<id>/revoke" -H "Authorization: Bearer $ADMIN_KEY"
+# {"id":"<id>","revokedAt":"2026-09-27T20:40:00.000Z","changed":true}
+```
+
 ## Non-goals (read this before you design around it)
 
 These are **not** implemented today. A client that assumes them will break:
@@ -331,12 +389,14 @@ These are **not** implemented today. A client that assumes them will break:
    there are no multi-object transactions.
 7. **No server-side format.** Objects are opaque bytes; the service never parses or
    validates their contents.
-8. **No revoke or rotate route.** Keys are minted over HTTP and by the operator's
-   local command; revocation is an operator action on the box, and rotation is
-   "mint a new key, stop using the old one" until a revoke route exists. `GET
-   /whoami` **does** exist (above).
+8. **No ROTATION route.** There **is** a revoke route (`POST /keys/{id}/revoke`,
+   admin only), but rotation is a client-side convention: mint a new key, move the
+   client, then revoke the old one. Nothing revokes the old key for you when a new one
+   is minted, and nothing warns you that a key is about to expire.
 9. **No per-store permissions.** A key's `perms` apply to every store in its scope:
    "read on `a`, write on `b`" is not expressible yet (ledger row 41 records it as
    unproven). Mint a separate key per permission shape if you need that today.
-10. **No key listing.** There is no route that lists the keys you hold; `POST /keys`
-    and the operator's local command are the only ways to see one (once, at mint).
+10. **No key listing for a CALLER, and no pagination on the inventory.** `GET /keys`
+    is the **operator's** inventory and is admin-only; a caller cannot enumerate keys,
+    it asks `GET /whoami` about the one it holds. The inventory has no pagination,
+    filter, sort or search parameter, and it does not page.

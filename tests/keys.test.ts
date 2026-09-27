@@ -1,5 +1,6 @@
 /**
- * PIN M1–M5 — WHO MAY MINT on `POST /keys` — AND PIN G1–G6 — the key's SCOPE.
+ * PIN M1–M5 — WHO MAY MINT on `POST /keys` — PIN G1–G6 — the key's SCOPE — and
+ * PIN L1–L6 — the key LIFECYCLE (listing + revocation).
  *
  * Slice 6 (ledger row 36) bounded minting by the minter's OWN permissions — the subset
  * rule, "a key may pass on only what it holds". Slice 7 replaces that with the stricter
@@ -13,13 +14,24 @@
  * seam from both sides, including the MIGRATION of a row written in the OLD single-store
  * shape (G6) — the arm that proves the migration is real rather than asserted.
  *
+ * Slice 9 (ledger row 46) makes the lifecycle self-service: `GET /keys` (admin-only,
+ * scope-filtered, never key material) and `POST /keys/:id/revoke` (admin-only,
+ * idempotent, self-revocation deliberately allowed). Both reuse the ONE containment
+ * predicate the mint boundary already uses, `Auth.holdsStores`, and L1–L6 pin them.
+ *
  * Every test drives the real app through the ONE fixture (`tests/helpers/server.ts`). A
  * store is created through the real `POST /stores` with a master admin key, never seeded,
  * so the setup walks the same boundary as the thing under test.
  */
 
 import { afterEach, describe, expect, test } from "vitest";
-import { createTestServer, cleanupTestServers, keyId, readError } from "./helpers/server.ts";
+import {
+  createTestServer,
+  cleanupTestServers,
+  keyId,
+  readError,
+  sha256Hex,
+} from "./helpers/server.ts";
 
 afterEach(cleanupTestServers);
 
@@ -452,6 +464,250 @@ describe("keys: a key is scoped to a SET of stores (pin G1-G6)", () => {
 
 // --- helpers over the ONE fixture --------------------------------------------------
 
+/**
+ * PIN L1–L6 — the key LIFECYCLE: `GET /keys` (list) and `POST /keys/:id/revoke`.
+ *
+ * Slice 9 (ledger row 46) makes the key lifecycle self-service so a stray key no longer
+ * needs an operator opening the database (row 45). Both routes are admin-only and reuse
+ * the SAME scope predicate the mint route already enforces (`Auth.holdsStores`): a master
+ * sees and revokes anything, a store-scoped admin only keys whose scope lies inside its
+ * own set and never a key holding `admin`. Self-revocation is ALLOWED deliberately (it is
+ * the caller's own credential) and takes effect on the next request. Revocation is
+ * idempotent and reports whether it changed.
+ */
+describe("keys: the key LIFECYCLE (pin L1-L6)", () => {
+  test("PIN L1: GET /keys is admin-only and returns NO key material", async () => {
+    const { server, master } = setup();
+    await store(server, master, "alpha");
+    const scoped = await mintScoped(server, master, "alpha", ["read"]);
+    const overHttp = await mintStores(server, master, ["alpha"], ["read"], "player-1");
+    // A key minted directly (the operator CLI path) is in the inventory too.
+    const direct = server.mint({ stores: ["alpha"], perms: ["read"], label: "direct" });
+    const raws = [master, scoped, overHttp, direct];
+
+    // 401 without a key.
+    const anonymous = await server.get("/keys");
+    expect(anonymous.status).toBe(401);
+    expect((await readError(anonymous)).code).toBe("unauthorized");
+
+    // 403 for a VERIFIED non-admin key: the key is real, the permission is not there.
+    const refused = await server.get("/keys", scoped);
+    expect(refused.status).toBe(403);
+    expect((await readError(refused)).code).toBe("forbidden");
+
+    // 200 for the admin, and the body is an INVENTORY, not a credential dump.
+    const listed = await server.get("/keys", master);
+    expect(listed.status, await listed.clone().text()).toBe(200);
+    const body = (await listed.json()) as { keys: Record<string, unknown>[] };
+    const text = JSON.stringify(body);
+
+    // The pin is not vacuous: every minted key is listed, by its PUBLIC id.
+    expect(body.keys.map((entry) => entry.id).sort()).toEqual(raws.map(keyId).sort());
+
+    // NO SECRET: neither the raw key, nor its secret half, nor its stored hash is in
+    // the body. `prefix` is allowed through on purpose (it is `ssk_` + the first 8
+    // chars of the public id, never a secret byte — ledger row 46), so this checks the
+    // full key, the half after the id, and the hash.
+    for (const raw of raws) {
+      expect(text).not.toContain(raw);
+      expect(text).not.toContain(secretOf(raw));
+      expect(text).not.toContain(sha256Hex(raw));
+    }
+
+    // The entry shape is EXACTLY the documented one, so a hash or a secret field cannot
+    // be added silently (the same structural move as PIN G4).
+    for (const entry of body.keys) {
+      expect(Object.keys(entry).sort()).toEqual([
+        "createdAt",
+        "expiresAt",
+        "id",
+        "label",
+        "lastUsedAt",
+        "perms",
+        "prefix",
+        "revokedAt",
+        "stores",
+      ]);
+    }
+  });
+
+  test("PIN L2: a scoped admin lists only the keys inside its own stores — and a master lists all", async () => {
+    const { server, master } = setup();
+    for (const name of ["a", "b", "c"]) await store(server, master, name);
+    const adminAB = server.mint({ stores: ["a", "b"], perms: ["admin"], label: "game-backend" });
+    const keyA = await mintStores(server, master, ["a"], ["read"], "in-a");
+    const keyAB = await mintStores(server, master, ["a", "b"], ["read", "write"], "in-ab");
+    const keyC = await mintStores(server, master, ["c"], ["read"], "in-c");
+    const otherMaster = await mintStores(server, master, ["*"], ["admin"], "second-master");
+
+    const listed = (await (await server.get("/keys", adminAB)).json()) as {
+      keys: { id: string; stores: readonly string[] }[];
+    };
+    const ids = listed.keys.map((entry) => entry.id).sort();
+    // Its OWN key lies inside its scope, so it lists itself: the inventory is "keys I
+    // could have minted", and a scoped admin could have minted a copy of itself.
+    expect(ids).toEqual([adminAB, keyA, keyAB].map(keyId).sort());
+    expect(ids).not.toContain(keyId(keyC));
+    expect(ids).not.toContain(keyId(otherMaster));
+    expect(ids).not.toContain(keyId(master));
+
+    // A master sees EVERY key, including the ones the scoped admin cannot.
+    const all = (await (await server.get("/keys", master)).json()) as { keys: { id: string }[] };
+    expect(all.keys.map((entry) => entry.id).sort()).toEqual(
+      [adminAB, keyA, keyAB, keyC, otherMaster, master].map(keyId).sort(),
+    );
+  });
+
+  test("PIN L3: a revoked key is refused on the NEXT request — 401, with no restart", async () => {
+    const { server, master } = setup();
+    await store(server, master, "alpha");
+    const doomed = await mintScoped(server, master, "alpha", ["read", "write"]);
+
+    // It works before the revocation...
+    expect((await server.put("/stores/alpha/objects/x.txt", "before", doomed)).status).toBe(201);
+    expect((await server.get("/whoami", doomed)).status).toBe(200);
+
+    // ...it is revoked...
+    const revoke = await server.postJson(`/keys/${keyId(doomed)}/revoke`, {}, master);
+    expect(revoke.status, await revoke.clone().text()).toBe(200);
+    const body = (await revoke.json()) as { id: string; revokedAt: string; changed: boolean };
+    expect(body.id).toBe(keyId(doomed));
+    expect(body.changed).toBe(true);
+    expect(typeof body.revokedAt).toBe("string");
+
+    // ...and the VERY NEXT request with it is 401 on the SAME running app — no restart,
+    // no cache to invalidate (resolution reads the row per request).
+    const whoami = await server.get("/whoami", doomed);
+    expect(whoami.status).toBe(401);
+    expect((await readError(whoami)).code).toBe("unauthorized");
+    expect((await server.get("/stores/alpha/objects/x.txt", doomed)).status).toBe(401);
+
+    // The revoking master is untouched.
+    expect((await server.get("/keys", master)).status).toBe(200);
+  });
+
+  test("PIN L4: a scoped admin cannot revoke outside its own scope, and cannot revoke a master key", async () => {
+    const { server, master } = setup();
+    for (const name of ["a", "b", "c"]) await store(server, master, name);
+    const adminAB = server.mint({ stores: ["a", "b"], perms: ["admin"], label: "game-backend" });
+    const keyC = await mintStores(server, master, ["c"], ["read"], "in-c");
+    const adminA = server.mint({ stores: ["a"], perms: ["admin"], label: "in-a-admin" });
+    const secondMaster = await mintStores(server, master, ["*"], ["admin"], "second-master");
+
+    // POSITIVE control first, so the refusals below are not just "everything is 403": a
+    // non-admin key INSIDE its scope can be revoked.
+    const inside = await mintStores(server, master, ["b"], ["read"], "in-b");
+    const ok = await server.postJson(`/keys/${keyId(inside)}/revoke`, {}, adminAB);
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(((await ok.json()) as { changed: boolean }).changed).toBe(true);
+    expect((await server.get("/whoami", inside)).status).toBe(401);
+
+    // OUTSIDE its scope: 403, and the target is STILL USABLE afterwards.
+    const outside = await server.postJson(`/keys/${keyId(keyC)}/revoke`, {}, adminAB);
+    expect(outside.status).toBe(403);
+    expect((await readError(outside)).code).toBe("forbidden");
+    expect((await server.get("/stores/c/objects", keyC)).status).toBe(200);
+
+    // A MASTER key: 403 (`["*"]` is never inside a scoped set), and the master still
+    // administers stores afterwards.
+    const masterTarget = await server.postJson(
+      `/keys/${keyId(secondMaster)}/revoke`,
+      {},
+      adminAB,
+    );
+    expect(masterTarget.status).toBe(403);
+    expect((await readError(masterTarget)).code).toBe("forbidden");
+    expect((await server.get("/stores", secondMaster)).status).toBe(200);
+
+    // An ADMIN key INSIDE its scope: still 403, because the rule is "only keys it could
+    // have minted" and a scoped admin can never mint `admin` — and the target lives on.
+    const inScopeAdmin = await server.postJson(`/keys/${keyId(adminA)}/revoke`, {}, adminAB);
+    expect(inScopeAdmin.status).toBe(403);
+    expect((await readError(inScopeAdmin)).code).toBe("forbidden");
+    expect((await server.get("/stores/a/objects", adminA)).status).toBe(200);
+
+    // The original master, which could revoke anything, is untouched by all of it.
+    expect((await server.get("/stores", master)).status).toBe(200);
+  });
+
+  test("PIN L5: revoke is idempotent — the second call says changed: false and the timestamp does not move", async () => {
+    const { server, master } = setup();
+    await store(server, master, "alpha");
+    const doomed = await mintScoped(server, master, "alpha", ["read"]);
+
+    const first = await server.postJson(`/keys/${keyId(doomed)}/revoke`, {}, master);
+    expect(first.status, await first.clone().text()).toBe(200);
+    const firstBody = (await first.json()) as { id: string; revokedAt: string; changed: boolean };
+    expect(firstBody).toEqual({
+      id: keyId(doomed),
+      revokedAt: expect.any(String),
+      changed: true,
+    });
+
+    // ADVANCE THE CLOCK before the second call: with the fixture's frozen clock a buggy
+    // overwrite would write the same instant and "the timestamp did not move" would be
+    // vacuous. This makes the claim real.
+    server.clock.value += 60_000;
+
+    const second = await server.postJson(`/keys/${keyId(doomed)}/revoke`, {}, master);
+    expect(second.status, await second.clone().text()).toBe(200);
+    const secondBody = (await second.json()) as { id: string; revokedAt: string; changed: boolean };
+    expect(secondBody).toEqual({
+      id: keyId(doomed),
+      revokedAt: firstBody.revokedAt,
+      changed: false,
+    });
+
+    // The ROW really holds the FIRST timestamp, not the advanced clock's.
+    expect(
+      server.direct((db) =>
+        db.prepare("SELECT revoked_at FROM access_keys WHERE id = ?").get(keyId(doomed)),
+      ),
+    ).toEqual({ revoked_at: firstBody.revokedAt });
+    // And it is still revoked, of course.
+    expect((await server.get("/whoami", doomed)).status).toBe(401);
+  });
+
+  test("PIN L6: an unknown key id is 404, and a key may revoke ITSELF (recorded deliberately)", async () => {
+    const { server, master } = setup();
+    await store(server, master, "a");
+
+    // An UNKNOWN id is a 404 — the route stays admin-only, so the master asks.
+    const unknown = await server.postJson("/keys/aaaaaaaaaaaa/revoke", {}, master);
+    expect(unknown.status).toBe(404);
+    expect((await readError(unknown)).code).toBe("not_found");
+
+    // A NON-admin does not get to learn even that much: the admin check comes first.
+    const scoped = await mintScoped(server, master, "a", ["read"]);
+    expect((await server.postJson("/keys/aaaaaaaaaaaa/revoke", {}, scoped)).status).toBe(403);
+
+    // SELF-REVOCATION, recorded deliberately: a store-scoped ADMIN key holds `admin`,
+    // which the rule above says a scoped admin may not revoke — but it is the caller's
+    // OWN credential, so it is allowed, and it lands on the NEXT request.
+    const selfAdmin = server.mint({ stores: ["a"], perms: ["admin"], label: "self" });
+    expect((await server.get("/whoami", selfAdmin)).status).toBe(200);
+    const self = await server.postJson(`/keys/${keyId(selfAdmin)}/revoke`, {}, selfAdmin);
+    expect(self.status, await self.clone().text()).toBe(200);
+    const selfBody = (await self.json()) as { id: string; revokedAt: string; changed: boolean };
+    expect(selfBody.id).toBe(keyId(selfAdmin));
+    expect(selfBody.changed).toBe(true);
+    expect(typeof selfBody.revokedAt).toBe("string");
+    expect((await server.get("/whoami", selfAdmin)).status).toBe(401);
+
+    // A master may do the same to itself, which leaves the store administrable only by
+    // another admin key — the documented cost of self-revocation, not a surprise.
+    const secondMaster = await mintStores(server, master, ["*"], ["admin"], "second-master");
+    const masterSelf = await server.postJson(
+      `/keys/${keyId(secondMaster)}/revoke`,
+      {},
+      secondMaster,
+    );
+    expect(masterSelf.status, await masterSelf.clone().text()).toBe(200);
+    expect(((await masterSelf.json()) as { changed: boolean }).changed).toBe(true);
+    expect((await server.get("/stores", secondMaster)).status).toBe(401);
+  });
+});
+
 /** A fresh server plus the single master admin key every test in this file mints. */
 function setup(): { server: Server; master: string } {
   const server = createTestServer();
@@ -489,6 +745,18 @@ async function mintStores(
   );
   expect(response.status, await response.clone().text()).toBe(201);
   return ((await response.json()) as { key: string }).key;
+}
+
+/**
+ * The SECRET half of a raw key — everything after the 12-character public id.
+ *
+ * A lifecycle response may carry the id and the display prefix (which is `ssk_` + 8 id
+ * chars) but never this: pin L1 asserts it is absent from the listing body.
+ */
+function secretOf(raw: string): string {
+  // `ssk_<id12>_<secret>`; the id length is the parser's, not a hand-rolled split
+  // (base64url's alphabet contains `_` — SEAM-INDEX gotcha 4).
+  return raw.slice(4 + keyId(raw).length + 1);
 }
 
 /** Every key row, including the fixtures — the "nothing was minted" witness. */

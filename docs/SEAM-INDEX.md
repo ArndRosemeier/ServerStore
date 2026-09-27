@@ -28,6 +28,13 @@ refused `403 forbidden` **before the body is read**, and the slice-6 subset rule
 to carry was **DELETED as unreachable** (an `admin` key implies every permission, so a
 subset check could never fire). There is no second authorization middleware.
 
+**The key LIFECYCLE (`GET /keys`, `POST /keys/:id/revoke`) is the SAME decision applied
+to the other two halves of key administration** (ledger row 46): `Auth.requireAdmin(action)`
+is the one "who may administer keys" predicate shared by mint, list and revoke, and
+`Auth.holdsStores(stores)` is the one scope-CONTAINMENT predicate shared by the mint
+boundary, the list filter and the revoke boundary. Neither route invents a second path,
+and neither emits key material.
+
 **PREREQUISITE (do not lose this): any future slice that lets a NON-admin key mint MUST
 reinstate the subset rule — "a key may pass on only what it holds" — in the SAME commit.**
 Until then `requireAdmin()` is the ONLY thing between a read-only key and the write+delete
@@ -44,6 +51,7 @@ checked against the minter's at all (the minter holds `admin`, which implies the
 | **A key's SCOPE** (which stores it may touch) | stored in `src/core/db.ts` (`access_keys.scope_all` + `key_stores`); parsed by `src/core/validate.ts` `parseStores()`; loaded by `src/core/keys.ts` `resolveKey()`; TESTED by `src/server/app.ts` `Auth.authorize()` | ONE model, four steps, each in exactly one place. `["*"]` is the master case: `scope_all = 1` on the key, because `*` is not a row in `stores` and an FK cannot hold it; every OTHER scope is one `key_stores(key_id, store)` row, whose `store` IS an FK into `stores`, so a stored scope can never name a missing store. `scope_all` and rows are never both set for one key (`parseStores()` refuses a mixed list; `rowToRecord()` builds `["*"]` OR the rows, never both). `resolveKey` loads the scope **with** the key (one extra `SELECT`), so `authorize` never queries — a request is one scope read, not one per store. `describeStores()` is the ONE renderer of a scope for a message (the 403, the CLI's stderr). Pinned G1–G6, `tests/keys.test.ts` (ledger row 42). |
 | **A pre-slice-8 key row** (one `access_keys.store`) | `src/core/db.ts` `migrateLegacyKeyScope()` | Detects the OLD column, and in ONE transaction: `scope_all = 1` for `store = '*'`, one `key_stores` row per named store, then `DROP COLUMN store`. Idempotent (the column's absence is the guard) and LOUD (a legacy row naming a store that no longer exists fails the FK at boot, never an empty scope). After it runs, the old column is GONE everywhere — fresh databases never create it — so there is no second source of truth to read by accident. Pinned G6 (which seeds the old shape from the REAL key format in `tests/helpers/server.ts`). |
 | **Who may MINT** (the authorization boundary of `POST /keys`) | `src/server/app.ts` `Auth.requireAdmin()` inside the `app.post("/keys")` handler | ONE check, in the SAME authorization decision as the store boundary beside it: a key that does not hold `admin` is refused 403 `forbidden` ("only an admin key may mint keys") **before the body is read**, so a refusal has no side effect. A key scoped to a SET of stores mints only WITHIN that set (the game-backend flow; the set may only contain stores the minter itself holds and may never include `["*"]`); a master admin key (`["*"]`) mints any non-admin permission for any existing store and is the ONLY key that may grant `admin`, only for scope `["*"]`. **The slice-6 subset rule (`lacks` / `Auth.grantablePermissions`) was DELETED as unreachable** — with minting restricted to holders of `admin`, `admin` implies every permission, so it could never fire; keeping it would have left an untested branch that reads as a security control. Pinned M1–M5, `tests/keys.test.ts` (ledger row 39). **Reinstatement prerequisite: a future slice that lets a NON-admin key mint must restore the subset rule in the same commit.** A store-scoped admin key with a SET has no HTTP mint path (an `admin` grant needs `["*"]`): the operator's `pnpm run admin:key --store a --store b --perms admin` is it (row 40). |
+| **The key LIFECYCLE** (listing + revocation) | `src/core/keys.ts` `listKeys()` / `findKeyById()` / `revokeKey()`; the scope rules in `src/server/app.ts` `Auth.holdsStores()`; routes `app.get("/keys")` and `app.post("/keys/:id/revoke")` | The read and revoke halves of key administration, beside the mint route they belong to (ledger row 46). **`listKeys()`** loads every row plus every `key_stores` row in TWO queries (never one per key), ordered `created_at, id` — total because `id` is the primary key — and includes REVOKED keys with `revoked_at` set, so the inventory is also the audit view. **No pagination**, deliberately (small population; stated rather than unstated). **`revokeKey()`** matches only `revoked_at IS NULL`, so a second call changes nothing, and the route reports the timestamp read back from the ROW — never from the clock — which is what makes `changed:false` and a frozen timestamp the same fact. **WHO may list or revoke** is `Auth.requireAdmin("list keys"|"revoke keys")` — the ONE predicate the mint route uses, with the action in the message — and **WHICH keys** is `Auth.holdsStores()`: a master sees/revokes anything (`["*"]` contains every scope, including another `["*"]`); a store-scoped admin sees/revokes only keys whose scope lies inside its own set, and may never revoke a key holding `admin`. **SELF-REVOCATION is ALLOWED deliberately** (the caller's own credential; it is the one case exempt from the scope rules) and takes effect on the NEXT request because `resolveKey` refuses a revoked row per request — no cache to invalidate. An unknown id is `404`. **No key material leaves either route**: the entries carry `id`/`label`/`stores`/`prefix`/`perms`/the four timestamps and never the raw key, its secret or its `sha256`; `prefix` is returned because it is `ssk_` + the first 8 chars of the PUBLIC `id`, which is not a secret byte. Pinned L1–L6, `tests/keys.test.ts`. |
 | Key id from a raw key | `src/core/keys.ts` `keyIdFromRaw()` | Never `split("_")[1]` — see gotchas |
 | Error codes → HTTP status | `src/core/errors.ts` | The only place an error body is shaped |
 | Name/scope/permission parsing | `src/core/validate.ts` | Store names, object names, scopes, permissions, expiry |
@@ -57,7 +65,7 @@ checked against the minter's at all (the minter holds `admin`, which implies the
 | The unit-file contract as a test | `tests/deploy.test.ts` | `systemd-analyze verify` (D5) and "no bind host is configurable" (D6). Reads the unit's DIRECTIVES, not raw text: the header comment names `SERVERSTORE_HOST` in the sentence forbidding it |
 | Probing a RUNNING service | `scripts/probe-live.sh <base-url>` | The same two checks D1/D3 pin, against any URL — loopback or `https://store.futuremagic.de`. **Never takes, prints or logs a key** (the key-bearing round-trip is the owner's) |
 | The deployment runbook | `docs/DEPLOYMENT.md` | The ordered install/verify/ingress/restart/mint/rollback steps, and where every path lives |
-| **The client-facing CONTRACT** | `docs/API.md`, pinned by `tests/api-doc.test.ts` | The ONE doc a client developer reads: base URLs, both auth headers, 401-vs-403, all nine routes (including `GET /whoami` and the `stores` scope of `POST /keys`), the error table, the size cap, a curl walkthrough, the non-goals. It is a contract because **PIN A1** derives the route set from `createApp({dataRoot, dbPath}).routes` and compares it to the doc's table **both ways** (middleware registers as `ALL` on `/*` and is filtered), **PIN A2** requires every `ERROR_CODES` entry in the doc's error table with the status `src/core/errors.ts` maps it to, and **PIN A3** compares the stated `SERVERSTORE_MAX_BYTES` default to the imported `DEFAULT_MAX_BYTES`. **Edit the doc and the code together** — the pin is what makes that true |
+| **The client-facing CONTRACT** | `docs/API.md`, pinned by `tests/api-doc.test.ts` | The ONE doc a client developer reads: base URLs, both auth headers, 401-vs-403, every route (including `GET /whoami`, the `stores` scope of `POST /keys`, and the key lifecycle `GET /keys` / `POST /keys/{id}/revoke`), the error table, the size cap, a curl walkthrough, the non-goals. It is a contract because **PIN A1** derives the route set from `createApp({dataRoot, dbPath}).routes` and compares it to the doc's table **both ways** (middleware registers as `ALL` on `/*` and is filtered), **PIN A2** requires every `ERROR_CODES` entry in the doc's error table with the status `src/core/errors.ts` maps it to, and **PIN A3** compares the stated `SERVERSTORE_MAX_BYTES` default to the imported `DEFAULT_MAX_BYTES`. **Edit the doc and the code together** — the pin is what makes that true |
 | Where a secret in the tracked tree is checked | `tests/helpers/secrets.ts` `scanTrackedTree()`, called only by `tests/secrets.test.ts` | **Tracked = what would be PUBLISHED** (`git ls-files`). Scans `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`+36 and `github_pat_`+22, PEM private-key headers, the literal value of the host credential read from `~/.git-credentials` (**compared in memory, never printed**), and tracked `.db`/`.sqlite`/`.sqlite3` paths; `*.db`/`*.sqlite`/`*.sqlite3` were added to `.gitignore` as the preventive half. Deliberately **no bare `ssk_` rule** (ledger row 23): our own fixtures are necessarily key-shaped, so it would red on the suite or force an exclusion list over the files most likely to hide a real leak. **Not in `scripts/gate.sh`**: the gate is the ONE way the suite runs, and a second check path there multiplies the ways a check can be silently skipped. An absent credential file makes PIN S3 FAIL with "cannot check" — never a silent pass (AGENTS.md rule 1). |
 
 ## The seam is extensible without a rewrite (the point of the slice)
@@ -134,9 +142,11 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
 - **A key's scope is a SET of stores** (ledger rows 41, 42): `scope_all` on the key, or
   one `key_stores` row per store, parsed by `parseStores()`, loaded once by `resolveKey()`
   and tested once by `Auth.authorize()`. `POST /keys` takes `stores: string[]` and
-  `GET /whoami` reports it; the legacy `store` column is migrated then dropped. Still
-  open for B2: **no route LISTS keys and there is no REVOKE route** (`revokeKey()` is
-  called only by tests), which is what the step-C UI needs next.
+  `GET /whoami` reports it; the legacy `store` column is migrated then dropped.
+  ~~Still open for B2: **no route LISTS keys and there is no REVOKE route**
+  (`revokeKey()` is called only by tests)~~ — **CLOSED by ledger row 46**: `GET /keys`
+  and `POST /keys/:id/revoke` are the lifecycle seam above, and `revokeKey()` is now
+  reached from HTTP. Step C (the admin UI) has both calls it needs.
 - **`store_kinds` is enforced by a foreign key**, so `kind` is a real vocabulary in
   the file and not a comment. `key_stores.store` is a foreign key for the same reason:
   a key's scope cannot name a store that does not exist.
@@ -147,8 +157,11 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
   ledger row 36** (the permission boundary held, pinned K1–K5) and then **NARROWED by
   ledger row 39**: only a key holding `admin` may mint at all, so the subset rule is
   no longer the live boundary and K1–K5 were replaced by M1–M5; ~~there is **no
-  whoami route**~~ — **CLOSED by ledger row 42** (`GET /whoami`, pinned G4); and a key
-  scoped elsewhere learns a store's existence from a `404` because `requireStore()` runs
-  before `authorize()` — still true, and still a separate owner-visible decision.
-  `name_taken` and the missing REVOKE route are the two findings that remain open
-  (revoke is step B2).
+  whoami route**~~ — **CLOSED by ledger row 42** (`GET /whoami`, pinned G4); ~~there is
+  **no revoke route**~~ — **CLOSED by ledger row 46** (`POST /keys/:id/revoke`, pinned
+  L1–L6); and a key scoped elsewhere learns a store's existence from a `404` because
+  `requireStore()` runs before `authorize()` — still true, and still a separate
+  owner-visible decision. (`GET /keys` narrows that oracle for KEYS only: a scoped admin
+  gets `404` for an unknown id and `403` for a key outside its scope, so it can tell
+  "no such key" from "not yours" — the same shape, recorded in `docs/TESTING.md` as an
+  honest unknown rather than hidden.) `name_taken` is the one finding that remains open.

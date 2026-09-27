@@ -14,6 +14,10 @@
  * Verification compares hashes with `timingSafeEqual`, because a byte-by-byte string
  * comparison leaks how much of a guess was right.
  *
+ * This file is ALSO the key LIFECYCLE (ledger row 46): `listKeys()` is the read seam
+ * the admin route serves, and `revokeKey()`/`findKeyById()` are the revoke seam. The
+ * route decides WHO may see or revoke a key; what a key IS stays here, in one place.
+ *
  * The scope is loaded HERE, once per resolved key, together with the row (no N+1 in
  * `authorize`, which only ever reads the record it was handed).
  */
@@ -195,7 +199,13 @@ function loadStores(db: DatabaseSync, row: AccessKeyRow): string[] {
   return rows.map((entry) => entry.store);
 }
 
-function rowToRecord(db: DatabaseSync, row: AccessKeyRow): AccessKeyRecord {
+/**
+ * Project a row plus its SCOPE into the record the routes serve.
+ *
+ * THE row→record projection: `resolveKey`, `findKeyById` and `listKeys` all go through
+ * it, so a field added to the record cannot appear on one read path and not another.
+ */
+function recordFrom(row: AccessKeyRow, stores: readonly string[]): AccessKeyRecord {
   if (row.subject_kind !== "token") {
     // This slice implements `token` only. A row this process cannot interpret is a
     // loud failure, not a silent coercion into the one kind we do know.
@@ -206,7 +216,7 @@ function rowToRecord(db: DatabaseSync, row: AccessKeyRow): AccessKeyRecord {
   }
   return {
     id: row.id,
-    stores: loadStores(db, row),
+    stores,
     label: row.label,
     prefix: row.prefix,
     perms: parseStoredPermissions(row.perms),
@@ -216,6 +226,10 @@ function rowToRecord(db: DatabaseSync, row: AccessKeyRow): AccessKeyRecord {
     lastUsedAt: row.last_used_at,
     revokedAt: row.revoked_at,
   };
+}
+
+function rowToRecord(db: DatabaseSync, row: AccessKeyRow): AccessKeyRecord {
+  return recordFrom(row, loadStores(db, row));
 }
 
 /**
@@ -287,4 +301,48 @@ export function findKeyById(db: DatabaseSync, id: string): AccessKeyRecord | nul
     | AccessKeyRow
     | undefined;
   return row === undefined ? null : rowToRecord(db, row);
+}
+
+/**
+ * Every key, ordered by creation then id — the read half of the key lifecycle.
+ *
+ * REVOKED keys are included on purpose: a console needs to show what was revoked and
+ * when, and `revoked_at` is exactly what tells them apart (ledger row 46).
+ *
+ * NO PAGINATION (the brief says so explicitly rather than leaving it unstated): the
+ * population is the operator's keys, small by construction, and one page is the whole
+ * inventory. If that ever stops being true, the route grows a cursor IN THE ROUTE —
+ * this function stays "every key" or is renamed.
+ *
+ * The scope of every key is loaded in ONE extra query, not one per key, so a listing is
+ * two queries whatever the population. `ORDER BY created_at, id` is total because `id`
+ * is the primary key, so the order is stable even when two keys share a timestamp (the
+ * test fixture's frozen clock makes every key in a test share one).
+ */
+export function listKeys(db: DatabaseSync): AccessKeyRecord[] {
+  const rows = db
+    .prepare("SELECT * FROM access_keys ORDER BY created_at, id")
+    .all() as unknown as AccessKeyRow[];
+  const scopeRows = db
+    .prepare("SELECT key_id, store FROM key_stores ORDER BY key_id, store")
+    .all() as unknown as { key_id: string; store: string }[];
+  const scopes = new Map<string, string[]>();
+  for (const entry of scopeRows) {
+    const list = scopes.get(entry.key_id);
+    if (list === undefined) scopes.set(entry.key_id, [entry.store]);
+    else list.push(entry.store);
+  }
+  return rows.map((row) => {
+    if (row.scope_all === 1) return recordFrom(row, [ALL_STORES]);
+    const stores = scopes.get(row.id);
+    if (stores === undefined || stores.length === 0) {
+      // The same corruption `loadStores` refuses: a key that is neither the master case
+      // nor scoped to a real store must fail LOUDLY, never list as an empty scope.
+      throw new StoreError(
+        "internal",
+        `key ${row.id} has scope_all = 0 and no key_stores rows; its scope was never written`,
+      );
+    }
+    return recordFrom(row, stores);
+  });
 }
