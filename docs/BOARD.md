@@ -470,6 +470,13 @@ QUEUE-CLOSED | row=45 | RESOLVED 2026-09-27: the two unused master admin keys ar
   `revokeKey()` (read back from the live database: two revoked, the owner's untouched), so the store
   holds exactly ONE live admin credential. No restart needed and that was checked in the code —
   resolution reads `revoked_at` per request. B2 makes this self-service.
+QUEUE | row=48 | STEP C1 (the admin UI) is QUEUED BEHIND B2 and its brief is already on disk at
+  docs/briefs/slice-10-admin-ui.md. Forks settled by the owner (row 48): SAME ORIGIN, served by the
+  store service at store.futuremagic.de, as NO-BUILD static assets (three fixed routes: / , /app.js ,
+  /app.css). Security defaults pinned: the key lives in memory only (no localStorage/sessionStorage/
+  cookie/URL/history), the served bytes carry no secret, and every path the UI calls must be a route
+  the API registers. Honest price: no-build JS is not typechecked and no automated check exercises it
+  in a browser — a headless test is owed and is NOT v1.
 QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
   the two the live store needs NOW, because the live database holds THREE master admin keys (two
   unused, created before the service existed) and revocation is currently operator-only. Then C
