@@ -54,8 +54,8 @@ reconciled: e1e363f · 2026-09-27T20:12Z — the tip of the row-27 landing (the 
   the time, the dispatcher's error, corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight; slice 4 (row 27, the deployment) LANDED and awaiting the
-  |   dispatcher's own verification; slices 1-3 verified and retired
+  | state=NO writer in flight; slices 1-4 verified and retired; NEXT = the API doc (row 28),
+  |   with the order for the owner's registration model proposed in row 30
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -198,6 +198,16 @@ QUEUE | row=28 | MULTIPLAYER GAPS, in dependency order: (1) per-object version +
   only if the owner wants identity inside the store). BLOCKED ON THE OWNER: the sync model (async
   vs realtime) and the client shape (browser vs native), which together decide whether a push
   channel is needed at all.
+QUEUE | row=30 | REGISTRATION MODEL (the owner's): one key per PERSON, each scoped to a SET of
+  stores, with defaults (recommended read+write on the selected stores; `delete` and `admin` opt-in
+  and never defaulted), plus a `GET /whoami` so an app can tell which key is calling. THE GAP:
+  `access_keys.store` holds ONE name (or `*`), so multi-store scope is a schema + authorization
+  change — that is step B below.
+QUEUE | row=30 | PROPOSED ORDER: (A) `docs/API.md` pinned to the code; (B) multi-store scope +
+  `whoami` + permission defaults; (C) the ADMIN UI — list stores, mint a key with store checkboxes
+  and defaults, show it ONCE, list keys with last-used, revoke; (D) concurrency (per-object version
+  + `ETag`/`If-Match` + `since=`); (E) CORS + rate limiting. A/B/C serve the owner's registration
+  workflow; D/E gate the game on a public browser. The owner may reorder.
 
 TRAP | t1 | Adding a hostname to /etc/cloudflared/config.yml REQUIRES RESTARTING the tunnel — a few
   | seconds in which dsh.futuremagic.de (the owner's own GUI), opencode.futuremagic.de and
@@ -234,9 +244,10 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-27 (19, 23 and 27 appended by writers, out of numeric
-  |   order by design; 24 is the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the explicit
-  |   retirement key)
+  | decisions=docs/DECISION-LEDGER.md rows 1-30 (19, 23 and 27 appended by writers, out of numeric
+  |   order by design; 24 the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the explicit
+  |   retirement key, 27 slice 4, 28 the multiplayer requirement, 29 its verification, 30 the
+  |   owner's registration model)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -247,6 +258,18 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=29 | sha=aabf8a1 (the record commit; the code+docs tip verified is e1e363f)
+  | verify=THE DISPATCHER'S OWN: gate exit 0 GREEN · 9 files · 72 tests · 2.01s, on the integrated
+  | tree that also carries the row-28 record. Arms, NEITHER of them the writer's: X
+  | `src/server/main.ts` WIRES the host to 0.0.0.0 while the constant stays correct → RED on PIN D2
+  | (so the pin sees the WIRING, not just the constant); Y the unit's WorkingDirectory → a WORKTREE
+  | → RED on the deploy unit-shape pin, so that contract IS covered and my suspicion of a gap was
+  | WRONG. Both files restored byte-identical (hashes asserted).
+  | retired=worktree worktrees/deploy · branch feat/deploy (fully merged, was 47deda1) · session
+  | 726acea8… | still owed=the unit install · the ONE ingress line + the tunnel restart (the
+  | owner's go-ahead at that moment — TRAP t1) · the master key (the owner's to mint; never the
+  | dispatcher's). | docs=ledger row 29 · this board.
+
 LANDED | row=26 | sha=bec97e1 | verify=MY OWN: gate exit 0 GREEN · 7 files · 65 tests · 2.01s
   | (`tests/gate.test.ts` went 5 → 7), and the new pins are falsifiable in BOTH directions on a
   | fixture repo with a resolvable origin/main and a LIVE branch feat/owed: prose about a
