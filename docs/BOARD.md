@@ -33,6 +33,7 @@ answer is a line, not a paragraph.
 | `PROBE` | a read-only agent in flight and the question it answers |
 | `IN-FLIGHT` | a writer: row, session, worktree, branch, base, **state**, and the full scope |
 | `LANDED` | a verified landing: row, sha, **the dispatcher's own verification numbers**, what was retired, the docs amended |
+| `retired_branch=<name>` | a CLAIM that `<name>` is retired — the **only** form the reconciler parses, read literally, one line per branch. Prose about a retirement (especially one still OWED) must not use this key: a prose-matching parser read "retired=NOT yet … branch feat/x" as a claim and reported a false BOARD STALE while the branch still existed |
 | `QUEUE` | owner requests and known debt not yet dispatched, with the row number reserved |
 | `QUEUE-CLOSED` | a queue line whose scope is consumed (kept one screen, then dropped) |
 | `TRAP` | a mistake that actually happened, with the rule that prevents it |
@@ -140,6 +141,12 @@ GUARD | g3 | Memory ceiling: NOT YET IMPLEMENTED — the suite is trivial, so th
   | bound. Debt, not a claim. It lands with the first suite that is not.
 GUARD | g4 | The suite lock is per-repo (`.gate-lock` at the git common dir). Verify: run the gate
   | twice — the second run exits 9 and is VOID. It does NOT exclude a peer project's suite.
+
+# Retirement CLAIMS. The ONLY form the reconciler parses is `retired_branch=<name>`, one per
+# branch, read literally — see the vocabulary above. Prose retirement notes elsewhere in this
+# board (the `retired=` fields in the LANDED records) are HISTORY and claim nothing.
+retired_branch=feat/core
+retired_branch=feat/tripwire
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main now carries the
