@@ -1,0 +1,81 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (dc93fdc) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/control)
+  control GREEN:  Test Files  10 passed (10)       Tests  75 passed (75) 
+=== ARM R — a NINTH route registered in the app, absent from the doc ===
+  file:   src/server/app.ts
+  sha256: 993678795e000405864f75b071befa45c534101cbb4db1ec2b1ba375758122e4  (before)
+  sha256: f20fc3934ae7c27b3d5f96674e0b52640fc51c00338da49512d36e7aefbaeae6  (after injection)
+  ARM R: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/arm-r)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/arm-r/full.log
+     × PIN A1: every route the app registers is in the API doc, and every route in the doc is registered 15ms
+     ✓ PIN A2: every code in ERROR_CODES appears in the doc's error table 1ms
+     ✓ PIN A3: the doc's stated max-bytes default equals the code's 1ms
+ ✓ tests/core.test.ts (6 tests) 74ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-ZpInzE/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+
+--
+ FAIL  tests/api-doc.test.ts > the client contract (docs/API.md, pins A1-A3) > PIN A1: every route the app registers is in the API doc, and every route in the doc is registered
+AssertionError: PIN A1: the app registers these routes and docs/API.md does not list them: expected [ 'GET /ping' ] to deeply equal []
+RESTORED: src/server/app.ts and docs/API.md back at HEAD; lock released
+=== ARM D — the doc's route table lists a route the app does not register ===
+  file:   docs/API.md
+  sha256: f0d0aa87540305a9a5315d6e7df9b7abc385649090dda93f426db676811aedcb  (before)
+  sha256: 5342d8628fa0b8294e717fa2eac273a93227469e189515214d54343619d3109e  (after injection)
+  ARM D: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/arm-d)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/arm-d/full.log
+     × PIN A1: every route the app registers is in the API doc, and every route in the doc is registered 18ms
+     ✓ PIN A2: every code in ERROR_CODES appears in the doc's error table 1ms
+     ✓ PIN A3: the doc's stated max-bytes default equals the code's 1ms
+ ✓ tests/deploy.test.ts (3 tests) 134ms
+ ✓ tests/runtime.test.ts (3 tests) 161ms
+ ✓ tests/core.test.ts (6 tests) 93ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+--
+ FAIL  tests/api-doc.test.ts > the client contract (docs/API.md, pins A1-A3) > PIN A1: every route the app registers is in the API doc, and every route in the doc is registered
+AssertionError: PIN A1: docs/API.md lists these routes and the app does not register them: expected [ 'GET /ping' ] to deeply equal []
+RESTORED: src/server/app.ts and docs/API.md back at HEAD; lock released
+=== ARM E — the doc's error table renames a code in ERROR_CODES ===
+  file:   docs/API.md
+  sha256: f0d0aa87540305a9a5315d6e7df9b7abc385649090dda93f426db676811aedcb  (before)
+  sha256: 52bf4ad20c27dee9c4fe18ae2c446c7d7164bb6f28b95479f477555db043404d  (after injection)
+  ARM E: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/arm-e)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/arm-e/full.log
+     × PIN A2: every code in ERROR_CODES appears in the doc's error table 8ms
+     ✓ PIN A3: the doc's stated max-bytes default equals the code's 1ms
+ ✓ tests/deploy.test.ts (3 tests) 131ms
+ ✓ tests/runtime.test.ts (3 tests) 149ms
+ ✓ tests/core.test.ts (6 tests) 72ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-rQXjw0/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+--
+ FAIL  tests/api-doc.test.ts > the client contract (docs/API.md, pins A1-A3) > PIN A2: every code in ERROR_CODES appears in the doc's error table
+AssertionError: PIN A2: ERROR_CODES carries these codes and docs/API.md does not document them: expected [ 'unauthorized' ] to deeply equal []
+RESTORED: src/server/app.ts and docs/API.md back at HEAD; lock released
+=== ARM M — the doc's stated SERVERSTORE_MAX_BYTES default is changed ===
+  file:   docs/API.md
+  sha256: f0d0aa87540305a9a5315d6e7df9b7abc385649090dda93f426db676811aedcb  (before)
+  sha256: e1f79bc121c5feaeafba04f20c08b35aa1b76b6cc5e818655668eb6e472a36f8  (after injection)
+  ARM M: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/arm-m)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/arm-m/full.log
+     × PIN A3: the doc's stated max-bytes default equals the code's 10ms
+ ✓ tests/runtime.test.ts (3 tests) 163ms
+ ✓ tests/core.test.ts (6 tests) 76ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-p7abAk/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+
+ ✓ tests/auth.test.ts (16 tests) 104ms
+--
+ FAIL  tests/api-doc.test.ts > the client contract (docs/API.md, pins A1-A3) > PIN A3: the doc's stated max-bytes default equals the code's
+AssertionError: PIN A3: docs/API.md's SERVERSTORE_MAX_BYTES default disagrees with DEFAULT_MAX_BYTES in src/server/config.ts: expected 1024 to be 67108864 // Object.is equality
+RESTORED: src/server/app.ts and docs/API.md back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/control2)
+  control GREEN:  Test Files  10 passed (10)       Tests  75 passed (75) 
+  sha256: 993678795e000405864f75b071befa45c534101cbb4db1ec2b1ba375758122e4 / f0d0aa87540305a9a5315d6e7df9b7abc385649090dda93f426db676811aedcb  (both back to their before hashes)
+
+DIFFERENTIAL COMPLETE: arms R and D RED on PIN A1, E on PIN A2, M on PIN A3; both controls GREEN. No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/api-doc/.diff-harness/{control,arm-r,arm-d,arm-e,arm-m,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/api-doc/checkpoints/api-doc-differential.out
+RESTORED: src/server/app.ts and docs/API.md back at HEAD; lock released

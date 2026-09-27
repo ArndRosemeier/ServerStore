@@ -40,6 +40,7 @@ Everything the project will ever do is either **core** (a step above `dispatch`)
 | The unit-file contract as a test | `tests/deploy.test.ts` | `systemd-analyze verify` (D5) and "no bind host is configurable" (D6). Reads the unit's DIRECTIVES, not raw text: the header comment names `SERVERSTORE_HOST` in the sentence forbidding it |
 | Probing a RUNNING service | `scripts/probe-live.sh <base-url>` | The same two checks D1/D3 pin, against any URL — loopback or `https://store.futuremagic.de`. **Never takes, prints or logs a key** (the key-bearing round-trip is the owner's) |
 | The deployment runbook | `docs/DEPLOYMENT.md` | The ordered install/verify/ingress/restart/mint/rollback steps, and where every path lives |
+| **The client-facing CONTRACT** | `docs/API.md`, pinned by `tests/api-doc.test.ts` | The ONE doc a client developer reads: base URLs, both auth headers, 401-vs-403, all eight routes, the error table, the size cap, a curl walkthrough, the non-goals. It is a contract because **PIN A1** derives the route set from `createApp({dataRoot, dbPath}).routes` and compares it to the doc's table **both ways** (middleware registers as `ALL` on `/*` and is filtered), **PIN A2** requires every `ERROR_CODES` entry in the doc's error table with the status `src/core/errors.ts` maps it to, and **PIN A3** compares the stated `SERVERSTORE_MAX_BYTES` default to the imported `DEFAULT_MAX_BYTES`. **Edit the doc and the code together** — the pin is what makes that true |
 | Where a secret in the tracked tree is checked | `tests/helpers/secrets.ts` `scanTrackedTree()`, called only by `tests/secrets.test.ts` | **Tracked = what would be PUBLISHED** (`git ls-files`). Scans `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`+36 and `github_pat_`+22, PEM private-key headers, the literal value of the host credential read from `~/.git-credentials` (**compared in memory, never printed**), and tracked `.db`/`.sqlite`/`.sqlite3` paths; `*.db`/`*.sqlite`/`*.sqlite3` were added to `.gitignore` as the preventive half. Deliberately **no bare `ssk_` rule** (ledger row 23): our own fixtures are necessarily key-shaped, so it would red on the suite or force an exclusion list over the files most likely to hide a real leak. **Not in `scripts/gate.sh`**: the gate is the ONE way the suite runs, and a second check path there multiplies the ways a check can be silently skipped. An absent credential file makes PIN S3 FAIL with "cannot check" — never a silent pass (AGENTS.md rule 1). |
 
 ## The seam is extensible without a rewrite (the point of the slice)
@@ -112,3 +113,11 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
   admin key without a master admin key, and a scoped key cannot escape its store.
 - **`store_kinds` is enforced by a foreign key**, so `kind` is a real vocabulary in
   the file and not a comment.
+- **The client contract's own findings** (ledger row 33, `docs/API.md`): `name_taken`
+  (409) is in `ERROR_CODES` and **no route emits it** — the doc says "reserved";
+  `POST /keys` bounds minting by **store**, not by the minter's permissions (a
+  `read`-only key mints a `write`+`delete` key for its own store); there is **no revoke
+  route** (`revokeKey()` is called only by tests); and a key scoped elsewhere learns a
+  store's existence from a `404` because `requireStore()` runs before `authorize()`.
+  None of these is fixed by the doc slice — fixing `src/` is a separate, owner-visible
+  decision.

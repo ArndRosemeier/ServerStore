@@ -168,6 +168,46 @@ control gate run on the restored tree must be GREEN.
 | S | a fake `ghp_`+36×`A` appended to a tracked file | `AGENTS.md` | `2af90514d3fc…409e` → `d0034621e1d6…7f0e` | `PIN S1: the tracked tree carries no GitHub token shape` — `a GitHub token shape is TRACKED — it is already published: remove it and rotate it: expected [ Array(1) ] to deeply equal []`, received `["AGENTS.md: GitHub token shape at byte offset 7671"]` |
 | control | none — the restored tree | — | `2af90514d3fc…409e` (back) | **GREEN**: 7 files · 60 tests · ~2.0s |
 
+## The client-contract pins (slice 5)
+
+The doc a **client developer** reads is `docs/API.md`, and it is held to the code by
+`tests/api-doc.test.ts` — the truth is DERIVED, never restated. Both directions matter:
+the doc may not omit a route and may not invent one.
+
+| # | Pin | Where | How it is checked |
+| ---: | --- | --- | --- |
+| A1 | every route the app registers is in the API doc, and every route in the doc is registered | `tests/api-doc.test.ts` | the `METHOD /path` set from `createApp({dataRoot, dbPath}).routes` (middleware filtered: it registers as method `ALL` on `/*`) versus the doc's `## Routes` table, compared in BOTH directions; the doc's `{store}`/`{name}` placeholders are normalised to Hono's `:store`/`:name` by the test |
+| A2 | every code in `ERROR_CODES` appears in the doc's error table | `tests/api-doc.test.ts` | the `## Errors` table must contain every `ERROR_CODES` entry **and** nothing outside it, each with the status the code maps to (`new StoreError(code, "probe").status`, so the statuses are the code's own, never retyped) |
+| A3 | the doc's stated max-bytes default equals the code's | `tests/api-doc.test.ts` | the `## Limits` row's byte value **and** its MiB rendering versus `DEFAULT_MAX_BYTES` **imported** from `src/server/config.ts` |
+
+A missing `## Routes`/`## Errors`/`## Limits` section, or a row in an unparseable
+shape, makes the pin **throw** — never pass vacuously: a check that cannot read the doc
+must say so (AGENTS.md rule 1).
+
+## The client-contract differential (4 arms + two controls)
+
+Machinery: `checkpoints/api-doc-differential.sh`. Raw transcript:
+`checkpoints/api-doc-differential.out` (per-arm raw logs are `*.log`, so gitignored).
+
+Same shape as the earlier differentials: the slice is committed FIRST, the same lock
+`scripts/gate.sh` takes is held across every arm, each mutated file's sha256 is printed
+before and after, restore is `git checkout HEAD --` inside an `EXIT INT TERM` trap, and
+a control runs BEFORE **and** AFTER.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| R | a NINTH route, `app.get("/ping", …)`, registered and absent from the doc | `src/server/app.ts` | `99367879…22e4` → `f20fc393…eae6` | `PIN A1: every route the app registers is in the API doc, and every route in the doc is registered` — `expected [ 'GET /ping' ] to deeply equal []` |
+| D | a fake row (`GET /ping`) added to the doc's route table | `docs/API.md` | `f0d0aa87…edcb` → `5342d862…109e` | `PIN A1: …` (the doc→code direction) — `expected [ 'GET /ping' ] to deeply equal []` |
+| E | the doc renames an error code, `unauthorized` → `unautorized` | `docs/API.md` | `f0d0aa87…edcb` → `52bf4ad2…404d` | `PIN A2: every code in ERROR_CODES appears in the doc's error table` — `expected [ 'unauthorized' ] to deeply equal []` |
+| M | the doc's stated `SERVERSTORE_MAX_BYTES` default changed to `1024` | `docs/API.md` | `f0d0aa87…edcb` → `e1f79bc1…a36f` | `PIN A3: the doc's stated max-bytes default equals the code's` — `expected 1024 to be 67108864` |
+| control | none — the committed tree, same lock held | — | — | **GREEN**: 10 files · 75 tests |
+| control | none — the restored tree, both files back at their before hashes | — | `99367879…22e4` / `f0d0aa87…edcb` | **GREEN**: 10 files · 75 tests |
+
+Arms R and D are the SAME pin in OPPOSITE directions — the reason A1 is pinned both
+ways; arms E and M mutate the SAME file to DIFFERENT hashes and different named pins.
+No hash was unchanged (a VOID probe would have been refused by the harness), and each
+arm went RED on its own named pin and nothing else.
+
 ## The full gate
 
 `bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.

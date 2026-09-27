@@ -64,6 +64,63 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
+LANDED | row=33 | sha=8a7a2f5 (the contract tip — `docs/API.md` + `tests/api-doc.test.ts`, rebased
+  | from dc93fdc onto origin/main 069f1fd; the differential harness, the ledger/seam/testing
+  | amendments and this record are the commits after it) | THE CLIENT CONTRACT, writer session
+  | d037deb5-84e8-4aa6-b065-4a672c93ffe2 (subagent of dispatcher session dcd6176e…), worktree
+  | worktrees/api-doc, branch feat/api-doc, base origin/main 2991ec6, rebased onto 069f1fd before
+  | push (the ledger union kept the dispatcher's row 32 AND this slice's row 33 — a mechanical
+  | union, nothing of the other landing touched). verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0
+  | (GREEN) · 10 test files · 75 tests · 2.11s · raw log `.gate-logs/gate.log` · load 0.05 before
+  | the run; no memory ceiling needed (GUARD g3 still open and still honest). The DISPATCHER's
+  | independent gate and its own arm are OWED.
+  | arms=checkpoints/api-doc-differential.sh, the gate lock held across all of them, sha256
+  | printed before and after, restore from HEAD in an EXIT/INT/TERM trap, a control BEFORE and
+  | AFTER, raw transcript checkpoints/api-doc-differential.out:
+  |   R a NINTH route `GET /ping` in src/server/app.ts, sha256 99367879…22e4 → f20fc393…eae6,
+  |     RED on `PIN A1: every route the app registers is in the API doc, and every route in the
+  |     doc is registered` — `expected [ 'GET /ping' ] to deeply equal []`
+  |   D a fake `GET /ping` row added to docs/API.md's route table, f0d0aa87…edcb → 5342d862…109e,
+  |     RED on the same PIN A1 in the doc→code direction
+  |   E the doc renames `unauthorized` → `unautorized`, f0d0aa87…edcb → 52bf4ad2…404d, RED on
+  |     `PIN A2: every code in ERROR_CODES appears in the doc's error table`
+  |   M the doc's stated SERVERSTORE_MAX_BYTES default → `1024`, f0d0aa87…edcb → e1f79bc1…a36f,
+  |     RED on `PIN A3: the doc's stated max-bytes default equals the code's` — expected 1024 to
+  |     be 67108864
+  |   both controls GREEN (10 files · 75 tests), both files back at their before hashes. No VOID probe.
+  | what it is=docs/API.md, the FIRST doc a client developer reads and the answer to row 28's
+  |   question (which was NO): what the service is; where it lives
+  |   (https://store.futuremagic.de, loopback http://127.0.0.1:8477, and `bash
+  |   scripts/probe-live.sh <base-url>` → 0/1/2); Authentication (`Authorization: Bearer ssk_…`
+  |   and `x-api-key`, Authorization wins; shown once at mint, hashed at rest, never readable
+  |   back; 401 = missing/unknown/revoked/expired vs 403 = verified but not permitted; perms
+  |   read|write|delete|admin with admin implying the rest; scope is ONE store or `*`, row 30 NOT
+  |   promised); all EIGHT routes in one table (method, path, who, request, response, statuses);
+  |   the name charset [a-z0-9][a-z0-9._-]{0,63} and PUT-overwrites; the {error:{code,message}}
+  |   envelope with EVERY code in ERROR_CODES and what to do about each; SERVERSTORE_MAX_BYTES
+  |   (default 67108864 bytes / 64 MiB, 413 never truncated, a failing request writes nothing);
+  |   a first-five-minutes curl walkthrough using $BASE/$ADMIN_KEY/$PLAYER_KEY placeholders; and
+  |   the non-goals (no GC, no concurrency control/ETag, no CORS, no rate limit, no identity
+  |   beyond keys, no bulk/range/streaming, no revoke/whoami route, one store per key).
+  | what the doc FOUND (reported, src/ untouched)=`name_taken` (409) is in ERROR_CODES and NO
+  |   route emits it (the doc calls it reserved); `POST /keys` bounds minting by STORE, not by
+  |   the minter's permissions — a read-only key mints a write+delete key for its OWN store
+  |   (measured 201), a cross-store mint is 403, admin is master-admin only; there is NO revoke
+  |   route (revokeKey() is called only by tests); requireStore() runs before authorize(), so a
+  |   wrong-scope key learns a store's EXISTENCE from a 404; the public name 302s to Cloudflare
+  |   Access today (row 31), which the doc states next to the probe command.
+  | retired=none. The worktree worktrees/api-doc and branch feat/api-doc are the dispatcher's to
+  | retire after ITS OWN verification; this writer does not retire itself.
+  | docs=docs/API.md (new) · ledger row 33 (appended) · docs/SEAM-INDEX.md (the client contract
+  | as a seam, plus its findings in known debt) · docs/TESTING.md (pins A1-A3 and the four arms
+  | with their hashes) · this board.
+  | COPIES: 1 — checked, no duplication (grepped: "createApp", "ERROR_CODES",
+  |   "DEFAULT_MAX_BYTES", "/stores/", "healthz", "ssk_", "payload_too_large" — the route set is
+  |   stated ONCE, in src/server/app.ts, and docs/API.md is a view of it guarded by PIN A1
+  |   rather than a second source of truth; the error vocabulary lives once in
+  |   src/core/errors.ts and the doc's table is checked against it by PIN A2; the cap lives once
+  |   in src/server/config.ts and PIN A3 imports it; the doc restates no code).
+
 LANDED | row=27 | sha=e1e363f (the docs tip; the CODE tip 1439f61 is its parent) | THE DEPLOYMENT
   | SLICE, writer session 726acea8-2fbf-4187-9d0d-a2d9298c6f18 (subagent of dispatcher session
   | dcd6176e…), worktree worktrees/deploy, branch feat/deploy, base fd87cbd (rebased onto
