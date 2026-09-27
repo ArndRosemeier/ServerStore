@@ -168,8 +168,10 @@ response bodies are JSON unless the row says otherwise.
 | `GET` | `/stores/{store}/objects/{name}` | `read` or `admin` on `{store}` | — | raw bytes (+ `x-serverstore-sha256`) | `200`, `401`, `403`, `404` |
 | `DELETE` | `/stores/{store}/objects/{name}` | `delete` or `admin` on `{store}` | — | empty body | `204`, `401`, `403`, `404` |
 
-There is **no `405`**: an unknown path or an unsupported method on a known path is a
-`404` with `{"error":{"code":"not_found",…}}`.
+There is **no `405`**. An unknown path or an unsupported method on a known path answers
+**`401` `unauthorized` when the request carries no valid key** — the key guard matches EVERY
+path before routing, so the API never reveals which routes exist — and `404`
+`{"error":{"code":"not_found",…}}` once a valid key is presented.
 
 ### Names
 
