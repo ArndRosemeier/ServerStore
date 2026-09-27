@@ -373,6 +373,11 @@ QUEUE | row=31 | BLOCKED ON THE OWNER, one dashboard change: a ZONE-WIDE Cloudfl
   | RATIFIED 2026-09-27: the owner RE-CHOSE keys-only with the wildcard KNOWN, rejecting
   |   Access-as-identity-provider (which would have given browsers a real login and let the store
   |   trust the tunnel's Access JWT, at the price of an Access seat per player) — ledger row 32.
+QUEUE | row=41 | NEXT = STEP B1 (dispatched): a key is scoped to a SET of stores, as a `key_stores`
+  table with an FK per store (ledger row 41 — the dispatcher's mechanism decision, veto-able), plus
+  `GET /whoami`. `POST /keys` moves from `store: string` to `stores: string[]` (`["*"]` = master)
+  while NO client exists, which is why the breaking change is free today. Then B2 = the REVOKE route
+  and key listing (what the step-C UI needs), then C = the UI itself.
 QUEUE | row=40 | B0.1 LANDED (row 39, verified row 40): ONLY AN ADMIN KEY MAY MINT, and the subset
   check is deleted as unreachable, with its reinstatement prerequisite written into the code comment
   and docs/SEAM-INDEX.md. NEXT = step B (multi-store scope per key + `whoami` + the missing REVOKE
