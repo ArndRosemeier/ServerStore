@@ -45,23 +45,26 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only an admin key may
-  mint; the subset rule deleted as unreachable). The docs commit carrying THIS marker is its child,
-  so the marker is the code tip and not itself — a commit cannot name its own sha. `bash
-  scripts/board.sh` must report this marker as an ancestor of origin/main, which is true from the
-  moment the dispatcher pushes the rebased branch. verify=THE WRITER'S OWN in-turn gate: exit 0
-  GREEN · 11 files · 80 tests · 2.07s, with the rule falsifiable in BOTH directions on its own arms
-  (A: the admin requirement deleted → M1 RED, M2/M5 GREEN; B: an admin minter required to be a
-  MASTER → M2 RED, M1/M3/M4/M5 GREEN); the dispatcher's own independent gate and arm are still
-  OWED. (History: this line read "e1bd3cf" — the row-36 tip — and before that "e1e363f" (row 27)
-  and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather
-  than quietly).)
+reconciled: bd55b7e · 2026-09-27T22:13Z — the CORS (D1/row 57) VERIFIED CODE tip ON THE REBASED
+  TREE. The docs commit carrying THIS marker is its child, so the marker is the code tip and not
+  itself — a commit cannot name its own sha (the tree that commit carries is `e39b5aa`, the row-57
+  record). `bash scripts/board.sh` must report this marker as an ancestor of origin/main. verify=THE
+  DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 13 files · 119 tests · 2.24s; plus
+  the LIVE perimeter (GUARD g5: pulled, restarted, probe PASS exit 0, and a live preflight answers
+  204 with the headers a browser needs while `allow-credentials` appears 0 times); plus two own arms
+  neither of them the writer's (R drops `authorization` from Allow-Headers → O1 ALONE; T
+  neutralises the allowlist inside the CORS step → O3 with D7 as honest collateral). (History:
+  this line read "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27) and "bec97e1" (row 26,
+  LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (D1, row 57: CORS). LIVE at https://store.futuremagic.de/ with the
-  |   console and key editing (C2); service on main@7798ff6; EXACTLY ONE live admin key. A game is
-  |   being built against the store from another origin and is blocked on CORS — that is the only
-  |   thing in flight. NEXT after it: rate limiting, then a headless-browser test.
+  | state=NO writer in flight — slice 12 (D1: CORS) is LANDED, VERIFIED by the dispatcher and
+  |   RETIRED (row 58 below). LIVE at https://store.futuremagic.de/ with the console, key editing
+  |   (C2) and CORS; service on main@e39b5aa (CORS code tip bd55b7e), re-probed after the restart;
+  |   EXACTLY ONE live admin key. A turn-based browser game being built from ANOTHER ORIGIN is now
+  |   UNBLOCKED and has NOTHING further to wait for from this project; the store ships no
+  |   `SERVERSTORE_CORS_ORIGINS`, so every origin is answered (safe: no cookies/ambient credentials).
+  |   NEXT: rate limiting on the public endpoint, then the OWED headless-browser test.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -637,7 +640,10 @@ QUEUE | row=48 | STEP C1 (the admin UI) is QUEUED BEHIND B2 and its brief is alr
   in a browser — a headless test is owed and is NOT v1.
 QUEUE-CLOSED | row=56 | LANDED as row 57 (writer's own gate GREEN · 13 files · 119 tests; arms A/B
   RED on PIN O1/PIN O4 — see the LANDED record below). The dispatch note is the design it was built
-  to. CORS DISPATCHED (it blocks a turn-based game being built against this store from
+  to. NOW VERIFIED AND RETIRED (ledger row 58 / LANDED row=58): own gate GREEN · 13 files · 119
+  tests · 2.24s, own arms R (O1 alone) and T (O3 with D7 as honest collateral), LIVE preflight 204
+  with `allow-credentials` appearing 0 times, worktree/branch/session gone — THE TURN-BASED GAME IS
+  UNBLOCKED. CORS DISPATCHED (it blocks a turn-based game being built against this store from
   another origin). Design: an allowlist via `SERVERSTORE_CORS_ORIGINS` (unset = `*`, safe because
   there are no cookies or ambient credentials), `authorization` named EXPLICITLY in Allow-Headers
   (the wildcard does not cover it), Allow-Methods GET/POST/PUT/PATCH/DELETE/OPTIONS, Max-Age,
@@ -647,6 +653,14 @@ QUEUE-CLOSED | row=56 | LANDED as row 57 (writer's own gate GREEN · 13 files ·
   the no-new-feature design for turn-based play is per-player OBJECTS whose room state each client
   derives, and real enforcement would need one store per player (already enforced) or per-store
   permissions (row 41's deferred extension).
+QUEUE | row=59 | NEXT (nothing in flight): RATE LIMITING on the public endpoint — the only queued
+  item that PROTECTS the surface rather than extending it (rows 28 and 43 both name it), and it is
+  more pressing now that the API answers cross-origin browsers. Then the OWED HEADLESS-BROWSER test,
+  which closes the same gap for both the console (rows 49/54) and CORS (rows 57/58): nothing
+  automated drives a real browser, and a browser is a process TREE whose kill belongs in a trap.
+  Deferred by owner decision, not forgotten: per-store permissions (`key_stores` + perms) — only if a
+  game needs ONE mutable shared room object; `since=`/ETag concurrency (row 28); editing `expiresAt`;
+  edit history; blob GC.
 QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
   the two the live store needs NOW, because the live database holds THREE master admin keys (two
   unused, created before the service existed) and revocation is currently operator-only. Then C
@@ -743,6 +757,7 @@ retired_branch=feat/key-stores
 retired_branch=feat/key-lifecycle
 retired_branch=feat/admin-ui
 retired_branch=feat/key-edit
+retired_branch=feat/cors
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -750,13 +765,14 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-57 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-58 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
   |   54 = C1 verified with the console LIVE, 55 = C2 verified with the audit stamp LIVE,
   |   56 = CORS is the blocker for the turn-based game, 57 = CORS LANDED — the step precedes the
-  |   key guard, so a preflight is answered 2xx without a key)
+  |   key guard, so a preflight is answered 2xx without a key, 58 = CORS VERIFIED against the LIVE
+  |   perimeter with own arms, retired, and the game unblocked)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -837,6 +853,33 @@ LANDED | row=57 | sha=bd55b7e (the VERIFIED CODE tip ON THE REBASED TREE: `src/s
   |   the honest unknowns) · docs/API.md (a CORS section, the Limits row, the stale "no CORS"
   |   non-goal removed) · docs/SEAM-INDEX.md (the CORS seam, the pipeline map, gotchas 14-15) · this
   |   board.
+
+LANDED | row=58 | sha=bd55b7e (the VERIFIED CODE tip — the CORS landing on the rebased tree; the
+  | row-57 record commit e39b5aa is its child and THIS row-58 record rides in a commit below that,
+  | because a commit cannot name its own sha. Pulled, restarted and re-probed BEFORE my own gate,
+  | per GUARD g5)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 13 files · 119 tests ·
+  | 2.24s (raw log `.gate-logs/dispatcher-gate-s12.log`), matching the writer's own count. Arms,
+  | neither of them the writer's: R deleted `authorization` from `CORS_ALLOW_HEADERS` → RED on PIN O1
+  | ALONE (the preflight still succeeds, so a status-only assertion would pass — this is the silent
+  | failure the pin exists for); T neutralised the allowlist decision INSIDE the CORS step
+  | (`deps.corsOrigins.includes(origin)` → `true`) → RED on PIN O3 with PIN D7 as HONEST COLLATERAL
+  | (D7 spawns the real entrypoint and asserts the same negative end-to-end, so both must fall).
+  | Both files restored byte-identical; lock held across both arms; no VOID probe.
+  | LIVE=https://store.futuremagic.de — restarted to CORS, probe PASS exit 0, and the perimeter
+  | checked BY HAND: a live preflight answers 204 with `access-control-allow-origin: *`,
+  | `allow-headers: authorization, x-api-key, content-type`, `allow-methods: GET, POST, PUT, PATCH,
+  | DELETE, OPTIONS`, `max-age: 600`, `expose-headers: x-serverstore-sha256`; an unauthenticated
+  | cross-origin call is 401 that still CARRIES allow-origin; `allow-credentials` count = 0.
+  | MY OWN ERROR: my first allowlist arm (S) mutated `parseCorsOrigins` in `config.ts` — the wrong
+  | LAYER — and reddened D7/O6 but NOT O3; the harness REFUSED to attribute it and exited 1, which is
+  | the metric fix of row 50 working. Also recorded: this arms harness has NO control run of its own,
+  | so the GREEN evidence is the separate full gate above — a red arm proves nothing is green.
+  | retired=worktree worktrees/cors · branch feat/cors · session session-ef1b5440…
+  | host audit after the landing: lock free · 0 node processes · 0 chrome processes.
+  | THE TURN-BASED GAME IS UNBLOCKED. Nothing is owed to the game by this project; narrowing the
+  | allowlist to the game's origin is an operator setting, not a requirement.
+  | docs=ledger row 58 · this board.
 
 LANDED | row=55 | sha=81341ff (the C2 tip; pulled, restarted and re-probed BEFORE my own gate, per
   | GUARD g5 — this landing changes the SCHEMA)
