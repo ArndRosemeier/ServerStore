@@ -550,6 +550,13 @@ QUEUE-CLOSED | row=45 | RESOLVED 2026-09-27: the two unused master admin keys ar
   `revokeKey()` (read back from the live database: two revoked, the owner's untouched), so the store
   holds exactly ONE live admin credential. No restart needed and that was checked in the code —
   resolution reads `revoked_at` per request. B2 makes this self-service.
+QUEUE | row=51 | QUEUED BEHIND C1: C2 = NAMED, EDITABLE keys. `PATCH /keys/:id` taking any subset of
+  `{label, stores, perms}`, with validation identical to mint and the same boundary (only an admin
+  may edit; a scoped admin only within its own set and never `admin`; a REVOKED key is not editable
+  back to life). Editing is IN PLACE — the key's value never changes — which the owner's own words
+  decided ("no need to show them again"). Viewing permissions needs no new API: `GET /keys` already
+  returns label, stores and perms, and C1's UI displays them. Deferred: editing `expiresAt`, and any
+  history of edits.
 QUEUE | row=48 | STEP C1 (the admin UI) is QUEUED BEHIND B2 and its brief is already on disk at
   docs/briefs/slice-10-admin-ui.md. Forks settled by the owner (row 48): SAME ORIGIN, served by the
   store service at store.futuremagic.de, as NO-BUILD static assets (three fixed routes: / , /app.js ,
