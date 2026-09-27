@@ -50,16 +50,25 @@ reconciled: 2e44eaf · 2026-09-27T16:10Z — the gated landing commit, and now M
   which was LOCAL time mislabelled as Z — the dispatcher's error, corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=slice 1 (the process itself) landed from the MAIN TREE — no writer was dispatched
+  | state=WAITING on ONE writer (slice 2, row 19) — dispatch is the only work in flight
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · load 0.6 · / has 506GB free
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main = a20fc95 and HEAD == origin/main: the first push landed and the board is
   |   machine-verified. (Row 16's private `Store` repo is ORPHANED — nothing points at it.)
 
-(no IN-FLIGHT writers — none has been dispatched. The dispatcher built slice 1 itself in the main
-tree, which is what the scaffold says the first slice is; the parallel-writers rule binds only when
-a writer exists.)
+IN-FLIGHT | row=19 | writer=session-b0fbcc08-9760-4545-bad0-1e5acd46d524 | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/core | branch=feat/core
+  | base=b60c716 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 2026-09-27T16:11Z, no commit yet | brief=docs/briefs/slice-2-core.md
+  | note=the multi-store core. The ONE seam: the request pipeline (resolve key -> authorize against
+  |   a named store -> dispatch to that store's storage). Hono app factory testable in-process via
+  |   app.request(); node:sqlite metadata (verified to load unflagged on Node 24); content-addressed
+  |   bytes under a data root OUTSIDE the repo; store registry with an idempotently seeded `master`
+  |   store; hashed scoped access keys returned once; local `pnpm run admin:key` bootstrap with NO
+  |   HTTP route that mints an admin key. Pins: 401 with no key, 403 across stores, revoked and
+  |   expired refused, byte-identical round-trip, THE RAW KEY ABSENT FROM THE DB FILE, idempotent
+  |   master seed, healthz needs no key, traversal and over-cap refused with named codes.
 
 NOTE | tsconfig includes tests/ only. src/ arrives with the first FEATURE slice (the multi-store
   core); inventing a dead module now would be vanity, and the ledger records it as unproven.
