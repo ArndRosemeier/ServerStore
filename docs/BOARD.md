@@ -45,28 +45,82 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: e1bd3cf · 2026-09-27T22:36Z — the row-36 landing's CODE tip (the permission boundary
-  of `POST /keys`; the docs commit carrying THIS marker is its child, so the marker is the code
-  tip and not itself — a commit cannot name its own sha). `bash scripts/board.sh` must report this
-  marker as an ancestor of origin/main, which is true from the moment the dispatcher pushes the
-  rebased branch. verify=THE WRITER'S OWN in-turn gate on the rebased tree: exit 0 GREEN · 11 files
-  · 80 tests · 2.17s, with BOTH directions of the rule falsifiable on their own arms (A: the check
-  deleted → K1/K2 RED; B: the check made stricter than correct → K3 RED); the dispatcher's own
-  independent gate and arm are still OWED. (An earlier line here read
-  "e1e363f · 2026-09-27T20:12Z" — the row-27 tip; and before that "bec97e1 · 2026-09-27T22:05Z",
-  the row-26 tip with LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
-  quietly.)
+reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only an admin key may
+  mint; the subset rule deleted as unreachable). The docs commit carrying THIS marker is its child,
+  so the marker is the code tip and not itself — a commit cannot name its own sha. `bash
+  scripts/board.sh` must report this marker as an ancestor of origin/main, which is true from the
+  moment the dispatcher pushes the rebased branch. verify=THE WRITER'S OWN in-turn gate: exit 0
+  GREEN · 11 files · 80 tests · 2.07s, with the rule falsifiable in BOTH directions on its own arms
+  (A: the admin requirement deleted → M1 RED, M2/M5 GREEN; B: an admin minter required to be a
+  MASTER → M2 RED, M1/M3/M4/M5 GREEN); the dispatcher's own independent gate and arm are still
+  OWED. (History: this line read "e1bd3cf" — the row-36 tip — and before that "e1e363f" (row 27)
+  and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather
+  than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (B0.1, row 39: only ADMIN keys may mint); slices 1-6 verified and
-  |   retired. serverstore.service is installed, enabled and active on 127.0.0.1:8477 ONLY (local
-  |   probe PASS exit 0); the PUBLIC name is still blocked by the zone-wide Cloudflare Access
-  |   policy (row 31 — one dashboard change from the owner).
+  | state=ONE writer landing B0.1 (row 39: only an admin key may mint; the subset rule deleted as
+  |   unreachable); slices 1-6 verified and retired. THIS writer does not retire itself: the
+  |   worktree worktrees/mint-admin and branch feat/mint-admin are the dispatcher's to retire after
+  |   ITS OWN verification, which is OWED.
+  |   serverstore.service is installed, enabled and active on 127.0.0.1:8477 ONLY (local probe
+  |   PASS exit 0); the PUBLIC name is still blocked by the zone-wide Cloudflare Access policy
+  |   (row 31 — one dashboard change from the owner).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
+
+LANDED | row=39 | sha=1063e29 (the VERIFIED CODE tip: `src/server/app.ts` + `tests/keys.test.ts`;
+  | the docs commit carrying THIS line and the ledger row is its child, and `docs/BOARD.md`'s
+  | `reconciled:` marker is updated to that child as the last act of the landing) | WHO MAY MINT
+  | ON `POST /keys`, writer session (a subagent of dispatcher session
+  | dcd6176e-b4b9-4759-b64d-4c90d3495dfa), worktree worktrees/mint-admin, branch feat/mint-admin,
+  | base origin/main aae3eb4, REBASED onto origin/main 45c3e8a before push (a mechanical DOCS UNION:
+  | the ledger kept the dispatcher's rows 37 AND 38 alongside this slice's row 39, and the board
+  | kept the row=37/38 LANDED records, the IN-FLIGHT row=39 block, the row=38 QUEUE line and the
+  | two retired_branch lines — nothing of the other landing was touched).
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 11 test files ·
+  | 80 tests · 2.07s · raw log `.gate-logs/gate.log`; no memory ceiling needed (GUARD g3 still open
+  | and still honest). The DISPATCHER's independent gate and its own arm are OWED.
+  | arms=checkpoints/mint-admin-differential.sh, the gate lock held across BOTH arms, sha256 printed
+  | before and after, restore from HEAD in an EXIT/INT/TERM trap, a control BEFORE and AFTER, raw
+  | transcript checkpoints/mint-admin-differential.out (key-shaped strings scrubbed — ledger row 21):
+  |   A the admin requirement DELETED (`auth.requireAdmin();` removed), src/server/app.ts
+  |     00f477d8…3528 → 11e2e60c…f8ed, RED on `PIN M1: a non-admin key cannot mint ANY key` —
+  |     `expected 201 to be 403`; M2 and M5 stayed GREEN
+  |   B STRICTER than correct — an admin minter must ALSO be a MASTER, 00f477d8…3528 → 9e0c9588…1808,
+  |     RED on `PIN M2: a store-scoped ADMIN key mints within its store` — `expected 403 to be 201`,
+  |     and on M2 ALONE (M1/M3/M4/M5 GREEN; the harness fails the run if M1 or M5 reddens, and the
+  |     arm keeps the non-admin refusal correct on purpose — its first broader draft is recorded in
+  |     docs/TESTING.md)
+  |   both controls GREEN (11 files · 80 tests), app.ts back at 00f477d8…3528. The two arms carry
+  |     DIFFERENT hashes. No VOID probe.
+  | what it is=the owner's stricter rule (the slice-7 brief; ledger row 39): only a key holding
+  |   `admin` may mint at all. `Auth.requireAdmin()` is the FIRST thing `POST /keys` decides —
+  |   before the body is read — so a non-admin key gets 403 `forbidden` ("only an admin key may mint
+  |   keys") and nothing is minted (M1). A store-scoped admin key mints within its store (M2, the
+  |   game-backend flow) but not for another (M3); an `admin` grant still needs a MASTER admin key
+  |   AND `scope *` (M4); a master admin mints any non-admin permission for any existing store (M5,
+  |   the bootstrap path).
+  | what it REMOVES=the slice-6 subset check (`lacks` / `Auth.grantablePermissions`) is DELETED as
+  |   unreachable — an `admin` minter implies every permission, so it could never fire, and an
+  |   untested branch that reads as a security control is a trap. The replacement rule is M1.
+  |   docs/SEAM-INDEX.md and the code carry the PREREQUISITE: any future slice that lets a NON-admin
+  |   key mint MUST reinstate the subset rule in the SAME commit.
+  | wire format=unchanged: `{error:{code,message}}`. NO route was added, removed or renamed, so pins
+  |   A1–A3 stay green (11 files · 80 tests, `tests/api-doc.test.ts` 3/3).
+  | docs=docs/API.md (the Authentication bullet and the `POST /keys` rows now say WHO may mint) ·
+  |   ledger row 39 (appended; it FLAGS that the brief's "rows 37-38" do not exist in this tree) ·
+  |   docs/SEAM-INDEX.md (the "Who may MINT" row + the pipeline note + the reinstatement
+  |   prerequisite + the row-33 finding narrowed) · docs/TESTING.md (M1–M5, the meaning changes from
+  |   K1–K5, and both arms with their hashes) · this board.
+  | COPIES: 1 — checked, no duplication (grepped: "requireAdmin", "grantablePermissions", "lacks",
+  |   "only an admin key may mint" — the who-may-mint decision exists ONCE, in `app.post("/keys")`
+  |   via the ONE `Auth.requireAdmin()`; the unreachable subset predicate it replaced was deleted,
+  |   not duplicated, and there is no second authorization middleware).
+  | retired=none yet. The worktree worktrees/mint-admin and branch feat/mint-admin are the
+  | dispatcher's to retire after ITS OWN verification; this writer does not retire itself.
 
 LANDED | row=36 | sha=e1bd3cf (the VERIFIED CODE tip on the rebased tree: `src/server/app.ts` +
   | `tests/keys.test.ts`; the docs commit carrying THIS line and the ledger row is its child, and
@@ -235,7 +289,8 @@ session 6e744d65… are RETIRED. Audit after: lock free, 0 suite processes, 0 br
 IN-FLIGHT | row=39 | writer=session-d4c6cb54-7687-4433-9f1e-bb8e7d9547e4 | model=harness default
   | worktree=/home/administrator/projects/ServerStore/worktrees/mint-admin | branch=feat/mint-admin
   | base=aae3eb4 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 20:44Z, no commit yet | brief=docs/briefs/slice-7-mint-admin.md
+  | state=CLOSED by the LANDED row=39 record above (CODE tip 1063e29, rebased onto 45c3e8a)
+  | brief=docs/briefs/slice-7-mint-admin.md
   | note=B0.1 implements the owner's STRICTER rule (ledger row 38): only a key holding `admin` may
   |   mint — a store-scoped admin within its own store, a master admin anywhere; a non-admin grant
   |   still needs a named existing store, and an `admin` grant still needs a master admin plus
@@ -244,6 +299,11 @@ IN-FLIGHT | row=39 | writer=session-d4c6cb54-7687-4433-9f1e-bb8e7d9547e4 | model
   |   prerequisite: any future slice that lets a NON-admin key mint reinstates the subset rule in
   |   the same commit. Pins M1-M5; arms in OPPOSITE directions (delete the admin check → M1 red;
   |   require a MASTER admin → M2 red while M1/M5 stay green). docs/API.md changes in the same commit.
+
+(The row=39 landing (B0.1: only an admin key may mint) is recorded in the LANDED row=39
+block above; its worktree worktrees/mint-admin and branch feat/mint-admin are the
+dispatcher's to retire after ITS OWN verification, which is OWED. Audit after this
+landing: lock free, 0 suite processes, 0 browser processes.)
 
 (The slice-3 writer is RETIRED: slice 3 LANDED, was verified by the dispatcher, and its worktree
 worktrees/tripwire, branch feat/tripwire (fully merged) and session ebb420aa… are gone. The
@@ -394,12 +454,13 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-38 (19, 23, 27, 33 and 36 appended by writers, out of
-  |   numeric order by design; 24 the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the
+  | decisions=docs/DECISION-LEDGER.md rows 1-39 (19, 23, 27, 33, 36 and 39 appended by writers, out
+  |   of numeric order by design; 24 the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the
   |   explicit retirement key, 27 slice 4, 28 the multiplayer requirement, 29 its verification,
   |   30 the owner's registration model, 31 the Access blocker, 32 the perimeter re-ratification,
   |   33 the client contract, 34 its verification, 35 the CONFIRMED key escalation, 36 the subset
-  |   fix, 37 its verification, 38 the owner's admin-only rule and the sequencing error)
+  |   fix, 37 its verification, 38 the owner's admin-only rule and the sequencing error, 39 that
+  |   rule implemented: only an admin key may mint, the subset rule deleted as unreachable)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh

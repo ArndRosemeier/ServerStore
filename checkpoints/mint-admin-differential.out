@@ -1,0 +1,55 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (273b57c) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/mint-admin/.diff-harness/control)
+  control GREEN:  Test Files  11 passed (11)       Tests  80 passed (80) 
+=== ARM A — the admin requirement is DELETED (a read-only key may mint again) ===
+  file:   src/server/app.ts
+  sha256: 00f477d819f1fa998f6144b9a3dbc1599b7365f6a3a4803dd8169a482f5e3528  (before)
+  sha256: 11e2e60caffc0acf33828aa411a23a56a9ca3178b48a7b4dc516b38deff5f8ed  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/mint-admin/.diff-harness/arm-a)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/mint-admin/.diff-harness/arm-a/full.log
+     × PIN M1: a non-admin key cannot mint ANY key, not even one with a subset of its own permissions 52ms
+     ✓ PIN M2: a store-scoped ADMIN key mints within its store 17ms
+     ✓ PIN M3: a store-scoped admin key still cannot mint for another store 6ms
+     ✓ PIN M4: only a MASTER admin key may grant 'admin', and only for scope '*' 7ms
+     ✓ PIN M5: a master admin key still mints any non-admin permission for any existing store 7ms
+ ✓ tests/auth.test.ts (16 tests) 112ms
+ ✓ tests/gate.test.ts (7 tests) 323ms
+--
+ FAIL  tests/keys.test.ts > keys: only an admin key may mint (pin M1-M5) > PIN M1: a non-admin key cannot mint ANY key, not even one with a subset of its own permissions
+AssertionError: expected 201 to be 403 // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: src/server/app.ts back at HEAD; lock released
+=== ARM B — STRICTER than correct: an admin minter must also be a MASTER ===
+  file:   src/server/app.ts
+  sha256: 00f477d819f1fa998f6144b9a3dbc1599b7365f6a3a4803dd8169a482f5e3528  (before)
+  sha256: 9e0c95882e32ef970f5936e867de7a4a2e7e34e664cc05da6d323161e3931808  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/mint-admin/.diff-harness/arm-b)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/mint-admin/.diff-harness/arm-b/full.log
+     × PIN M2: a store-scoped ADMIN key mints within its store 13ms
+     ✓ PIN M3: a store-scoped admin key still cannot mint for another store 7ms
+     ✓ PIN M4: only a MASTER admin key may grant 'admin', and only for scope '*' 6ms
+     ✓ PIN M5: a master admin key still mints any non-admin permission for any existing store 9ms
+ ✓ tests/auth.test.ts (16 tests) 102ms
+ ✓ tests/gate.test.ts (7 tests) 344ms
+ ✓ tests/objects.test.ts (16 tests) 267ms
+--
+ FAIL  tests/keys.test.ts > keys: only an admin key may mint (pin M1-M5) > PIN M2: a store-scoped ADMIN key mints within its store
+AssertionError: expected 403 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: src/server/app.ts back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/mint-admin/.diff-harness/control2)
+  control GREEN:  Test Files  11 passed (11)       Tests  80 passed (80) 
+  sha256: 00f477d819f1fa998f6144b9a3dbc1599b7365f6a3a4803dd8169a482f5e3528  (back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN M1; arm B RED on PIN M2 with M1/M5 GREEN; both controls GREEN. No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/mint-admin/.diff-harness/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/mint-admin/checkpoints/mint-admin-differential.out
+RESTORED: src/server/app.ts back at HEAD; lock released

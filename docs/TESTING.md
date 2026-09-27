@@ -261,7 +261,38 @@ subset predicate's refusal list) in `src/server/app.ts`.
   arms produced DIFFERENT hashes, and both controls are GREEN — so the injection, and
   nothing else, was the difference.
 
+## The mint-authorization differential (2 arms + two controls)
 
+Machinery: `checkpoints/mint-admin-differential.sh`. Raw transcript:
+`checkpoints/mint-admin-differential.out` (per-arm raw logs are `*.log`, so gitignored).
+
+Same shape as the earlier differentials — the slice is committed FIRST, the same lock
+`scripts/gate.sh` takes is held across every arm, each mutated file's sha256 is printed
+before and after, restore is `git checkout HEAD --` inside an `EXIT INT TERM` trap, and
+a control runs BEFORE **and** AFTER. Both arms rewrite the ONE anchored line — the
+`auth.requireAdmin()` call — in `src/server/app.ts`.
+
+| Arm | Injected defect | sha256 before → after | Went RED on |
+| --- | --- | --- | --- |
+| A | the admin requirement is **DELETED** (any key may mint again) | `00f477d8…3528` → `11e2e60c…f8ed` | `PIN M1` — `expected 201 to be 403` (a `read`-only key minted a `read` key); **M2/M5 stayed GREEN** |
+| B | the rule is **STRICTER than correct** — an admin minter must ALSO be a MASTER admin, so a store-scoped admin key is refused | `00f477d8…3528` → `9e0c9588…1808` | `PIN M2` — `expected 403 to be 201` (`this operation requires a master admin key`); **M1/M3/M4/M5 stayed GREEN** |
+| control | none — the committed tree, same lock held | — | **GREEN**: 11 files · 80 tests |
+| control | none — the restored tree, `app.ts` back at `00f477d8…3528` | — | **GREEN**: 11 files · 80 tests |
+
+- The two arms are the two directions the rule can be wrong: **absent** (A) and
+  **over-strict** (B). Arm A proves M1 is not vacuous; arm B proves M2 is not — and,
+  because M1 and M5 stay green while M2 falls, it proves M2 tells a STORE-SCOPED admin
+  apart from a MASTER admin rather than the slice having simply broken the flow.
+- **Arm B is SURGICAL, and the harness enforces it.** Its first draft replaced the call
+  with a bare `auth.requireMasterAdmin()`, which also changed the NON-admin refusal
+  message and so reddened M1 as well — proving "arm B breaks many things" rather than
+  "M2 catches over-strictness". The arm now leaves the non-admin branch carrying the
+  correct refusal (and its message) on purpose; the harness asserts that ONLY M2 may
+  fall (`× PIN M1`/`× PIN M5` in the arm log is a HARNESS FAILURE). Observed: exactly
+  one failing M-pin, M2, and both controls GREEN.
+- No hash was unchanged (a VOID probe would have been refused by the harness), the two
+  arms produced DIFFERENT hashes, and both controls are GREEN — so the injection, and
+  nothing else, was the difference.
 
 The doc a **client developer** reads is `docs/API.md`, and it is held to the code by
 `tests/api-doc.test.ts` — the truth is DERIVED, never restated. Both directions matter:
