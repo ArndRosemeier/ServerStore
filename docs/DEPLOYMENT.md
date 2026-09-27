@@ -197,3 +197,34 @@ survives every step above. Deleting it destroys every store and every key.
 
 `bash scripts/gate.sh` — the ONE way the suite runs: `0` GREEN · `1` RED · `2` cheap
 tier only (not a pass) · `9` refused, VOID.
+
+---
+
+## 8. After any landing that touches `src/` — RESTART, then re-probe
+
+**The running service is NOT the repo.** `ExecStart` loads `src/server/main.ts` once, at
+boot. Commits on disk change nothing until the unit is restarted, so "the gate is green"
+and "the live service behaves that way" are two different facts.
+
+This matters most when a landing changes the **database schema** (as slice B1 does): the
+migration runs when a process **opens** the database — the service at boot, or
+`pnpm run admin:key` in the owner's shell. Minting a key between the landing and the
+restart would migrate the live database while the running process still held the old code,
+and the live API would fail until restarted.
+
+```bash
+systemctl --user restart serverstore
+systemctl --user is-active serverstore          # must be "active"
+ss -ltn 'sport = :8477'                          # must show 127.0.0.1:8477 ONLY
+bash /home/administrator/projects/ServerStore/scripts/probe-live.sh https://store.futuremagic.de
+```
+
+**The rule.** After any landing that touches `src/` or the schema:
+
+1. the **dispatcher** restarts the unit (it owns the landing),
+2. re-runs the live probe, and only then
+3. tells the owner he may mint or test against it.
+
+A restart is also the rollback for a bad landing: check out the previous commit
+(`git -C /home/administrator/projects/ServerStore checkout <sha>`), restart, re-probe, and
+record it. The data root is never part of that: `~/serverstore-data` survives every step.

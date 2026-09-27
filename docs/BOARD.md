@@ -58,10 +58,11 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (B1, row 42: a key scoped to a SET of stores); slices 1-7 verified
-  |   and retired. serverstore.service is installed, enabled and active on 127.0.0.1:8477 ONLY
-  |   (local probe PASS exit 0); the PUBLIC name is still blocked by the zone-wide Cloudflare Access
-  |   policy (row 31 — one dashboard change from the owner, explained in the session).
+  | state=LIVE at https://store.futuremagic.de (keyless probe PASS exit 0; the owner's Access bypass
+  |   verified SURGICAL — dsh/opencode/openclaw still 302). The service was RESTARTED 2026-09-27
+  |   22:56:34 CEST to main@0cfba87, so it now runs the B0/B0.1 key rules; it had been up since
+  |   22:20:41 and was therefore THREE LANDINGS BEHIND while `main` moved (GUARD g5).
+  |   ONE writer in flight (B1, row 42: a key scoped to a SET of stores).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -372,7 +373,11 @@ QUEUE-CLOSED | row=27 | DONE 2026-09-27: the deployment slice LANDED, was indepe
   127.0.0.1:8477 only, the LOCAL probe is PASS exit 0, one ingress line validates as rule #5 →
   http://127.0.0.1:8477, DNS answers, and the tunnel restarted with every existing hostname back.
   What remains is not installation: see the row=31 line below.
-QUEUE | row=31 | BLOCKED ON THE OWNER, one dashboard change: a ZONE-WIDE Cloudflare Access policy
+QUEUE-CLOSED | row=31 | RESOLVED 2026-09-27: the owner added the Access bypass for
+  store.futuremagic.de and the dispatcher verified it — `probe-live.sh` PASS exit 0, no `location`
+  and no `www-authenticate` in the raw headers, and the NEIGHBOURS UNCHANGED (dsh/opencode/openclaw
+  still 302, apps 200), i.e. ONE hostname, not the zone. The key is now the only perimeter (row 43).
+  MINTING IS SAFE NOW: the service was restarted to main@0cfba87 at 22:56:34 (GUARD g5).
   sits in front of store.futuremagic.de (a hostname minutes old already 302s to
   spring-thunder-dad0.cloudflareaccess.com), so NO key-bearing client can reach the API — Access
   gates curl exactly as it gates a browser. Fix: a MORE SPECIFIC Access application for
@@ -451,8 +456,15 @@ GUARD | g2 | A long check never runs in the foreground in the dispatcher session
   | own gate IN-TURN, because a subagent's background jobs die with its turn.
 GUARD | g3 | Memory ceiling: NOT YET IMPLEMENTED — the suite is trivial, so there is nothing to
   | bound. Debt, not a claim. It lands with the first suite that is not.
-GUARD | g4 | The suite lock is per-repo (`.gate-lock` at the git common dir). Verify: run the gate
-  | twice — the second run exits 9 and is VOID. It does NOT exclude a peer project's suite.
+GUARD | g5 | THE RUNNING SERVICE IS NOT THE REPO. `ExecStart` loads `src/server/main.ts` once, at
+  |   boot, so a landing reaches the live service only after `systemctl --user restart serverstore`.
+  |   It matters most for a SCHEMA change (the migration runs when a process OPENS the database — the
+  |   service at boot, or `pnpm run admin:key` in the owner's shell): minting between the landing and
+  |   the restart migrates the live database while the old code is still in memory. RULE: after any
+  |   landing that touches `src/` or the schema, the DISPATCHER restarts the unit, re-runs
+  |   `scripts/probe-live.sh https://store.futuremagic.de`, and only THEN tells the owner he may mint.
+  |   Measured 2026-09-27: the service went live at 22:20:41 and was THREE LANDINGS BEHIND main until
+  |   the restart at 22:56:34 — the rule in docs/DEPLOYMENT.md §8 exists because of that.
 
 # Retirement CLAIMS. The ONLY form the reconciler parses is `retired_branch=<name>`, one per
 # branch, read literally — see the vocabulary above. Prose retirement notes elsewhere in this
@@ -469,22 +481,17 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-40 (19, 23, 27, 33, 36 and 39 appended by writers, out
-  |   of numeric order by design; 24 the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the
-  |   explicit retirement key, 27 slice 4, 28 the multiplayer requirement, 29 its verification,
-  |   30 the owner's registration model, 31 the Access blocker, 32 the perimeter re-ratification,
-  |   33 the client contract, 34 its verification, 35 the CONFIRMED key escalation, 36 the subset
-  |   fix, 37 its verification, 38 the owner's admin-only rule and the sequencing error, 39 that
-  |   rule implemented, 40 its verification)
+  | decisions=docs/DECISION-LEDGER.md rows 1-43 (19, 23, 27, 33, 36 and 39 appended by writers, out
+  |   of numeric order by design; 43 = the store is LIVE and the bypass verified; 43b = the
+  |   running-service-is-not-the-repo discovery, now GUARD g5 and docs/DEPLOYMENT.md §8)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
-  | live=serverstore.service — systemctl --user, ENABLED and active on 127.0.0.1:8477 only; data
-  |   root /home/administrator/serverstore-data; logs `journalctl --user -u serverstore -f`;
-  |   ingress rule #5 in /etc/cloudflared/config.yml (backup .bak.pre-store-*); PUBLIC ACCESS
-  |   CURRENTLY BLOCKED BY A ZONE-WIDE CLOUDFLARE ACCESS POLICY (row 31)
-  | briefs=docs/BRIEF.md + docs/briefs/ | seams=docs/SEAM-INDEX.md | tests=docs/TESTING.md
-  | sessions=~/.dsh/sessions/--home-administrator-projects-ServerStore--
+  | live=https://store.futuremagic.de — PUBLIC and reachable (Access BYPASSED for this hostname
+  |   only; the key is the only perimeter). Running main@0cfba87 since 2026-09-27 22:56:34 CEST;
+  |   data root /home/administrator/serverstore-data; logs `journalctl --user -u serverstore -f`;
+  |   ingress rule #5 in /etc/cloudflared/config.yml; restart + re-probe rule = GUARD g5 /
+  |   docs/DEPLOYMENT.md §8
 ```
 
 ## Landed
