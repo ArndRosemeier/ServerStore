@@ -58,10 +58,10 @@ reconciled: e1bd3cf · 2026-09-27T22:36Z — the row-36 landing's CODE tip (the 
   quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (B0, row 36: the key-subset fix); slices 1-5 verified and retired.
-  |   serverstore.service is installed, enabled and active on 127.0.0.1:8477 ONLY (local probe
-  |   PASS exit 0); the PUBLIC name is still blocked by the zone-wide Cloudflare Access policy
-  |   (row 31 — one dashboard change from the owner).
+  | state=ONE writer in flight (B0.1, row 39: only ADMIN keys may mint); slices 1-6 verified and
+  |   retired. serverstore.service is installed, enabled and active on 127.0.0.1:8477 ONLY (local
+  |   probe PASS exit 0); the PUBLIC name is still blocked by the zone-wide Cloudflare Access
+  |   policy (row 31 — one dashboard change from the owner).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -228,11 +228,22 @@ LANDED | row=27 | sha=e1e363f (the docs tip; the CODE tip 1439f61 is its parent)
   | this slice creates no such directory (the probe writes to stdout; the differential's logs are
   | `*.log`, already ignored). Adding a rule for a path that never exists blesses an imaginary file.
 
-(No writer in flight. The row=36 IN-FLIGHT block this dispatch created is CLOSED by the
-LANDED row=36 record above: B0 landed (permission boundary of `POST /keys`, pins K1-K5,
-two arms). The dispatcher's own independent gate and its own arm are owed; the worktree
-worktrees/keys-subset and branch feat/keys-subset are the dispatcher's to retire. Audit
-after the landing: lock free, 0 suite processes, 0 browser processes.)
+(B0 is CLOSED: verified by the dispatcher (row 37 — gate 11 files / 80 tests / 2.06s; arms P and
+Q RED on PIN K1 and PIN K4), and its worktree worktrees/keys-subset, branch feat/keys-subset and
+session 6e744d65… are RETIRED. Audit after: lock free, 0 suite processes, 0 browser processes.)
+
+IN-FLIGHT | row=39 | writer=session-d4c6cb54-7687-4433-9f1e-bb8e7d9547e4 | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/mint-admin | branch=feat/mint-admin
+  | base=aae3eb4 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 20:44Z, no commit yet | brief=docs/briefs/slice-7-mint-admin.md
+  | note=B0.1 implements the owner's STRICTER rule (ledger row 38): only a key holding `admin` may
+  |   mint — a store-scoped admin within its own store, a master admin anywhere; a non-admin grant
+  |   still needs a named existing store, and an `admin` grant still needs a master admin plus
+  |   `scope *`. The subset check B0 landed becomes UNREACHABLE under that rule, so the writer must
+  |   delete it or keep it with its reinstatement condition written down, and must record the
+  |   prerequisite: any future slice that lets a NON-admin key mint reinstates the subset rule in
+  |   the same commit. Pins M1-M5; arms in OPPOSITE directions (delete the admin check → M1 red;
+  |   require a MASTER admin → M2 red while M1/M5 stay green). docs/API.md changes in the same commit.
 
 (The slice-3 writer is RETIRED: slice 3 LANDED, was verified by the dispatcher, and its worktree
 worktrees/tripwire, branch feat/tripwire (fully merged) and session ebb420aa… are gone. The
@@ -311,6 +322,10 @@ QUEUE | row=31 | BLOCKED ON THE OWNER, one dashboard change: a ZONE-WIDE Cloudfl
   | RATIFIED 2026-09-27: the owner RE-CHOSE keys-only with the wildcard KNOWN, rejecting
   |   Access-as-identity-provider (which would have given browsers a real login and let the store
   |   trust the tunnel's Access JWT, at the price of an Access seat per player) — ledger row 32.
+QUEUE | row=38 | B0 as LANDED implements the SUBSET rule; the owner chose ADMIN-ONLY minting, so
+  B0.1 (row 39) implements HIS rule and must decide the fate of the now-unreachable subset branch.
+  The dispatcher's sequencing error is recorded in row 38: the fork was asked in the same breath as
+  the dispatch, so the answer bought a second slice. Ask mechanism forks BEFORE dispatching.
 QUEUE | row=35 | B0 DISPATCHED (the key-subset fix, row 36). Row-34 findings NOT in B0, not to be
   lost: (a) there is NO REVOKE ROUTE — `revokeKey()` is called only by tests, so row 6's rotation
   story is half-built and the row-30 UI's revoke button has nothing to call; (b) `name_taken` (409)
@@ -370,6 +385,8 @@ GUARD | g4 | The suite lock is per-repo (`.gate-lock` at the git common dir). Ve
 # board (the `retired=` fields in the LANDED records) are HISTORY and claim nothing.
 retired_branch=feat/core
 retired_branch=feat/tripwire
+retired_branch=feat/api-doc
+retired_branch=feat/keys-subset
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -377,12 +394,12 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-36 (19, 23, 27, 33 and 36 appended by writers, out of
+  | decisions=docs/DECISION-LEDGER.md rows 1-38 (19, 23, 27, 33 and 36 appended by writers, out of
   |   numeric order by design; 24 the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the
   |   explicit retirement key, 27 slice 4, 28 the multiplayer requirement, 29 its verification,
   |   30 the owner's registration model, 31 the Access blocker, 32 the perimeter re-ratification,
-  |   33 the client contract, 34 its verification, 35 the CONFIRMED key escalation, 36 its fix —
-  |   the permission boundary of `POST /keys`)
+  |   33 the client contract, 34 its verification, 35 the CONFIRMED key escalation, 36 the subset
+  |   fix, 37 its verification, 38 the owner's admin-only rule and the sequencing error)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -397,6 +414,18 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=37 | sha=aae3eb4 (the B0 record tip, pulled BEFORE gating this time)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 11 files · 80 tests ·
+  | 2.06s. My arms, neither of them the writer's: P the shared PREDICATE neutered
+  | (`grantablePermissions` -> PERMISSIONS for everyone) → RED on PIN K1 (201 vs 403), the slice-2
+  | lesson applied on purpose; Q the STORE boundary relaxed → RED on PIN K4. Both files restored
+  | byte-identical. The writer's report records NO same-class hole elsewhere, and that
+  | `grantablePermissions` needs a per-store extension when multi-store scope lands.
+  | retired=worktree worktrees/keys-subset · branch feat/keys-subset · session 6e744d65…
+  | note=B0 closed the escalation by SUBSET semantics; the owner then chose ADMIN-ONLY, so B0.1
+  | (row 39) implements his rule and decides the unreachable subset branch. Ledger rows 37-38.
+  | docs=ledger rows 37-38 · this board.
+
 LANDED | row=34 | sha=267fe50 (the record tip pulled before verifying; the contract tip is 8a7a2f5)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 10 files · 75 tests ·
   | 2.03s. My arms, neither of them the writer's: N the app registers `/health` instead of
