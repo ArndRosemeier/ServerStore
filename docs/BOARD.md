@@ -44,19 +44,18 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: 2e44eaf · 2026-09-27T16:04Z (LOCAL REALITY ONLY: the remote exists but the host
-  credential is not scoped to it, so scripts/board.sh correctly says CANNOT LOOK and this marker
-  is NOT machine-verified. The line below it previously read "20c132d · 2026-09-27T17:45Z", which
-  was LOCAL time mislabelled as Z — the dispatcher's error, corrected here rather than quietly.
-  Local time is UTC+2.)
+reconciled: 2e44eaf · 2026-09-27T16:10Z — the gated landing commit, and now MACHINE-VERIFIED:
+  `bash scripts/board.sh` → BOARD RECONCILED (exit 0), reporting "2e44eaf is on origin/main" and
+  "2e44eaf is an ancestor of the remote". (An earlier line here read "20c132d · 2026-09-27T17:45Z",
+  which was LOCAL time mislabelled as Z — the dispatcher's error, corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
   | state=slice 1 (the process itself) landed from the MAIN TREE — no writer was dispatched
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · load 0.6 · / has 506GB free
-  | remote=https://github.com/ArndRosemeier/Store.git — configured, owner-created PRIVATE. NOTE the
-  |   repo name (Store) differs from this project's directory (ServerStore). The first push is
-  |   BLOCKED on the credential's repository scope; so board.sh says CANNOT LOOK, which is correct.
+  | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
+  |   origin/main = a20fc95 and HEAD == origin/main: the first push landed and the board is
+  |   machine-verified. (Row 16's private `Store` repo is ORPHANED — nothing points at it.)
 
 (no IN-FLIGHT writers — none has been dispatched. The dispatcher built slice 1 itself in the main
 tree, which is what the scaffold says the first slice is; the parallel-writers rule binds only when
@@ -73,12 +72,13 @@ QUEUE | row=7 | exposure DECIDED (one subdomain + one master key). Ingress NOT a
   the tunnel restart (TRAP t1) and the owner's go-ahead at that moment.
 QUEUE | row=12 | hostname CONFIRMED by the owner 2026-09-27: store.futuremagic.de. Nothing is exposed
   yet; adding the ingress needs the tunnel restart (TRAP t1) and his go-ahead at that moment.
-QUEUE | row=16 | FIRST PUSH BLOCKED, on the owner. The repo is private github.com/ArndRosemeier/Store
-  (he created it; the name differs from this directory), origin is configured, and ls-remote returns
-  "Write access to repository not granted" / HTTP 403. Cause VERIFIED, not guessed: the host
-  credential is a USER token (GET /installation/repositories → 403 "must authenticate with an
-  installation access token") that reaches exactly 31 named repos, and Store is NOT one of them.
-  FIX: add Store to that token's repository access. Until then board.sh says CANNOT LOOK.
+QUEUE-CLOSED | row=16 | RESOLVED 2026-09-27: the owner created a PUBLIC repo instead and the first
+  push landed (a20fc95 == origin/main). The private `Store` repo is orphaned; deleting it is
+  housekeeping on the owner's side, nothing here points at it.
+QUEUE | row=18 | FLIP CONDITION for public visibility: these docs state the live perimeter in plain
+  language (one subdomain, one master key, no Cloudflare Access, a local bootstrap that mints keys,
+  shell = store root). Before the ingress is added (row 7), either make the repo private or move the
+  perimeter design out of the public docs.
 QUEUE | row=17 | the reconciler defect (row 15) is STILL upstream at Toolbox head 824a8b5 —
   scaffold/scripts/board.sh:53 and :60 keep the bare `git rev-parse`. Toolbox is outside this
   project, so it needs the owner's word before anyone touches it.
@@ -104,8 +104,7 @@ GUARD | g4 | The suite lock is per-repo (`.gate-lock` at the git common dir). Ve
   | twice — the second run exits 9 and is VOID. It does NOT exclude a peer project's suite.
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
-  | remote=https://github.com/ArndRosemeier/Store.git (configured, owner-created PRIVATE; the first
-  |   push is BLOCKED because the host credential is not scoped to it — see QUEUE row 16)
+  | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main = a20fc95)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
   | decisions=docs/DECISION-LEDGER.md rows 1-14 | briefs=docs/BRIEF.md
