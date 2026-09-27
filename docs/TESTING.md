@@ -8,8 +8,10 @@ evidence left behind*.
   (not a pass) · `9` refused, VOID. Raw log: `.gate-logs/gate.log`.
 - The suite: `vitest`, `tests/**/*.test.ts`. One fixture set
   (`tests/helpers/server.ts`): a real temp data root, a real SQLite file, a real Hono
-  app driven through `app.request()`. **No port is bound in a test**, and no test
-  writes outside its own temp directory.
+  app driven through `app.request()`. **One test file does bind a port** —
+  `tests/entrypoint.test.ts` spawns the real entrypoint and talks to it over loopback —
+  and every child it starts is killed in an `afterEach`; nothing outside a temp
+  directory is written, and the loopback pin additionally *reads* `/proc/net/tcp`.
 
 ## The pins
 
@@ -26,6 +28,12 @@ Each pin's NAME is the contract. `tests/` maps to them as follows.
 | 7 | `GET /healthz` needs no key; every other route is 401 without one | `tests/auth.test.ts` (`PIN 7`) |
 | 8 | Path traversal and an over-cap body each produce their named error code (`invalid_name`, `payload_too_large`) | `tests/objects.test.ts` (`PIN 8`) |
 | 9 | `pnpm run admin:key` mints a key the HTTP API accepts as admin; **no HTTP route mints an admin key without one** | `tests/admin-key.test.ts` (`PIN 9`) |
+| D1 | The real entrypoint **boots and serves `/healthz`** from the repo's own start command | `tests/entrypoint.test.ts` (`PIN D1`) |
+| D2 | The entrypoint listens on **`127.0.0.1` and NOT on `0.0.0.0`** (read from `/proc/net/tcp` + `/proc/net/tcp6`) | `tests/entrypoint.test.ts` (`PIN D2`) |
+| D3 | An unauthenticated API call is **refused 401 by the running service** | `tests/entrypoint.test.ts` (`PIN D3`) |
+| D4 | **SIGTERM stops the service and leaves no child behind** (no `0A` socket, child reaped) | `tests/entrypoint.test.ts` (`PIN D4`) |
+| D5 | The unit file **passes `systemd-analyze verify`** | `tests/deploy.test.ts` (`PIN D5`) |
+| D6 | The unit file **does not make the bind host configurable** | `tests/deploy.test.ts` (`PIN D6`) |
 | — | The process itself (gate vocabulary, the lock refusing a concurrent run, the reconciler saying CANNOT LOOK) | `tests/gate.test.ts` |
 | — | The SOURCE TREE runs under strip-only Node (this is what `pnpm run serve` executes) | `tests/runtime.test.ts` |
 
@@ -57,6 +65,52 @@ key-shaped fixtures (`tests/auth.test.ts`, `tests/admin-key.test.ts`), so such a
 would either red on the suite or force an exclusion list covering the very files most
 likely to hide a real leak. The planted token in `tests/secrets.test.ts` is likewise
 built from parts, never written as a literal, because that file is itself tracked.
+
+## The process pins (slice 4, the deployment)
+
+The service's PROCESS contract, pinned where it was previously only reviewed. It was
+the honest unknown of slices 1–3: *"No test binds a port or exercises `main.ts`"*.
+**D1–D4 close it** — they spawn the real entrypoint and speak HTTP to it.
+
+| # | Pin | Where | How it is checked |
+| ---: | --- | --- | --- |
+| D1 | the real entrypoint boots and serves `/healthz` from the repo's own start command | `tests/entrypoint.test.ts` | `spawn("node", ["--experimental-strip-types", "src/server/main.ts"])` with `SERVERSTORE_PORT`/`SERVERSTORE_DATA_ROOT`; poll `/healthz` for ≤5s (bounded; the poll also aborts the moment the child EXITS) and assert `200 {"ok":true}` |
+| D2 | the entrypoint listens on `127.0.0.1` and NOT on `0.0.0.0` | `tests/entrypoint.test.ts` | the LISTEN (`0A`) sockets on the port, from **both** `/proc/net/tcp` and `/proc/net/tcp6`, must be exactly one, at `127.0.0.1`; an unreadable procfs FAILS with that reason, it never skips |
+| D3 | an unauthenticated API call is refused 401 by the running service | `tests/entrypoint.test.ts` | `GET /stores` with no key → `401` and the body's `error.code === "unauthorized"` |
+| D4 | SIGTERM stops the service and leaves no child behind | `tests/entrypoint.test.ts` | `SIGTERM`, the child exits **on that signal**, no `0A` socket remains within 5s, and the child is reaped |
+| D5 | the unit file passes `systemd-analyze verify` | `tests/deploy.test.ts` | the real binary; a missing one FAILS with that reason |
+| D6 | the unit file does not make the bind host configurable | `tests/deploy.test.ts` | no `SERVERSTORE_HOST`/`SERVERSTORE_BIND`/`HOST=` **directive** (comments are stripped first — the unit's header names them in the sentence that forbids them), and the `DEFAULT_HOST` reason must still be present |
+
+Two properties of the machinery are load-bearing and were both learned by failing:
+the boot wait is **bounded** (5s, then a failure that prints the child's output), and
+**every child is SIGKILLed in `afterEach`** even when a test threw — a backgrounded
+server that outlives the suite is the orphan the host rules exist for. The loopback
+pin counts only `0A` sockets: after SIGTERM the probe's own sockets sit in `TIME_WAIT`
+(`06`) on that port for a minute, and treating a kernel leftover as a listener is a
+false failure that never clears.
+
+## The deployment differential (2 arms + two controls)
+
+Machinery: `checkpoints/deploy-differential.sh`. Raw transcript:
+`checkpoints/deploy-differential.out` (per-arm raw logs are `*.log`, so gitignored).
+
+Same shape as the core differential above — committed first, the same lock held across
+every arm, each file's sha256 printed before and after, restore from `HEAD` in an
+`EXIT INT TERM` trap — plus a control BEFORE **and** AFTER, so the arms are
+attributable in both directions. **Two harness bugs were found by running it**: the
+first version's `restore` knew only the first file it mutated, and a "already restored"
+flag then made the second explicit `restore` a no-op — both fixed, and the regression
+is recorded in the harness comment rather than quietly repaired.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| D2 | the bind host is `0.0.0.0` (the defect GUARD g1 exists for) | `src/server/config.ts` | `cce5fb08…ef02` → `ff7d1551…743e` | `PIN D2: the entrypoint listens on 127.0.0.1 and NOT on 0.0.0.0` — `expected '0.0.0.0' to be '127.0.0.1'`, on the `/proc/net/tcp` line `[{"ipv4":"0.0.0.0","raw":"00000000","state":"0A"}, …]` |
+| D6 | the unit's comment naming `DEFAULT_HOST` is deleted (the realistic "tidied unit" regression: the directives survive, the reasoning does not) | `deploy/serverstore.service` | `27e9c0f9…5d86` → `efa686be…3d3f` | `PIN D6: the unit file does not make the bind host configurable` — `expected '…' to match /DEFAULT_HOST/` |
+| control | none — the committed tree, same lock held | — | — | **GREEN** |
+| control | none — the restored tree, both files back at their before hashes | — | `cce5fb08…ef02` / `27e9c0f9…5d86` | **GREEN** |
+
+Each arm went red on its OWN named pin and on nothing else, and no hash was unchanged
+(a VOID probe would have been refused by the harness).
 
 ## The writer's differential (4 arms + control)
 
@@ -126,12 +180,13 @@ for the specific landing it verified.
 
 - **No concurrency test.** Two writers racing the same object name are handled by an
   upsert, but nothing exercises it. Unproven rather than claimed.
-- **No test binds a port or exercises `main.ts`.** The loopback binding is a code
-  constant plus a review, not a pin. It WAS probed by hand — the server was started,
-  served `/healthz` 200, accepted a key minted by `pnpm run admin:key`, round-tripped
-  an object, and `ss -ltn` showed `127.0.0.1:8477` and nothing else — but a hand probe
-  is not a pin. The automated version needs a spawned server, and that is owed to the
-  deployment slice, which also owns the `systemctl --user` unit.
+- **RETIRED: "no test binds a port or exercises `main.ts`".** D1–D4 now spawn the real
+  entrypoint and speak HTTP to it over loopback, so the loopback binding is a pin and
+  not "a code constant plus a review". What remains unproven about the deployment is
+  everything that only exists ON THE HOST: the unit has never been installed, so
+  nothing has exercised `Restart=on-failure`, the cloudflared ingress, or the live
+  hostname. `scripts/probe-live.sh` is the command that will check the last of those,
+  and its live run is a step in `docs/DEPLOYMENT.md`, not a test.
 - **No garbage collection test** — there is no GC (brief §4, ledger row 19).
 - **Memory ceiling (GUARD g3) not implemented**; the suite is still trivial.
 - **The tripwire only knows the pinned shapes.** A secret in a format outside

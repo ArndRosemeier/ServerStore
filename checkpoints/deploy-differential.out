@@ -1,0 +1,46 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (005c293) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/deploy/.diff-harness/control)
+  control GREEN:  Test Files  9 passed (9)       Tests  72 passed (72) 
+=== ARM D2 — DEFAULT_HOST 127.0.0.1 -> 0.0.0.0 ===
+  file:   src/server/config.ts
+  sha256: cce5fb08211074200a9284543b64ce1010451e695850f07299919abd81fbef02  (before)
+  sha256: ff7d1551270971b96b3090f69d50fbe04fb00f5d53b4d094a2838a3db190743e  (after injection)
+  ARM D2: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/deploy/.diff-harness/arm)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/deploy/.diff-harness/arm/full.log
+     × PIN D2: the entrypoint listens on 127.0.0.1 and NOT on 0.0.0.0 195ms
+     ✓ PIN D3: an unauthenticated API call is refused 401 by the running service 190ms
+     ✓ PIN D4: SIGTERM stops the service and leaves no child behind 193ms
+ ✓ tests/admin-key.test.ts (6 tests) 1645ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+     ✓ PIN 9: pnpm run admin:key mints a key the HTTP API accepts as admin 641ms
+     ✓ PIN 9: the CLI prints the key once and the database holds only its hash 607ms
+--
+ FAIL  tests/entrypoint.test.ts > the real entrypoint, spawned as the service runs it (pins D1-D4) > PIN D2: the entrypoint listens on 127.0.0.1 and NOT on 0.0.0.0
+AssertionError: port 45731 in /proc/net/tcp: [{"ipv4":"0.0.0.0","raw":"00000000","state":"0A"},{"ipv4":"127.0.0.1","raw":"0100007F","state":"01"}]; in /proc/net/tcp6: []: expected '0.0.0.0' to be '127.0.0.1' // Object.is equality
+RESTORED: src/server/config.ts and deploy/serverstore.service back at HEAD; lock released
+=== ARM D6 — the unit's no-configurable-host comment removed ===
+  file:   deploy/serverstore.service
+  sha256: 27e9c0f9a259bd7e318f0490a1c8779e5ea9edac5fdd7956cc66615018695d86  (before)
+  sha256: efa686be7284a8969aa228330d166fb5857cefe7b7312993cd3958b5cf3bd3f8  (after injection)
+  ARM D6: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/deploy/.diff-harness/arm6)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/deploy/.diff-harness/arm6/full.log
+     × PIN D6: the unit file does not make the bind host configurable 6ms
+     ✓ the unit is the systemd USER-unit shape the runbook installs 1ms
+ ✓ tests/runtime.test.ts (3 tests) 174ms
+ ✓ tests/core.test.ts (6 tests) 73ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-kGv4rV/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+
+--
+ FAIL  tests/deploy.test.ts > the systemd user unit (pins D5-D6) > PIN D6: the unit file does not make the bind host configurable
+AssertionError: expected '# ServerStore — the service\'s PROCES…' to match /DEFAULT_HOST/
+RESTORED: src/server/config.ts and deploy/serverstore.service back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  control GREEN:  Test Files  9 passed (9)       Tests  72 passed (72) 
+  sha256: cce5fb08211074200a9284543b64ce1010451e695850f07299919abd81fbef02 / 27e9c0f9a259bd7e318f0490a1c8779e5ea9edac5fdd7956cc66615018695d86  (both back to their before hashes)
+
+DIFFERENTIAL COMPLETE: arm D2 and arm D6 each RED on their OWN named pin, both controls GREEN. No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/deploy/.diff-harness/{control,arm,arm6,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/deploy/checkpoints/deploy-differential.out
+RESTORED: src/server/config.ts and deploy/serverstore.service back at HEAD; lock released

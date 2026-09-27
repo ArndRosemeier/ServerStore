@@ -34,6 +34,12 @@ Everything the project will ever do is either **core** (a step above `dispatch`)
 | The store-kind dispatch point | `src/storage/kinds.ts` `handlerFor()` | Add a kind HERE and nowhere else |
 | Bytes on disk | `src/storage/fs.ts` | Content-addressed, atomic temp-file + rename |
 | Minting an admin key | `src/admin/mint-key.ts` (`pnpm run admin:key`) | Local, direct-to-SQLite. **No HTTP route may do this** |
+| **Starting the service** (the PROCESS seam) | `src/server/main.ts`, started as `node --experimental-strip-types src/server/main.ts` | The ONLY way the server starts: `pnpm run serve`, `deploy/serverstore.service` and `tests/entrypoint.test.ts` all run exactly this. Do not add a second entrypoint, a `--daemon` mode, or a wrapper script |
+| The service definition | `deploy/serverstore.service` (a systemd USER unit) | Absolute paths; `WorkingDirectory` is the `main` checkout, **never a worktree**; data root `/home/administrator/serverstore-data` (outside the repo, ledger row 13). It sets `SERVERSTORE_PORT`/`SERVERSTORE_DATA_ROOT` and **no host**, and `tests/deploy.test.ts` pins both halves (D5/D6) |
+| The process contract as a test | `tests/entrypoint.test.ts` | Spawns the entrypoint on a free port with a temp data root, polls `/healthz` for ≤5s, asserts the **loopback-only** bind from `/proc/net/tcp`/`/proc/net/tcp6`, the unauthenticated 401, and SIGTERM-then-gone. Every child is SIGKILLed in `afterEach` |
+| The unit-file contract as a test | `tests/deploy.test.ts` | `systemd-analyze verify` (D5) and "no bind host is configurable" (D6). Reads the unit's DIRECTIVES, not raw text: the header comment names `SERVERSTORE_HOST` in the sentence forbidding it |
+| Probing a RUNNING service | `scripts/probe-live.sh <base-url>` | The same two checks D1/D3 pin, against any URL — loopback or `https://store.futuremagic.de`. **Never takes, prints or logs a key** (the key-bearing round-trip is the owner's) |
+| The deployment runbook | `docs/DEPLOYMENT.md` | The ordered install/verify/ingress/restart/mint/rollback steps, and where every path lives |
 | Where a secret in the tracked tree is checked | `tests/helpers/secrets.ts` `scanTrackedTree()`, called only by `tests/secrets.test.ts` | **Tracked = what would be PUBLISHED** (`git ls-files`). Scans `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`+36 and `github_pat_`+22, PEM private-key headers, the literal value of the host credential read from `~/.git-credentials` (**compared in memory, never printed**), and tracked `.db`/`.sqlite`/`.sqlite3` paths; `*.db`/`*.sqlite`/`*.sqlite3` were added to `.gitignore` as the preventive half. Deliberately **no bare `ssk_` rule** (ledger row 23): our own fixtures are necessarily key-shaped, so it would red on the suite or force an exclusion list over the files most likely to hide a real leak. **Not in `scripts/gate.sh`**: the gate is the ONE way the suite runs, and a second check path there multiplies the ways a check can be silently skipped. An absent credential file makes PIN S3 FAIL with "cannot check" — never a silent pass (AGENTS.md rule 1). |
 
 ## The seam is extensible without a rewrite (the point of the slice)
@@ -80,6 +86,18 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
 8. **GC does not exist yet.** `DELETE /stores/:store/objects/:name` removes the row
    and leaves the blob. `deleteBlob()` exists and is never called; this is the
    documented omission (brief §4), not an accident.
+9. **The service runs from the `main` CHECKOUT, and the unit is versioned but not
+   installed.** `deploy/serverstore.service` names
+   `/home/administrator/projects/ServerStore` — never a worktree, which is retired
+   when its slice lands. Installing it (and adding the ingress line) is a HOST change:
+   it is the dispatcher's, and the tunnel restart needs the owner's go-ahead at that
+   moment (`TRAP t1`). A test reads and verifies the unit; it never installs it.
+10. **`/proc/net/tcp` counts every socket on the port, not just the listener.** After
+   SIGTERM the probe's own sockets can sit in `TIME_WAIT` (`state 06`) on that port for
+   a minute, so the process pins assert on the **`0A` (TCP_LISTEN)** subset — treating
+   a kernel leftover as "still listening" is a false failure that never clears. The
+   loopback pin reads BOTH `/proc/net/tcp` and `/proc/net/tcp6`, because a `[::]` bind
+   does not appear in the IPv4 table at all.
 
 ## Known debt (and where it is recorded)
 
