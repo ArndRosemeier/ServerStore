@@ -388,6 +388,77 @@ ways; arms E and M mutate the SAME file to DIFFERENT hashes and different named 
 No hash was unchanged (a VOID probe would have been refused by the harness), and each
 arm went RED on its own named pin and nothing else.
 
+## The key-lifecycle pins (slice 9, `GET /keys` + `POST /keys/:id/revoke`)
+
+Slice 9 (ledger row 46) makes the key lifecycle self-service: `GET /keys` is the admin
+inventory and `POST /keys/:id/revoke` is the revoke route. Both are admin-only and reuse
+the SAME scope-containment predicate the mint boundary already enforces
+(`Auth.holdsStores`); `Auth.requireAdmin(action)` now carries the action in its message,
+so mint, list and revoke share ONE "who may administer keys" predicate.
+`src/core/keys.ts` `listKeys()` is the read seam (two queries whatever the population,
+revoked keys included so the inventory is also the audit view).
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| L1 | `GET /keys` is admin-only (401 without a key, 403 for a valid non-admin) and its body contains NEITHER the raw key NOR its secret NOR its stored `sha256` — with every entry carrying EXACTLY the documented nine fields, so a secret field cannot be added silently | `tests/keys.test.ts` (`PIN L1`) |
+| L2 | a store-scoped admin lists only the keys whose scope lies inside its OWN set (its own key included) and a master lists EVERY key | `tests/keys.test.ts` (`PIN L2`) |
+| L3 | a revoked key is refused `401` on the NEXT request on the same running app — no restart, no cache | `tests/keys.test.ts` (`PIN L3`) |
+| L4 | a store-scoped admin cannot revoke a key outside its scope (403, and the target is STILL USABLE), cannot revoke a MASTER key (403, master still administers), and cannot revoke an in-scope key holding `admin` (403) — with a POSITIVE control that it CAN revoke an in-scope non-admin key | `tests/keys.test.ts` (`PIN L4`) |
+| L5 | revoke is idempotent: the first call is `changed: true`, the second is `changed: false` with the FIRST `revokedAt`, and the row really holds that timestamp | `tests/keys.test.ts` (`PIN L5`) |
+| L6 | an unknown id is `404 not_found`; a NON-admin gets `403` first and learns nothing; and a key may revoke ITSELF — the store-scoped-admin case is the interesting one, since its own key holds `admin` — taking effect on the next request | `tests/keys.test.ts` (`PIN L6`) |
+
+**The clock is advanced between L5's two calls on purpose.** The fixture's clock is
+frozen, so a buggy implementation that overwrote `revoked_at` on a second call would
+write the same instant and "the timestamp did not move" would be vacuously true. L5
+moves the clock, so the frozen timestamp is evidence.
+
+**The prefix decision.** `GET /keys` RETURNS `prefix`. It is `ssk_` plus the first 8
+characters of the (already public) `id` — 12 characters, the stored
+`DISPLAY_PREFIX_LENGTH` — so it carries no secret byte: the secret starts after the id.
+It is returned so a console shows the same handle the operator saw at mint without
+re-deriving the rendering. L1 pins the absence of the FULL key, the SECRET half and the
+HASH, which is the material that matters; `prefix` is deliberately inside that boundary.
+(`GET /whoami` still returns no prefix at all: it is the caller asking about itself.)
+
+## The key-lifecycle differential (2 arms + two controls)
+
+Machinery: `checkpoints/key-lifecycle-differential.sh`. Raw transcript:
+`checkpoints/key-lifecycle-differential.out` (per-arm raw logs are `*.log`, so
+gitignored).
+
+Same shape as the earlier differentials: the slice is committed FIRST (code tip
+`7cc3afe` — the pre-rebase `534189c`, which the CONTROL line in the raw transcript names,
+replayed by the pre-push rebase with an EMPTY content delta), the same lock
+`scripts/gate.sh` takes is held across every arm, the mutated
+file's sha256 is printed before and after, restore is `git checkout HEAD --` inside an
+`EXIT INT TERM` trap, and a control runs BEFORE **and** AFTER. Both arms inject into
+`src/server/app.ts` — the listing projection and the revoke boundary — and the harness
+now ALSO fails an arm whose TYPECHECK breaks, because a tree that does not compile
+proves nothing about a pin.
+
+| Arm | Injected defect | sha256 before → after | Went RED on |
+| --- | --- | --- | --- |
+| A | `GET /keys` INCLUDES the stored hash (a `hash` field added to every entry) — the inventory carries key material | `d8a056dc…b86ef` → `fd7f35a8…73df` | `PIN L1: GET /keys is admin-only and returns NO key material` — `expected '{"keys":…}' not to contain '<sha256>'` |
+| B | the REVOKE scope rules are IGNORED (`if ((false as boolean)) {`), so a scoped admin may revoke outside its scope and may revoke a master key | `d8a056dc…b86ef` → `0be47025…bbd5` | `PIN L4: a scoped admin cannot revoke outside its own scope, and cannot revoke a master key` — `expected 200 to be 403` |
+| control | none — the committed tree, same lock held | — | **GREEN**: 11 files · 92 tests |
+| control | none — the restored tree, `app.ts` back at its before hash | `d8a056dc…b86ef` (back) | **GREEN**: 11 files · 92 tests |
+
+- The arms are the two halves of the slice in OPPOSITE directions: LEAK (A) and
+  BOUNDARY (B). Arm A leaves the revoke boundary alone, so L2–L6 stay GREEN — that is
+  the anti-vacuity direction; arm B leaves the listing projection alone, so L1/L2 stay
+  GREEN, and the revoke mechanics it does not remove (idempotency L5, the 404 and
+  self-revocation L6) survive.
+- **Arm B's FIRST DRAFT was a literal `&& false`, and it broke the TYPECHECK** —
+  `TS18047: 'target' is possibly 'null'` on three lines, because the constant condition
+  collapses the earlier `if (target === null) throw` narrowing. That would have proved
+  "the tree does not compile", not "L4 sees the missing boundary", so the arm was made
+  surgical with `false as boolean` (which keeps the injected condition typecheck-clean)
+  and the harness now asserts the arm's cheap tier carries no `error TS`. The discarded
+  draft is recorded here rather than quietly fixed (the row-25/37 lesson).
+- No hash was unchanged (a VOID probe would have been refused by the harness), the two
+  arms produced DIFFERENT hashes from the same before-hash, and both controls are GREEN
+  — so the injection, and nothing else, was the difference.
+
 ## The full gate
 
 `bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.
@@ -427,3 +498,18 @@ for the specific landing it verified.
   returns the value it wrote and the guard puts it on the record, so the field is never
   the previous call's — pinned only implicitly by G4's `typeof string`; the exact
   equality is not asserted against a clock.
+- **The key lifecycle's 404-vs-403 oracle for KEYS.** The brief fixes the order — an
+  unknown id is `404`, a key outside the caller's scope is `403` — so a store-scoped
+  admin can tell "no such key" from "not yours". That is a deliberate, recorded shape
+  (it mirrors `requireStore()` before `authorize()` on the object routes, ledger row 33
+  finding (d)), not a claim that it leaks nothing. Key ids are public lookup ids and a
+  scoped admin can already list the keys inside its own set.
+- **No pagination, filter, sort or search on `GET /keys`** (ledger row 46): the
+  population is the operator's keys and one response is the whole inventory. If that
+  stops being true, the route grows a cursor and this line changes with it.
+- **Self-revoking the last admin key is irreversible over HTTP.** L6 pins that
+  self-revocation works and takes effect immediately; nothing warns the caller, and the
+  only recovery is minting another admin key from the box (`pnpm run admin:key`, ledger
+  row 7). Recorded as a known consequence, not a defect.
+- **A revoked key's `lastUsedAt` is frozen at its last successful request.** Nothing
+  clears it and nothing tests it; it is the honest reading of the column.

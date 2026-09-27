@@ -68,6 +68,78 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
+LANDED | row=46 | sha=7cc3afe (the VERIFIED CODE tip: `src/core/keys.ts`, `src/server/app.ts`,
+  | `tests/keys.test.ts`, plus `docs/API.md` and `docs/SEAM-INDEX.md`; the docs commit carrying
+  | THIS line, the ledger row 46 and docs/TESTING.md is its child — a commit cannot name its
+  | own sha) | THE KEY LIFECYCLE: `GET /keys` + `POST /keys/:id/revoke`, writer session (a subagent
+  | of dispatcher session dcd6176e-b4b9-4759-b64d-4c90d3495dfa), worktree
+  | worktrees/key-lifecycle, branch feat/key-lifecycle, base origin/main 12f3061, REBASED onto
+  | origin/main f4ee41c before push. The pre-push rebase replayed the pre-rebase code tip
+  | `534189c` as `7cc3afe` (`git diff --stat 534189c 7cc3afe -- src tests docs/API.md
+  | docs/SEAM-INDEX.md` is EMPTY), so the differential transcript's CONTROL line naming
+  | `534189c` describes exactly the code that lands; the ledger conflict was resolved as a
+  | mechanical UNION (this row 46 first, then the dispatcher's rows 47-48 verbatim —
+  | `git diff f4ee41c..HEAD -- docs/DECISION-LEDGER.md docs/BOARD.md` is insertions only,
+  | 0 deletions).
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 11 test files ·
+  | 92 tests · 2.00s · raw log `.gate-logs/gate.log`; no memory ceiling needed (GUARD g3 still
+  | open and still honest). The DISPATCHER's independent gate and its own arms are OWED.
+  | arms=checkpoints/key-lifecycle-differential.sh, the gate lock held across BOTH arms, sha256
+  | printed before and after, restore from HEAD in an EXIT/INT/TERM trap, a control BEFORE and
+  | AFTER, raw transcript checkpoints/key-lifecycle-differential.out (key-shaped strings
+  | scrubbed — ledger row 21):
+  |   A `GET /keys` INCLUDES THE HASH (a `hash` field added to every entry), src/server/app.ts
+  |     d8a056dc…b86ef → fd7f35a8…73df, RED on `PIN L1: GET /keys is admin-only and returns NO
+  |     key material` — `expected '{"keys":…}' not to contain '<sha256>'`; L2-L6 stayed GREEN.
+  |   B the REVOKE SCOPE RULES are IGNORED (`if ((false as boolean)) {`), src/server/app.ts
+  |     d8a056dc…b86ef → 0be47025…bbd5, RED on `PIN L4: a scoped admin cannot revoke outside its
+  |     own scope, and cannot revoke a master key` — `expected 200 to be 403`; L1/L2/L3/L5/L6
+  |     stayed GREEN. Arm B's FIRST draft (a literal `&& false`) broke the TYPECHECK (TS18047
+  |     'target' is possibly 'null'), so it proved "the tree does not compile" rather than "L4
+  |     sees the missing boundary"; the arm was made surgical and the harness now FAILS an arm
+  |     whose cheap tier carries `error TS`. The discarded draft is recorded in docs/TESTING.md.
+  |   both controls GREEN (11 files · 92 tests), app.ts back at d8a056dc…b86ef. The two arms
+  |     carry DIFFERENT hashes from the SAME before-hash. No VOID probe.
+  | what it is=the key lifecycle is self-service (ledger row 46). `GET /keys` is admin-only and
+  |   returns, per key, `id`, `label`, `stores`, `prefix`, `perms`, `createdAt`, `expiresAt`,
+  |   `lastUsedAt`, `revokedAt` — NO raw key, NO secret, NO `sha256`; revoked keys are INCLUDED
+  |   (`revoked_at` set) so the inventory is the audit view; NO PAGINATION, stated rather than
+  |   left unstated. A master sees every key; a store-scoped admin sees only keys whose scope
+  |   lies inside its own set. `POST /keys/:id/revoke` is idempotent via `revokeKey()` and reports
+  |   `{id, revokedAt, changed}` — `revokedAt` read back from the ROW, never the clock, so a second
+  |   call reports `changed:false` and the timestamp cannot move; an unknown id is `404`. A master
+  |   may revoke any key (including another master's); a store-scoped admin only keys it could have
+  |   minted (scope inside its set, never one holding `admin`); SELF-REVOCATION is ALLOWED
+  |   deliberately (the caller's own credential, the one case exempt from the scope rules) and
+  |   takes effect on the NEXT request.
+  | what it does NOT add=a second authorization path. `Auth.requireAdmin(action)` is the row-39
+  |   predicate with the action in its message, and `Auth.holdsStores(stores)` is the ONE
+  |   scope-containment predicate the mint boundary, the list filter and the revoke boundary all
+  |   route through (the mint branch's inline check was REPLACED by a call, not copied).
+  |   `listKeys()` in `src/core/keys.ts` is the read seam: two queries whatever the population,
+  |   ordered `created_at, id`.
+  | prefix=RETURNED, and why: it is `ssk_` + the first 8 chars of the already-public `id`, so the
+  |   secret (which starts after the id) contributes no byte; returning it lets a console show the
+  |   mint-time handle without re-deriving the rendering. `GET /whoami` still returns no prefix.
+  | wire format=`{error:{code,message}}` unchanged; NO new error code, TWO new routes
+  |   (`GET /keys`, `POST /keys/:id/revoke`), so docs/API.md was amended in the SAME commit as the
+  |   code and pins A1-A3 stay green (11 files · 92 tests, tests/api-doc.test.ts 3/3).
+  | docs=docs/DECISION-LEDGER.md row 46 · docs/SEAM-INDEX.md (the lifecycle seam: where listing and
+  |   revocation live, the ONE scope predicate, the row-33 revoke finding CLOSED, the route-count
+  |   prose de-numbered) · docs/TESTING.md (L1-L6, both arms with their hashes, the prefix decision,
+  |   and four new honest unknowns) · docs/API.md (both routes, the scope rules, the prefix
+  |   decision, no pagination, the self-revocation warning, the non-goals) · this board.
+  | COPIES: 1→1 — the scope-containment predicate is DEFINED ONCE (`Auth.holdsStores`) and now
+  |   carries three call sites (mint boundary, list filter, revoke boundary); the mint branch's
+  |   inline `ALL_STORES`/array check was replaced by a call to it rather than copied. Grepped:
+  |   "holdsStores", "spansStores", "requireAdmin", "listKeys", "findKeyById", "revokeKey",
+  |   "describeStores".
+  | GUARD g5 APPLIES: this landing touches `src/`, so the live service is still running the B1
+  |   code — the DISPATCHER must restart the unit and re-run `scripts/probe-live.sh
+  |   https://store.futuremagic.de` before the owner relies on the routes.
+  | retired=none yet. The worktree worktrees/key-lifecycle and branch feat/key-lifecycle are the
+  | dispatcher's to retire after ITS OWN verification; this writer does not retire itself.
+
 LANDED | row=42 | sha=e4d12b4 (the VERIFIED CODE tip: `src/core/db.ts`, `src/core/keys.ts`,
   | `src/core/validate.ts`, `src/core/types.ts`, `src/core/errors.ts`, `src/server/app.ts`,
   | `src/admin/mint-key.ts`, `tests/keys.test.ts`, `tests/helpers/server.ts`, plus

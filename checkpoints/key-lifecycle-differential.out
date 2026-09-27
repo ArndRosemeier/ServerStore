@@ -1,0 +1,55 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (534189c) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/key-lifecycle/.diff-harness/control)
+  control GREEN:  Test Files  11 passed (11)       Tests  92 passed (92) 
+=== ARM A — GET /keys INCLUDES THE HASH (the inventory carries key material) ===
+  file:   src/server/app.ts
+  sha256: d8a056dcb80bd7212c72a8d52c8bf6584bb0e90917c2bd84200aa029204b86ef  (before)
+  sha256: fd7f35a8bef37927ce5ca1a272a405923c2a63a2537cfe1817a75d4661ff73df  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/key-lifecycle/.diff-harness/arm-a)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/key-lifecycle/.diff-harness/arm-a/full.log
+     × PIN L1: GET /keys is admin-only and returns NO key material 17ms
+     ✓ PIN L2: a scoped admin lists only the keys inside its own stores — and a master lists all 9ms
+     ✓ PIN L3: a revoked key is refused on the NEXT request — 401, with no restart 8ms
+     ✓ PIN L4: a scoped admin cannot revoke outside its own scope, and cannot revoke a master key 11ms
+     ✓ PIN L5: revoke is idempotent — the second call says changed: false and the timestamp does not move 6ms
+     ✓ PIN L6: an unknown key id is 404, and a key may revoke ITSELF (recorded deliberately) 8ms
+ ✓ tests/objects.test.ts (16 tests) 260ms
+--
+ FAIL  tests/keys.test.ts > keys: the key LIFECYCLE (pin L1-L6) > PIN L1: GET /keys is admin-only and returns NO key material
+AssertionError: expected '{"keys":[{"id":"0Wq75xJjDo6Z","label"…' not to contain 'ca710b5f954d8d865b281470e022337d7314e…'
+
+Expected: "ca710b5f954d8d865b281470e022337d7314e202e01fe85d35d58b4cb295c88f"
+Received: "{"keys":[{"id":"0Wq75xJjDo6Z","label":"fixture","stores":["*"],"prefix":"ssk_<redacted>","hash":"ca710b5f954d8d865b281470e022337d7314e202e01fe85d35d58b4cb295c88f","perms":["admin"],"createdAt":"2026-01-01T00:00:00.000Z","expiresAt":null,"lastUsedAt":"2026-01-01T00:00:00.000Z","revokedAt":null},{"id":"5ynASb_Vuq9g","label":"unlabelled","stores":["alpha"],"prefix":"ssk_<redacted>","hash":"2fc4377a01f54437741e5ca386dde1186048927943ee056884e7840ecb61e4b5","perms":["read"],"createdAt":"2026-01-01T00:00:00.000Z","expiresAt":null,"lastUsedAt":"2026-01-01T00:00:00.000Z","revokedAt":null},{"id":"QGq8HyxaeKEh","label":"direct","stores":["alpha"],"prefix":"ssk_<redacted>","hash":"629e554e08801a187a78e66ec92f087c42891987a69b8b852cc4affbb74d07ee","perms":["read"],"createdAt":"2026-01-01T00:00:00.000Z","expiresAt":null,"lastUsedAt":null,"revokedAt":null},{"id":"tk1pjCL2DtiV","label":"player-1","stores":["alpha"],"prefix":"ssk_<redacted>","hash":"e0c9b77ef0b4e542fc3e8de058843481589d40ee40ac51399e2da92c10a2f9ae","perms":["read"],"createdAt":"2026-01-01T00:00:00.000Z","expiresAt":null,"lastUsedAt":null,"revokedAt":null}]}"
+
+RESTORED: src/server/app.ts back at HEAD; lock released
+=== ARM B — the REVOKE scope rules are IGNORED (a scoped admin may revoke anything) ===
+  file:   src/server/app.ts
+  sha256: d8a056dcb80bd7212c72a8d52c8bf6584bb0e90917c2bd84200aa029204b86ef  (before)
+  sha256: 0be47025d5b601727a479a9abd282a204347f3fc1ea09cc3277caf35cf4bbbd5  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/key-lifecycle/.diff-harness/arm-b)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/key-lifecycle/.diff-harness/arm-b/full.log
+     × PIN L4: a scoped admin cannot revoke outside its own scope, and cannot revoke a master key 15ms
+     ✓ PIN L5: revoke is idempotent — the second call says changed: false and the timestamp does not move 6ms
+     ✓ PIN L6: an unknown key id is 404, and a key may revoke ITSELF (recorded deliberately) 8ms
+ ✓ tests/objects.test.ts (16 tests) 252ms
+ ✓ tests/entrypoint.test.ts (4 tests) 819ms
+ ✓ tests/admin-key.test.ts (6 tests) 1746ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+--
+ FAIL  tests/keys.test.ts > keys: the key LIFECYCLE (pin L1-L6) > PIN L4: a scoped admin cannot revoke outside its own scope, and cannot revoke a master key
+AssertionError: expected 200 to be 403 // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: src/server/app.ts back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/key-lifecycle/.diff-harness/control2)
+  control GREEN:  Test Files  11 passed (11)       Tests  92 passed (92) 
+  sha256: d8a056dcb80bd7212c72a8d52c8bf6584bb0e90917c2bd84200aa029204b86ef  (back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN L1 (the listing leaked the hash); arm B RED on PIN L4 (the revoke scope rules were ignored); both controls GREEN. No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/key-lifecycle/.diff-harness/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/key-lifecycle/checkpoints/key-lifecycle-differential.out
+RESTORED: src/server/app.ts back at HEAD; lock released
