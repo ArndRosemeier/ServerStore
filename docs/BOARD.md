@@ -53,13 +53,25 @@ reconciled: bec97e1 · 2026-09-27T22:05Z — the gated tree tip of the row-26 la
   rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight; slices 1-3 verified and retired; DEPLOYMENT is next
+  | state=ONE writer in flight (slice 4, row 27: the deployment); slices 1-3 verified and retired
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after the slice-3 landing: lock
   |   free, 0 suite processes, 0 browser processes (the ~30 orphaned Imager Chrome trees seen
   |   earlier are gone from the box).
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
+
+IN-FLIGHT | row=27 | writer=session-726acea8-2fbf-4187-9d0d-a2d9298c6f18 | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/deploy | branch=feat/deploy
+  | base=fd87cbd | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 2026-09-27T20:05:01Z, no commit yet | brief=docs/briefs/slice-4-deployment.md
+  | note=the PROCESS contract: the real entrypoint spawned as a test (bounded wait ≤5s,
+  |   trap-killed, loopback-only bind asserted from /proc/net/tcp or ss, no silent skip), a
+  |   systemd --user unit with absolute paths and NO configurable bind host, scripts/probe-live.sh
+  |   (healthz 200 + unauthenticated 401, never a key), and docs/DEPLOYMENT.md carrying the ONE
+  |   ingress line, the RESTART WARNING (TRAP t1), the owner's master-key step and the rollback.
+  |   The writer installs NOTHING: host changes are the dispatcher's, and the tunnel restart needs
+  |   the owner at that moment.
 
 (The slice-3 writer is RETIRED: slice 3 LANDED, was verified by the dispatcher, and its worktree
 worktrees/tripwire, branch feat/tripwire (fully merged) and session ebb420aa… are gone. No writer
