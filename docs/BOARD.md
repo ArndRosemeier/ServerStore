@@ -58,10 +58,10 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (B2, row 46: key listing + the REVOKE route). LIVE at
-  |   https://store.futuremagic.de running main@5ae13b4 (restarted 23:05:03) with the B1 schema;
-  |   EXACTLY ONE live admin key (the owner's; the two stray ones are revoked — row 45); keyless
-  |   probe PASS exit 0; loopback only. After B2: step C (the admin UI), then rate limiting.
+  | state=DEPLOYED and CURRENT: main@5217cec, service restarted with B2 (key listing + revoke) and
+  |   re-probed — live probe PASS exit 0, and /keys, /keys/:id/revoke and /whoami answer 401 (they
+  |   exist and want a key). EXACTLY ONE live admin key (the owner's). NO writer in flight;
+  |   NEXT = C1, the ADMIN UI the owner asked for (row 47/48: same origin, no build).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -437,15 +437,11 @@ RED on PIN G3 and PIN G5), its worktree worktrees/key-stores, branch feat/key-st
 c596e5cf… are RETIRED, and the LIVE service was restarted to it at 23:05:03 with the schema
 migration inspected on the real database (GUARD g5). A key may now be scoped to a SET of stores.)
 
-IN-FLIGHT | row=46 | writer=session-a5bcf77c-b4db-4a80-a6ae-46cda92ebea0 | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/key-lifecycle | branch=feat/key-lifecycle
-  | base=12f3061 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 21:08Z, no commit yet | brief=docs/briefs/slice-9-key-lifecycle.md
-  | note=STEP B2: `GET /keys` (admin-only; id, label, stores, perms, timestamps; NEVER the hash; a
-  |   scoped admin sees only its own stores' keys) and `POST /keys/:id/revoke` (idempotent; a scoped
-  |   admin may revoke only what it could have minted, never a master key; self-revocation allowed
-  |   and documented). Pins L1-L6; arms in OPPOSITE directions (list leaks the hash -> L1 red; revoke
-  |   ignores the scope rules -> L4 red). This is what row 45 had to do by hand.
+(B2 is CLOSED: verified by the dispatcher (row 50 — gate 11 files / 92 tests / 2.04s; arm X took out
+FOUR pins across three features by mutating the ONE containment predicate, arm Y confirmed L4 covers
+the peer-admin rule), its worktree worktrees/key-lifecycle, branch feat/key-lifecycle and session
+a5bcf77c… are RETIRED, and the LIVE service was restarted to it and re-probed under GUARD g5. The key
+lifecycle — list and revoke — is now available over HTTP.)
 
 (The row=39 landing (B0.1: only an admin key may mint) is recorded in the LANDED row=39
 block above; its worktree worktrees/mint-admin and branch feat/mint-admin are the
@@ -636,6 +632,7 @@ retired_branch=feat/api-doc
 retired_branch=feat/keys-subset
 retired_branch=feat/mint-admin
 retired_branch=feat/key-stores
+retired_branch=feat/key-lifecycle
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -643,10 +640,12 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-45 (19, 23, 27, 33, 36, 39 and 42 appended by writers,
-  |   out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
+  | decisions=docs/DECISION-LEDGER.md rows 1-50 (19, 23, 27, 33, 36, 39, 42 and 46 appended by
+  |   writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 44 = B1 verified with the live migration
-  |   inspected, 45 = the two stray master keys revoked)
+  |   inspected, 45 = the stray master keys revoked, 47/48 = the owner wants the admin UI (forks
+  |   settled), 50 = B2 verified with the shared predicate's three call sites; row 49 is C1's,
+  |   reserved)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -660,6 +659,19 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=50 | sha=5217cec (the B2 tip; pulled, restarted and re-probed BEFORE my own gate, per
+  | GUARD g5)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 11 files · 92 tests ·
+  | 2.04s. Arms, neither of them the writer's: X neutered the ONE containment predicate
+  | (`holdsStores` -> true) → FOUR pins fell across THREE features (M3 and G2 at the mint boundary,
+  | L2 at the listing filter, L4 at the revoke boundary); Y removed the peer-admin half of the
+  | revoke rule → L4 fell (200 vs 403), so that rule IS pinned. LIVE: restarted to B2, probe PASS,
+  | and /keys, /keys/:id/revoke, /whoami all answer 401 (registered, key required).
+  | MY OWN ERROR: the harness's "which pins fell" metric matched pin names in the PASSING tree too;
+  | verdicts were read from the FAIL lines and the metric is fixed.
+  | retired=worktree worktrees/key-lifecycle · branch feat/key-lifecycle · session a5bcf77c…
+  | docs=ledger row 50 · this board.
+
 LANDED | row=45 | sha=93de802 (the record commit) | verify=MY OWN, on the LIVE database: the two
   | unused master keys read back as revoked (`revoked_at` set) and the owner's key as untouched;
   | no restart needed, checked in the code (resolution reads `revoked_at` per request; `keys.ts`
