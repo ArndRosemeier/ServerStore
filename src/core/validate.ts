@@ -1,0 +1,144 @@
+/**
+ * Boundary validation. Names are PARSED, never sanitised.
+ *
+ * The rule (brief §11): a name matching `[a-z0-9][a-z0-9._-]{0,63}` is accepted;
+ * everything else — including `..`, a leading `/` or a leading `.`, uppercase, a
+ * slash, a traversal segment — is REFUSED with a named 400 code. Nothing is
+ * silently rewritten into a "safer" name; a refused name has no path at all.
+ *
+ * Both store names and object names use this one parser, so a second naming rule
+ * cannot drift in beside the first.
+ */
+
+import { StoreError } from "./errors.ts";
+import { PERMISSIONS, STORE_KINDS, type Permission, type StoreKind } from "./types.ts";
+
+/** 64 characters total: the leading char plus 0-63 more. */
+export const NAME_MAX_LENGTH = 64;
+
+const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+export type NameKind = "store name" | "object name" | "key id";
+
+/**
+ * Parse a name from the wire against the explicit schema. Throws 400 on refusal.
+ *
+ * The refused set is precise, and each refusal has a reason:
+ *   - empty, non-string, over 64 chars, or outside `[a-z0-9][a-z0-9._-]{0,63}`;
+ *   - `.` or `..` as the WHOLE name (path semantics, not a name);
+ *   - a leading `/` (a path) or a leading `.` (hidden-file convention).
+ *
+ * `a..b` is NOT a traversal segment and is accepted: refusing every name that
+ * contains two dots would refuse legal data to leave a hole that the segment rules
+ * already close.
+ */
+export function parseName(raw: unknown, what: NameKind): string {
+  if (typeof raw !== "string" || raw.length === 0) {
+    throw new StoreError("invalid_name", `${what} is required and must be a non-empty string`);
+  }
+  if (raw === "." || raw === "..") {
+    throw new StoreError("invalid_name", `${what} may not be '.' or '..'`);
+  }
+  if (raw.startsWith("/") || raw.startsWith(".")) {
+    throw new StoreError("invalid_name", `${what} may not start with '/' or '.'`);
+  }
+  if (raw.length > NAME_MAX_LENGTH) {
+    throw new StoreError("invalid_name", `${what} may be at most ${NAME_MAX_LENGTH} characters`);
+  }
+  if (!NAME_PATTERN.test(raw)) {
+    throw new StoreError(
+      "invalid_name",
+      `${what} must match [a-z0-9][a-z0-9._-]{0,63}; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw;
+}
+
+/** Parse a store name (the label used in error messages). */
+export function parseStoreName(raw: unknown): string {
+  return parseName(raw, "store name");
+}
+
+/** Parse an object name. */
+export function parseObjectName(raw: unknown): string {
+  return parseName(raw, "object name");
+}
+
+/** The one scope value that is not a store name: `*` means every store. */
+export const ALL_STORES = "*";
+
+/**
+ * Parse a key SCOPE: a store name, or `*` for a master key.
+ *
+ * `*` is a scope, not a name — it must never reach the name parser (which would
+ * refuse it as invalid and turn a permissions decision into a 400).
+ */
+export function parseStoreScope(raw: unknown): string {
+  if (raw === ALL_STORES) return ALL_STORES;
+  return parseStoreName(raw);
+}
+
+/** Refuse a path that carries a traversal segment anywhere, before any routing. */
+export function assertNoTraversalSegments(path: string): void {
+  for (const segment of path.split("/")) {
+    if (segment === ".." || segment === ".") {
+      throw new StoreError("invalid_name", `path may not contain a '${segment}' segment`);
+    }
+  }
+}
+
+/** Parse a store kind against the explicit list. */
+export function parseStoreKind(raw: unknown): StoreKind {
+  if (typeof raw !== "string" || !(STORE_KINDS as readonly string[]).includes(raw)) {
+    throw new StoreError(
+      "bad_request",
+      `store kind must be one of: ${STORE_KINDS.join(", ")}; got ${JSON.stringify(raw)}`,
+    );
+  }
+  return raw as StoreKind;
+}
+
+/** Parse a permission list from a JSON body. A non-array or unknown entry is a 400. */
+export function parsePermissions(raw: unknown): Permission[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new StoreError("bad_request", "perms must be a non-empty array of permissions");
+  }
+  const seen = new Set<Permission>();
+  for (const entry of raw) {
+    if (typeof entry !== "string" || !(PERMISSIONS as readonly string[]).includes(entry)) {
+      throw new StoreError(
+        "bad_request",
+        `unknown permission ${JSON.stringify(entry)}; allowed: ${PERMISSIONS.join(", ")}`,
+      );
+    }
+    seen.add(entry as Permission);
+  }
+  return PERMISSIONS.filter((perm) => seen.has(perm));
+}
+
+/** Parse a permissions string as stored in SQLite (`read,write`). */
+export function parseStoredPermissions(raw: string): Permission[] {
+  const out: Permission[] = [];
+  for (const entry of raw.split(",")) {
+    if (entry.length === 0) continue;
+    if (!(PERMISSIONS as readonly string[]).includes(entry)) {
+      // A row that cannot be parsed is a LOUD failure, never an empty grant.
+      throw new StoreError("internal", `database holds unknown permission ${JSON.stringify(entry)}`);
+    }
+    out.push(entry as Permission);
+  }
+  return out;
+}
+
+/** Parse an optional ISO expiry timestamp from a JSON body. */
+export function parseExpiresAt(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string") {
+    throw new StoreError("bad_request", "expiresAt must be an ISO-8601 string or null");
+  }
+  const millis = Date.parse(raw);
+  if (Number.isNaN(millis)) {
+    throw new StoreError("bad_request", `expiresAt is not a parseable timestamp: ${raw}`);
+  }
+  return new Date(millis).toISOString();
+}

@@ -12,13 +12,23 @@ import { describe, expect, test } from "vitest";
  * gate's exit codes are the vocabulary every report quotes. Both rot silently —
  * deleting a line of documentation changes no behaviour — so they are pinned here.
  * Each test's NAME says what it protects.
+ *
+ * Renamed from `tests/process/gate-contract.test.ts` when the feature slice landed;
+ * the suite is one directory (`tests/**`) so there is one fixture set, not two.
  */
 
-const REPO = fileURLToPath(new URL("../../", import.meta.url));
+const REPO = fileURLToPath(new URL("../", import.meta.url));
 const GATE = join(REPO, "scripts", "gate.sh");
 const BOARD = join(REPO, "scripts", "board.sh");
+const TSCONFIG = join(REPO, "tsconfig.json");
 
 describe("the process machinery this repo depends on", () => {
+  test("the cheap tier typechecks the SOURCE tree, not only the tests", () => {
+    const config = JSON.parse(readFileSync(TSCONFIG, "utf8")) as { include?: string[] };
+    expect(config.include ?? []).toContain("src/**/*.ts");
+    expect(config.include ?? []).toContain("tests/**/*.ts");
+  });
+
   test("the gate documents its exit-code vocabulary (0 green · 1 red · 2 cheap · 9 refused)", () => {
     const source = readFileSync(GATE, "utf8");
     const vocabulary = [
