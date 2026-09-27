@@ -20,6 +20,10 @@ const app = createApp({
   dataRoot: config.dataRoot,
   dbPath: config.dbPath,
   maxBytes: config.maxBytes,
+  // The CORS allowlist reaches the app as an ARGUMENT, never through `process.env`:
+  // which origins this process answers is decided once, here, from `resolveConfig()`
+  // (ledger row 57).
+  corsOrigins: config.corsOrigins,
 });
 
 console.log(

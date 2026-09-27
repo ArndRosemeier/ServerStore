@@ -41,6 +41,11 @@ export interface CreateServerOptions {
   readonly maxBytes?: number;
   readonly dataRoot?: string;
   /**
+   * The CORS allowlist this app answers (ledger row 57). Omitted means the same thing
+   * an unset `SERVERSTORE_CORS_ORIGINS` means to `resolveConfig()`: `["*"]`.
+   */
+  readonly corsOrigins?: readonly string[];
+  /**
    * Stores to create in a LEGACY database before the migrated key rows that name
    * them. Only meaningful together with `legacyKeys`.
    */
@@ -96,12 +101,14 @@ function build(deps: {
   clock: { value: number };
   maxBytes: number;
   legacyKeys: readonly string[];
+  corsOrigins?: readonly string[];
 }): TestServer {
   const app = createApp({
     dataRoot: deps.dataRoot,
     dbPath: deps.dbPath,
     now: () => deps.clock.value,
     maxBytes: deps.maxBytes,
+    corsOrigins: deps.corsOrigins,
   });
 
   const bearer = (key?: string): Record<string, string> | undefined =>
@@ -290,6 +297,7 @@ export function createTestServer(options: CreateServerOptions = {}): TestServer 
     clock,
     maxBytes: options.maxBytes ?? 64 * 1024 * 1024,
     legacyKeys,
+    corsOrigins: options.corsOrigins,
   });
 }
 

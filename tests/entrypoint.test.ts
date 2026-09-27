@@ -22,6 +22,11 @@
  *   PIN D2: the entrypoint listens on 127.0.0.1 and NOT on 0.0.0.0
  *   PIN D3: an unauthenticated API call is refused 401 by the running service
  *   PIN D4: SIGTERM stops the service and leaves no child behind
+ *   PIN D7: the CORS allowlist the RUNNING service answers comes from
+ *           `SERVERSTORE_CORS_ORIGINS` (added by slice 12: the config parser is pinned
+ *           in `tests/cors.test.ts`, but only a spawned entrypoint proves `main.ts`
+ *           WIRES that config into `createApp` — ledger row 29's lesson that a pin must
+ *           see the wiring, not just the constant)
  *
  * Two rules from AGENTS.md §Host hygiene shape the machinery here:
  *
@@ -105,7 +110,7 @@ interface Spawned {
   cleanup(): void;
 }
 
-async function startEntrypoint(): Promise<Spawned> {
+async function startEntrypoint(extraEnv: Record<string, string> = {}): Promise<Spawned> {
   const port = await freePort();
   const dataRoot = mkdtempSync(join(tmpdir(), "serverstore-entrypoint-"));
   const child = spawn("node", ["--experimental-strip-types", ENTRYPOINT], {
@@ -114,6 +119,7 @@ async function startEntrypoint(): Promise<Spawned> {
       ...process.env,
       SERVERSTORE_PORT: String(port),
       SERVERSTORE_DATA_ROOT: dataRoot,
+      ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -276,7 +282,7 @@ function listenersOn(port: number): ListenAddress[] {
 
 // --- the pins --------------------------------------------------------------------
 
-describe("the real entrypoint, spawned as the service runs it (pins D1-D4)", () => {
+describe("the real entrypoint, spawned as the service runs it (pins D1-D4, D7)", () => {
   test(`PIN D1: the real entrypoint boots and serves ${HEALTHZ} from the repo's own start command`, async () => {
     const server = await startEntrypoint();
     try {
@@ -382,6 +388,39 @@ describe("the real entrypoint, spawned as the service runs it (pins D1-D4)", () 
         server.child.exitCode !== null || server.child.signalCode !== null,
         "the entrypoint is still running after SIGTERM",
       ).toBe(true);
+    } finally {
+      await server.stop().catch(() => undefined);
+      server.cleanup();
+    }
+  }, 15_000);
+
+  test("PIN D7: the running service's CORS allowlist comes from SERVERSTORE_CORS_ORIGINS", async () => {
+    const server = await startEntrypoint({ SERVERSTORE_CORS_ORIGINS: "https://game.example.com" });
+    try {
+      await waitForHealthz(server);
+      const base = `http://127.0.0.1:${server.port}`;
+      const preflight = async (origin: string): Promise<Response> =>
+        fetch(`${base}/stores`, {
+          method: "OPTIONS",
+          headers: { origin, "access-control-request-method": "PATCH" },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+
+      const listed = await preflight("https://game.example.com");
+      const listedOrigin = listed.headers.get("access-control-allow-origin");
+      expect(
+        listed.status === 204 && listedOrigin === "https://game.example.com",
+        `expected 204 echoing the listed origin, got ${listed.status} Allow-Origin=${listedOrigin}\n--- child output ---\n${server.output()}`,
+      ).toBe(true);
+      expect(listed.headers.get("vary")).toMatch(/(^|,\s*)Origin(\s*,|$)/i);
+
+      const unlisted = await preflight("https://evil.example.com");
+      expect(
+        unlisted.headers.get("access-control-allow-origin"),
+        `an unlisted origin was authorised by the running service\n--- child output ---\n${server.output()}`,
+      ).toBeNull();
+      // It falls through to the key guard; the browser, not the API, is what blocks it.
+      expect(unlisted.status).toBe(401);
     } finally {
       await server.stop().catch(() => undefined);
       server.cleanup();

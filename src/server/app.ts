@@ -32,11 +32,24 @@ import {
 } from "../core/validate.ts";
 import { ALL_STORES, type Permission, type AccessKeyRecord } from "../core/types.ts";
 import { UI_ASSETS, readUiAsset } from "./assets.ts";
-import { DEFAULT_MAX_BYTES, DEFAULT_HOST, DEFAULT_PORT } from "./config.ts";
+import { DEFAULT_MAX_BYTES, DEFAULT_HOST, DEFAULT_PORT, CORS_WILDCARD } from "./config.ts";
 import { createStore, ensureMasterStore, listStores, requireStore } from "../stores/registry.ts";
 import { handlerFor } from "../storage/kinds.ts";
 
 export { DEFAULT_HOST, DEFAULT_MAX_BYTES, DEFAULT_PORT };
+
+/**
+ * The CORS surface (ledger row 57). These four values ARE the contract a browser
+ * sees, so they are named once here and pinned by name in `tests/cors.test.ts`.
+ *
+ * `authorization` is spelled out because the `Access-Control-Allow-Headers: *`
+ * wildcard does NOT cover it — a preflight that names only `*` silently fails to
+ * authorise the very header this API authenticates with.
+ */
+const CORS_ALLOW_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+const CORS_ALLOW_HEADERS = "authorization, x-api-key, content-type";
+const CORS_EXPOSE_HEADERS = "x-serverstore-sha256";
+const CORS_MAX_AGE_SECONDS = 600;
 
 export interface AppDependencies {
   /** Root of every store's bytes. Lives OUTSIDE the repo (ledger row 13). */
@@ -47,6 +60,13 @@ export interface AppDependencies {
   readonly now?: () => number;
   /** Body size cap. An over-cap body fails the request; it is never truncated. */
   readonly maxBytes?: number;
+  /**
+   * The CORS allowlist (ledger row 57). `[CORS_WILDCARD]` — the default, and what an
+   * unset `SERVERSTORE_CORS_ORIGINS` resolves to — answers any origin, which is safe
+   * here because the API uses no cookies and no ambient credentials: the key is an
+   * explicit header.
+   */
+  readonly corsOrigins?: readonly string[];
 }
 
 export interface AppContext {
@@ -244,6 +264,7 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     dbPath: dependencies.dbPath,
     now: dependencies.now ?? (() => Date.now()),
     maxBytes: dependencies.maxBytes ?? DEFAULT_MAX_BYTES,
+    corsOrigins: dependencies.corsOrigins ?? [CORS_WILDCARD],
   };
   const db = openDatabase(deps.dbPath);
   ensureMasterStore(db, deps.now);
@@ -263,6 +284,72 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
   app.use("*", async (c, next) => {
     assertNoTraversalSegments(rawPathname(c.req.raw));
     await next();
+  });
+
+  /**
+   * CORS — registered BEFORE the key guard, and that ORDER is the whole reason this
+   * step exists (ledger rows 56, 57). The guard matches EVERY path before routing, so
+   * an `OPTIONS` preflight that reached it would be answered `401` and a browser on
+   * another origin could never send the real request; an edge rule cannot fix that,
+   * because a preflight needs a 2xx the origin owns. A preflight is therefore answered
+   * HERE, with no key, and never reaches the guard. Every other request walks the
+   * pipeline unchanged and gets its CORS headers on the way out.
+   *
+   * A DISALLOWED origin gets NO `Access-Control-Allow-Origin` and is NOT refused: CORS
+   * is a browser-READ control, not the API perimeter (ledger row 21). `curl` ignores
+   * it, and the key guard behind this step is what refuses an unkeyed call — so the
+   * response is the guard's own 401, not a 403 invented here.
+   *
+   * `Access-Control-Allow-Credentials` is NEVER sent, on any response (pin O4): there
+   * are no cookies in this API and there must never appear to be.
+   */
+  app.use("*", async (c, next) => {
+    const origin = c.req.header("origin");
+    const wildcard = deps.corsOrigins.includes(CORS_WILDCARD);
+    // The value to echo: `*` under the wildcard policy, the CONCRETE origin when an
+    // allowlist is in use (a browser needs an exact match once credentials — or any
+    // origin-dependent answer — is in play), or `null` when this policy does not
+    // answer for the caller's origin.
+    const allowedOrigin =
+      origin === undefined
+        ? null
+        : wildcard
+          ? CORS_WILDCARD
+          : deps.corsOrigins.includes(origin)
+            ? origin
+            : null;
+    const isPreflight =
+      c.req.method.toUpperCase() === "OPTIONS" &&
+      c.req.header("access-control-request-method") !== undefined;
+
+    if (isPreflight) {
+      if (allowedOrigin === null) {
+        // Fall through to the normal pipeline, which answers 401 without a key and
+        // carries no allow-origin header. Deliberately NOT a 403: the browser is the
+        // party that blocks this, and the API never refuses a caller over CORS.
+        await next();
+        return;
+      }
+      const headers: Record<string, string> = {
+        "access-control-allow-origin": allowedOrigin,
+        "access-control-allow-methods": CORS_ALLOW_METHODS,
+        "access-control-allow-headers": CORS_ALLOW_HEADERS,
+        "access-control-max-age": String(CORS_MAX_AGE_SECONDS),
+        "access-control-expose-headers": CORS_EXPOSE_HEADERS,
+      };
+      if (!wildcard) headers.vary = "Origin";
+      return c.body(null, 204, headers);
+    }
+
+    await next();
+    if (allowedOrigin !== null) {
+      c.res.headers.set("access-control-allow-origin", allowedOrigin);
+    }
+    // `Vary: Origin` whenever the ANSWER depends on the origin — i.e. whenever an
+    // allowlist is in use. Under the `*` policy the answer is identical for every
+    // origin, so the header would only fragment a cache for nothing.
+    if (!wildcard) appendVary(c.res.headers, "Origin");
+    c.res.headers.set("access-control-expose-headers", CORS_EXPOSE_HEADERS);
   });
 
   const guard = async (c: Context<{ Variables: Variables }>, next: () => Promise<void>) => {
@@ -734,6 +821,24 @@ const TRAVERSAL_ENCODED = /(^|\/)(%2e%2e|%2e)(\/|$)/i;
 function refusalResponse(): Response {
   const error = new StoreError("invalid_name", "path may not contain a '.' or '..' segment");
   return Response.json(errorBody(error.code, error.message), { status: error.status });
+}
+
+/**
+ * Add one name to a response's `Vary`, without ever OVERWRITING one already there.
+ *
+ * A `Vary` is a list: `headers.set("vary", "Origin")` on a response that already
+ * varies by something else would drop that other dimension and let a cache serve the
+ * wrong body. This app sets no other `Vary` today; the append is what keeps this
+ * step from becoming the second place that forgets.
+ */
+function appendVary(headers: Headers, value: string): void {
+  const existing = headers.get("vary");
+  if (existing === null) {
+    headers.set("vary", value);
+    return;
+  }
+  const names = existing.split(",").map((name) => name.trim().toLowerCase());
+  if (!names.includes(value.toLowerCase())) headers.set("vary", `${existing}, ${value}`);
 }
 
 /** Read a JSON object body under the cap. A non-object or bad JSON is a 400. */
