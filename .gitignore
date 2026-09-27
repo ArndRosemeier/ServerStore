@@ -5,3 +5,5 @@ dist/
 .env
 .env.*
 data/
+/.gate-logs/
+/.gate-lock/
