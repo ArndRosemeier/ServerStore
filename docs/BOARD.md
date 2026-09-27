@@ -58,10 +58,10 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=LIVE at https://store.futuremagic.de, running main@5ae13b4 (restarted 2026-09-27 23:05:03)
-  |   with the B1 schema. EXACTLY ONE live admin key (the owner's; the two unused ones are revoked —
-  |   row 45). Keyless probe PASS exit 0; loopback only. NO writer in flight; NEXT = B2 (key listing
-  |   + the REVOKE route), then C (the admin UI).
+  | state=ONE writer in flight (B2, row 46: key listing + the REVOKE route). LIVE at
+  |   https://store.futuremagic.de running main@5ae13b4 (restarted 23:05:03) with the B1 schema;
+  |   EXACTLY ONE live admin key (the owner's; the two stray ones are revoked — row 45); keyless
+  |   probe PASS exit 0; loopback only. After B2: step C (the admin UI), then rate limiting.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -364,6 +364,16 @@ index.)
 RED on PIN G3 and PIN G5), its worktree worktrees/key-stores, branch feat/key-stores and session
 c596e5cf… are RETIRED, and the LIVE service was restarted to it at 23:05:03 with the schema
 migration inspected on the real database (GUARD g5). A key may now be scoped to a SET of stores.)
+
+IN-FLIGHT | row=46 | writer=session-a5bcf77c-b4db-4a80-a6ae-46cda92ebea0 | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/key-lifecycle | branch=feat/key-lifecycle
+  | base=12f3061 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 21:08Z, no commit yet | brief=docs/briefs/slice-9-key-lifecycle.md
+  | note=STEP B2: `GET /keys` (admin-only; id, label, stores, perms, timestamps; NEVER the hash; a
+  |   scoped admin sees only its own stores' keys) and `POST /keys/:id/revoke` (idempotent; a scoped
+  |   admin may revoke only what it could have minted, never a master key; self-revocation allowed
+  |   and documented). Pins L1-L6; arms in OPPOSITE directions (list leaks the hash -> L1 red; revoke
+  |   ignores the scope rules -> L4 red). This is what row 45 had to do by hand.
 
 (The row=39 landing (B0.1: only an admin key may mint) is recorded in the LANDED row=39
 block above; its worktree worktrees/mint-admin and branch feat/mint-admin are the
