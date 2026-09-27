@@ -29,7 +29,7 @@ import {
   parseStoreName,
   parseStoreScope,
 } from "../core/validate.ts";
-import type { Permission, AccessKeyRecord } from "../core/types.ts";
+import { PERMISSIONS, type Permission, type AccessKeyRecord } from "../core/types.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_HOST, DEFAULT_PORT } from "./config.ts";
 import { createStore, ensureMasterStore, listStores, requireStore } from "../stores/registry.ts";
 import { handlerFor } from "../storage/kinds.ts";
@@ -69,6 +69,18 @@ class Auth {
 
   get spansStores(): boolean {
     return this.key.store === ALL_STORES;
+  }
+
+  /**
+   * The permissions this key is allowed to GRANT — the union the subset rule uses.
+   *
+   * `admin` implies every permission (the same implication `authorize()` applies to a
+   * single operation), so a master admin key may grant anything. This is the ONLY
+   * place the implication is spelled out for minting; a second copy of it is the
+   * defect AGENTS.md rule 4 exists to prevent.
+   */
+  get grantablePermissions(): readonly Permission[] {
+    return this.key.perms.includes("admin") ? PERMISSIONS : this.key.perms;
   }
 
   /** 403 unless the key carries `permission` for `store` (admin implies all). */
@@ -229,6 +241,21 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     } else if (targetStore !== auth.key.store) {
       // A scoped key can only ever mint within its own store.
       throw new StoreError("forbidden", `key is scoped to store ${JSON.stringify(auth.key.store)}`);
+    }
+    // THE PERMISSION BOUNDARY — the other half of the same authorization decision as
+    // the store boundary above. A key is the principal AND the limit (ledger rows 2 and
+    // 6): it may pass on what it holds, and may not mint a permission it does not have.
+    // `grantablePermissions` treats `admin` as implying every permission, so a master
+    // admin key still mints anything — the owner's bootstrap path. The check runs
+    // BEFORE anything is minted, so a refusal has no side effect at all.
+    const lacks = perms.filter((perm) => !auth.grantablePermissions.includes(perm));
+    if (lacks.length > 0) {
+      throw new StoreError(
+        "forbidden",
+        `key cannot grant ${lacks.map((perm) => `'${perm}'`).join(", ")}: it does not hold ${
+          lacks.length === 1 ? "that permission" : "those permissions"
+        }`,
+      );
     }
     const expiresAt = parseExpiresAt(body.expiresAt);
     const label = typeof body.label === "string" && body.label.trim() !== "" ? body.label : "unlabelled";
