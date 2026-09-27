@@ -150,7 +150,12 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
-LANDED | row=24 | sha=830a224 (TOOLBOX — a DIFFERENT repo: ~/projects/Toolbox, its main branch)
+LANDED | row=24 | external=830a224 — TOOLBOX, a DIFFERENT repo (~/projects/Toolbox, its main branch)
+  | NOTE the key is `external`, NOT the LANDED sha key: the reconciler requires every LANDED sha
+  | to be an ancestor of OUR origin/main, and a foreign commit correctly trips it. It did exactly
+  | that when this record was first written with a sha key — a TRUE POSITIVE against the
+  | dispatcher's own record, and the cleanest evidence yet that the row-15 fix works: it named the
+  | guilty sha instead of blaming the whole board, and it did not pass silently.
   | verify=MY OWN, in Toolbox: the new pin was RED against the pre-fix script (exit 1, on the
   | assertion that the reconciler must not say BOARD STALE) and GREEN with the fix —
   | npm test → 34 tests, 34 pass, 0 fail, exit 0; `git rev-parse HEAD origin/main` → both 830a224;
