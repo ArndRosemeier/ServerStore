@@ -1,0 +1,47 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across all arms)
+
+ARM A — break pin 6 (the seeded store is not named 'master')
+  file:   src/stores/registry.ts
+  sha256: 6e6c490de7ed51cd129065de40801c5845982bd65eebb9eed66f1450908182f7  (before)
+  sha256: fa46f254b4adc8ff9205bb6509e7bf6d318fd3b1a155339326d2d4cf8f1b4cec  (after injection)
+  tiers exit: 1 (1 = RED)
+  named pin RED: 2 line(s) in the log
+ FAIL  tests/core.test.ts > the store registry (ledger rows 5 and 10) > PIN 6: the master store exists after first boot, and a second boot does not duplicate it
+AssertionError: expected [ 'MASTER' ] to deeply equal [ 'master' ]
+
+- Expected
++ Received
+
+
+ARM B — break pin 5 (the raw key is written into the database beside its hash)
+  file:   src/core/keys.ts
+  sha256: 931f1c87d17a097f16be989f0587adb9c4995086953b16687fd75266a7c55d23  (before)
+  sha256: dab67ee601ebe87cb7bfa847b5cc542bf36e5868081017ac16eeb1226cf8efb2  (after injection)
+  tiers exit: 1 (1 = RED)
+  named pin RED: 2 line(s) in the log
+ FAIL  tests/objects.test.ts > the raw key is never stored (pin 5) > PIN 5: the presented key string never appears in the database file
+AssertionError: the master key must not be in serverstore.db: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+
+ARM C — break pin 3 (the revoked-key check is inverted)
+  file:   src/core/keys.ts
+  sha256: 931f1c87d17a097f16be989f0587adb9c4995086953b16687fd75266a7c55d23  (before)
+  sha256: ce1e32cb880a29b12fa6b187b3b5325b2caa96e5008c88f6e76853e8193b50e4  (after injection)
+  tiers exit: 1 (1 = RED)
+  named pin RED: 1 line(s) in the log
+ FAIL  tests/auth.test.ts > auth: revocation and expiry (pin 3) > PIN 3: A REVOKED key is refused 401
+AssertionError: expected 401 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: working tree back at 5cab3bd, lock released
+
+CONTROL — the restored tree, same lock still held
+  tiers exit: 0 (0 = GREEN)
+
+DIFFERENTIAL COMPLETE: 3 arms RED on their named pins, control GREEN.
+logs: /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-a.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-b.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-c.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/control.log

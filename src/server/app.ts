@@ -54,10 +54,18 @@ export interface AppContext {
 
 /** What a resolved key is allowed to do, and against which store. */
 class Auth {
-  constructor(
-    readonly key: AccessKeyRecord,
-    readonly ctx: AppContext,
-  ) {}
+  // NOT parameter properties (`constructor(readonly key: ...)`): Node 24 runs this
+  // file with `--experimental-strip-types`, which strips types but cannot transform
+  // them, and parameter properties are exactly the thing it refuses. The suite would
+  // still pass (vitest transpiles) while `pnpm run serve` died at import — so these
+  // are plain fields, assigned in the body.
+  readonly key: AccessKeyRecord;
+  readonly ctx: AppContext;
+
+  constructor(key: AccessKeyRecord, ctx: AppContext) {
+    this.key = key;
+    this.ctx = ctx;
+  }
 
   get spansStores(): boolean {
     return this.key.store === ALL_STORES;
