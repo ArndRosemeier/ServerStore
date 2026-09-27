@@ -550,6 +550,11 @@ QUEUE-CLOSED | row=45 | RESOLVED 2026-09-27: the two unused master admin keys ar
   `revokeKey()` (read back from the live database: two revoked, the owner's untouched), so the store
   holds exactly ONE live admin credential. No restart needed and that was checked in the code —
   resolution reads `revoked_at` per request. B2 makes this self-service.
+QUEUE | row=52 | C2 SCOPE SETTLED (owner): editing STAMPS the change (`updated_at` + the editing key's
+  id, two add-if-absent columns returned by `GET /keys`; a never-edited key says "never changed"),
+  and renaming is part of editing. Pins E1-E7, of which E6 is the one that must not be assumed:
+  editing does NOT change the key's value — the same raw key still authenticates. Deferred: editing
+  `expiresAt`, edit history, undo. C2 lands after C1 is verified (same files).
 QUEUE | row=51 | QUEUED BEHIND C1: C2 = NAMED, EDITABLE keys. `PATCH /keys/:id` taking any subset of
   `{label, stores, perms}`, with validation identical to mint and the same boundary (only an admin
   may edit; a scoped admin only within its own set and never `admin`; a REVOKED key is not editable
