@@ -50,25 +50,15 @@ reconciled: 2e44eaf · 2026-09-27T16:10Z — the gated landing commit, and now M
   which was LOCAL time mislabelled as Z — the dispatcher's error, corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=WAITING on ONE writer (slice 2, row 19) — dispatch is the only work in flight
+  | state=writer LANDED row 19; dispatcher verification of the pushed landing is OWED
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · load 0.6 · / has 506GB free
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
-  |   origin/main = a20fc95 and HEAD == origin/main: the first push landed and the board is
-  |   machine-verified. (Row 16's private `Store` repo is ORPHANED — nothing points at it.)
+  |   The row-19 landing is pushed to origin/main; the LANDED row below names its sha.
 
-IN-FLIGHT | row=19 | writer=session-b0fbcc08-9760-4545-bad0-1e5acd46d524 | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/core | branch=feat/core
-  | base=b60c716 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 2026-09-27T16:11Z, no commit yet | brief=docs/briefs/slice-2-core.md
-  | note=the multi-store core. The ONE seam: the request pipeline (resolve key -> authorize against
-  |   a named store -> dispatch to that store's storage). Hono app factory testable in-process via
-  |   app.request(); node:sqlite metadata (verified to load unflagged on Node 24); content-addressed
-  |   bytes under a data root OUTSIDE the repo; store registry with an idempotently seeded `master`
-  |   store; hashed scoped access keys returned once; local `pnpm run admin:key` bootstrap with NO
-  |   HTTP route that mints an admin key. Pins: 401 with no key, 403 across stores, revoked and
-  |   expired refused, byte-identical round-trip, THE RAW KEY ABSENT FROM THE DB FILE, idempotent
-  |   master seed, healthz needs no key, traversal and over-cap refused with named codes.
+(no IN-FLIGHT writers — the slice-2 writer LANDED its work on branch `feat/core` and
+pushed it; the LANDED row below is the record, and the dispatcher re-verifies before
+retiring the worktree and branch.)
 
 NOTE | tsconfig includes tests/ only. src/ arrives with the first FEATURE slice (the multi-store
   core); inventing a dead module now would be vanity, and the ledger records it as unproven.
@@ -126,16 +116,45 @@ GUARD | g4 | The suite lock is per-repo (`.gate-lock` at the git common dir). Ve
   | twice — the second run exits 9 and is VOID. It does NOT exclude a peer project's suite.
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
-  | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main = a20fc95)
+  | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main now carries the
+  |   row-19 landing, whose sha is the LANDED row below)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-14 | briefs=docs/BRIEF.md
+  | decisions=docs/DECISION-LEDGER.md rows 1-21 (19 appended last, out of order by design)
+  | briefs=docs/BRIEF.md + docs/briefs/ | seams=docs/SEAM-INDEX.md | tests=docs/TESTING.md
   | sessions=~/.dsh/sessions/--home-administrator-projects-ServerStore--
 ```
 
 ## Landed
 
 ```
+LANDED | row=19 | sha=9ddf8f8 (the verified CODE tip; this docs commit is its own sha) | THE MULTI-STORE CORE, writer session
+  | session-b0fbcc08-9760-4545-bad0-1e5acd46d524, worktree worktrees/core, branch feat/core, base
+  | b60c716 (rebased onto 659e503 before push).
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 6 test files ·
+  | 52 tests · ~2.0s · raw log .gate-logs/gate.log · peak load < 1, ~2s wall, no memory ceiling
+  | needed (GUARD g3 still open and still honest).
+  | arms=4 differential arms, lock held across all of them, hash printed before and after, restore
+  | in an EXIT/INT/TERM trap: A registry.ts 6e6c490d…→fa46f254… RED on PIN 6; B keys.ts
+  | 931f1c87…→dab67ee6… RED on PIN 5; C keys.ts 931f1c87…→ce1e32cb… RED on PIN 3; D app.ts
+  | 99367879…→55bf1568… RED on the strip-only-Node runtime pin. Control after restore: GREEN.
+  | No VOID probe. Full transcript: checkpoints/differential.out.
+  | evidence beyond the suite=the surface was probed against a REAL bound server: /healthz 200,
+  | `pnpm run admin:key` minted a key the live API accepted as admin, PUT/GET over loopback,
+  | `ss -ltn` showed 127.0.0.1:8477 ONLY, port free after kill. That probe found a defect the
+  | 49-test suite could not: a TS parameter property in `Auth` crashed `pnpm run serve` under
+  | node --experimental-strip-types while vitest transpiled it happily. Fixed, and pinned by
+  | tests/runtime.test.ts.
+  | retired=NOT yet — worktree worktrees/core and branch feat/core are the dispatcher's to retire
+  | after ITS OWN verification. This writer does not retire itself.
+  | docs=ledger row 19 (appended) · docs/SEAM-INDEX.md (created) · docs/TESTING.md (created) ·
+  | this board | COPIES: 1 — checked, no duplication (grepped: key format and parsing — one site
+  | in src/core/keys.ts; name/scope/permission validation — one site in src/core/validate.ts;
+  | error code→status — one site in src/core/errors.ts; blob paths — one site in
+  | src/storage/fs.ts; the data root is joined to a path in exactly one module).
+  | note=the failed test-helper parse `raw.split("_")[1]` is recorded in the seam index gotchas:
+  | base64url ids can start with `_`, so the correct helper is keyIdFromRaw().
+
 LANDED | row=14 | sha=2e44eaf | verify=MY OWN: cheap tier exit 2 (which is NOT a pass) + full gate
   | GREEN exit 0 · 1 test file · 4 tests · 205ms · raw log .gate-logs/gate.log
   | retired=nothing (no writer was used)
@@ -154,7 +173,7 @@ LANDED | row=15 | sha=2e44eaf | verify=MY OWN: `git rev-parse no-such-remote/mai
 
 - **`GUARD` — the suite lock.** `scripts/gate.sh` takes an atomic `mkdir` lock; a
   second run is refused (exit 9) and is VOID. Pinned by
-  `tests/process/gate-contract.test.ts`.
+  `tests/gate.test.ts`.
 - **`GUARD` — the memory ceiling.** See `g3` — not implemented yet, and said so.
 
 ## Recovery pointers
