@@ -10,7 +10,7 @@ the present belongs in `docs/17` or nowhere.
 `QUEUE` · `QUEUE-CLOSED` · `TRAP` · `GUARD` · `RECOVERY`.
 
 ```
-reconciled: <set by the commit immediately after this one> · 2026-09-27T17:45Z
+reconciled: 20c132d · 2026-09-27T17:45Z (commit 1, seeded record; no code exists yet)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
   | state=live, talking to the owner; NO writer dispatched | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused)
