@@ -1,0 +1,55 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (c27b61c) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/key-stores/.diff-harness/control)
+  control GREEN:  Test Files  11 passed (11)       Tests  86 passed (86) 
+=== ARM A — authorize IGNORES the store set (a key scoped to [a,b] may reach c) ===
+  file:   src/server/app.ts
+  sha256: 921e3f3286ffb03bf00e22769e980f52ece645e6f2aab3a4e0d675f9057f2101  (before)
+  sha256: 12a374816766519dc080434ea5b8a13abb3c45add7afd777c441acf57a9243e5  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/key-stores/.diff-harness/arm-a)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/key-stores/.diff-harness/arm-a/full.log
+     × PIN G1: a key scoped to [a,b] reads and writes a and b, and is refused c 43ms
+     ✓ PIN G2: a scoped ADMIN key mints only inside its own set 9ms
+     ✓ PIN G3: POST /keys rejects an empty list, a mixed ['*', a] list, and a store that does not exist 5ms
+     ✓ PIN G4: GET /whoami returns the caller's id, label, stores and perms, and no secret 6ms
+     ✓ PIN G5: a master key (['*']) still spans every store, and only a master may grant 'admin' 10ms
+     × PIN G6: a key row written in the OLD single-store shape still works after the migration 8ms
+ ✓ tests/objects.test.ts (16 tests) 287ms
+--
+ FAIL  tests/keys.test.ts > keys: a key is scoped to a SET of stores (pin G1-G6) > PIN G1: a key scoped to [a,b] reads and writes a and b, and is refused c
+AssertionError: expected 200 to be 403 // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: src/server/app.ts and src/core/db.ts back at HEAD; lock released
+=== ARM B — the MIGRATION skips the legacy row (a pre-existing key loses its scope) ===
+  file:   src/core/db.ts
+  sha256: 1c715908dd72c9e3d6526012ddb860f3adadd1f40d913cc5d3475228b22c5d76  (before)
+  sha256: fa0976a86ed6238774dea38c39a0477f2d84b1fd2305d013e8db3c83cd41e1b5  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/key-stores/.diff-harness/arm-b)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/key-stores/.diff-harness/arm-b/full.log
+     × PIN G6: a key row written in the OLD single-store shape still works after the migration 14ms
+ ✓ tests/gate.test.ts (7 tests) 324ms
+ ✓ tests/objects.test.ts (16 tests) 263ms
+ ✓ tests/entrypoint.test.ts (4 tests) 812ms
+ ✓ tests/admin-key.test.ts (6 tests) 1635ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+     ✓ PIN 9: pnpm run admin:key mints a key the HTTP API accepts as admin 681ms
+--
+ FAIL  tests/keys.test.ts > keys: a key is scoped to a SET of stores (pin G1-G6) > PIN G6: a key row written in the OLD single-store shape still works after the migration
+AssertionError: expected [] to deeply equal [ { store: 'alpha' } ]
+
+- Expected
++ Received
+
+RESTORED: src/server/app.ts and src/core/db.ts back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/key-stores/.diff-harness/control2)
+  control GREEN:  Test Files  11 passed (11)       Tests  86 passed (86) 
+  sha256: 921e3f3286ffb03bf00e22769e980f52ece645e6f2aab3a4e0d675f9057f2101 / 1c715908dd72c9e3d6526012ddb860f3adadd1f40d913cc5d3475228b22c5d76  (back to their before hashes)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN G1 (authorize); arm B RED on PIN G6 (migration); both controls GREEN. No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/key-stores/.diff-harness/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/key-stores/checkpoints/key-stores-differential.out
+RESTORED: src/server/app.ts and src/core/db.ts back at HEAD; lock released

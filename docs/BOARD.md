@@ -69,6 +69,76 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
+LANDED | row=42 | sha=e4d12b4 (the VERIFIED CODE tip: `src/core/db.ts`, `src/core/keys.ts`,
+  | `src/core/validate.ts`, `src/core/types.ts`, `src/core/errors.ts`, `src/server/app.ts`,
+  | `src/admin/mint-key.ts`, `tests/keys.test.ts`, `tests/helpers/server.ts`, plus
+  | `docs/API.md`; the docs commit carrying THIS line, the ledger row and docs/TESTING.md is
+  | its child — a commit cannot name its own sha) | A KEY'S SCOPE IS A SET OF STORES, writer session
+  | c596e5cf-035c-4261-80a8-a6e8e5017c68 (subagent of dispatcher session dcd6176e…),
+  | worktree worktrees/key-stores, branch feat/key-stores, base origin/main 0cfba87 — the
+  | branch was fast-forwarded onto the dispatcher's IN-FLIGHT commit before any edit, because
+  | the brief's base 2b7eb41 had already moved (row 40's lesson applied) — then REBASED onto
+  | origin/main e35c594 before push (a mechanical DOCS UNION: the ledger kept the dispatcher's
+  | rows 43 AND 43b alongside this slice's row 42, and `git diff --name-only` from e4d12b4 to
+  | the docs commit lists only this landing's own six files. The rebase REWROTE the code commit
+  | c27b61c into e4d12b4; `git diff --stat c27b61c e4d12b4 -- src tests docs/API.md` is EMPTY, so
+  | the gate and the arms below ran on exactly the code that lands).
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 11 test files ·
+  | 86 tests · 2.03s (and 2.07s on the pre-rebase tree, same counts) · raw log
+  | `.gate-logs/gate.log`; no memory ceiling needed (GUARD g3 still open and still honest).
+  | The DISPATCHER's independent gate and its own arms are OWED.
+  | GUARD g5 APPLIES to this landing: B1 changes the SCHEMA, so the live service must be
+  | RESTARTED and `scripts/probe-live.sh https://store.futuremagic.de` re-run BEFORE the owner
+  | mints — the migration runs when a process OPENS the database, and the running process still
+  | holds the pre-B1 code.
+  | arms=checkpoints/key-stores-differential.sh, the gate lock held across BOTH arms, sha256
+  | printed before and after, restore from HEAD in an EXIT/INT/TERM trap, a control BEFORE
+  | and AFTER, raw transcript checkpoints/key-stores-differential.out (key-shaped strings
+  | scrubbed — ledger row 21):
+  |   A `authorize` IGNORES the store set (`… && false`), src/server/app.ts
+  |     921e3f32…2101 → 12a37481…a243e5, RED on `PIN G1: a key scoped to [a,b] reads and
+  |     writes a and b, and is refused c` — `expected 200 to be 403`; G2/G3 stayed GREEN.
+  |     PIN 2 and PIN G6 ALSO fell (they stand on the same shared predicate) and that is
+  |     recorded in docs/TESTING.md rather than hidden by a looser assertion.
+  |   B the MIGRATION skips the legacy row (the `INSERT INTO key_stores …` is dropped),
+  |     src/core/db.ts 1c715908…d76a → fa0976a8…1b53, RED on `PIN G6: a key row written in the
+  |     OLD single-store shape still works after the migration` — `expected [] to deeply equal
+  |     [ { store: 'alpha' } ]` (the scope row was never written), with G1/G2/G4/G5 GREEN
+  |   both controls GREEN (11 files · 86 tests), both files back at their before hashes. The
+  |     two arms carry DIFFERENT hashes in DIFFERENT files. No VOID probe.
+  | what it is=a key's SCOPE is a SET of stores (ledger rows 30/41/42). `access_keys.scope_all`
+  |   carries the `["*"]` master case — an FK cannot hold `*`, which is not a row in `stores` —
+  |   and every OTHER scope is one `key_stores(key_id, store)` row with an FK per store, so a
+  |   stored scope can never name a missing store. The pre-slice-8 `store` column is MIGRATED
+  |   (ONE transaction: `*` → scope_all, one row per name) and then DROPPED, so there is no
+  |   second source of truth. `resolveKey` loads the scope ONCE with the key (no N+1);
+  |   `Auth.authorize` is ONE membership test (spans all OR the store is in the set) whose 403
+  |   names the key's ACTUAL scope; `requireMasterAdmin` is unchanged. `POST /keys` takes
+  |   `stores: string[]` (empty/mixed/duplicate → 400 `invalid_scope`; unknown store → 404;
+  |   every refusal precedes `mintKey`, which writes the row and its scope in ONE transaction);
+  |   `GET /whoami` returns id/label/stores/perms/expiresAt/lastUsedAt and NEVER a secret.
+  | removed=the OLD single-store `access_keys.store` column, and the old rule "a non-admin
+  |   grant must name a store" (with sets, `["*"]` is a legal scope for any permission when the
+  |   caller is a master). `stores` is REQUIRED — the old "omit it and inherit the caller's
+  |   scope" default is deliberately NOT carried over. Ledger row 42 records all seven
+  |   judgement calls.
+  | wire format=`{error:{code,message}}` unchanged; ONE new error code (`invalid_scope`, 400)
+  |   and ONE new route (`GET /whoami`), so docs/API.md was amended in the SAME commit as the
+  |   code and pins A1–A3 stay green (11 files · 86 tests, `tests/api-doc.test.ts` 3/3).
+  | docs=docs/DECISION-LEDGER.md row 42 · docs/SEAM-INDEX.md (the scope seam: where the set is
+  |   stored, the ONE parse, the ONE load, the ONE membership test, the migration row, the
+  |   whoami finding CLOSED, B2's missing list/revoke restated) · docs/TESTING.md (G1–G6 and
+  |   both arms with their hashes, plus two new honest unknowns) · docs/API.md (the route, the
+  |   `stores` body, the scope semantics, `invalid_scope`, the non-goals) · this board.
+  | COPIES: 2→1 — `ALL_STORES` was defined TWICE (`src/core/keys.ts` and
+  |   `src/core/validate.ts`) and now lives ONCE in `src/core/types.ts`, the shared vocabulary;
+  |   the scope itself is parsed once (`parseStores`), loaded once (`resolveKey`), tested once
+  |   (`Auth.authorize`) and rendered once (`describeStores`) — grepped: "ALL_STORES",
+  |   "parseStores", "parseStoreScope" (now gone), "key_stores", "spansStores",
+  |   "describeStores".
+  | retired=none yet. The worktree worktrees/key-stores and branch feat/key-stores are the
+  | dispatcher's to retire after ITS OWN verification; this writer does not retire itself.
+
 LANDED | row=39 | sha=1063e29 (the VERIFIED CODE tip: `src/server/app.ts` + `tests/keys.test.ts`;
   | the docs commit carrying THIS line and the ledger row is its child, and `docs/BOARD.md`'s
   | `reconciled:` marker is updated to that child as the last act of the landing) | WHO MAY MINT

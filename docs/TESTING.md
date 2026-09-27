@@ -294,6 +294,62 @@ a control runs BEFORE **and** AFTER. Both arms rewrite the ONE anchored line —
   arms produced DIFFERENT hashes, and both controls are GREEN — so the injection, and
   nothing else, was the difference.
 
+## The key-scope pins (slice 8, `POST /keys` + `GET /whoami`)
+
+Slice 8 (ledger rows 30, 41, 42) gives a key a SCOPE: a SET of stores. It is stored as
+`access_keys.scope_all` — the `["*"]` master case, which no foreign key can hold — plus
+one `key_stores` row per store (an FK per store, so a stored scope can never name a
+missing one); loaded ONCE by `resolveKey` (no N+1 in `authorize`, which only reads the
+record it was handed); and tested in ONE place, `Auth.authorize`. The wire changed from
+`store: string` to `stores: string[]`, `GET /whoami` is new, and a row written in the
+OLD single-store shape is MIGRATED then the column is dropped.
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| G1 | a key scoped to `[a,b]` reads and writes `a` and `b`, and is REFUSED `c` — 403 with the key's ACTUAL scope in the message, and `c`'s bytes and rows untouched | `tests/keys.test.ts` (`PIN G1`) |
+| G2 | a scoped ADMIN key mints only inside its own SET — 201 for a store in its set (and for the whole set), 403 for a store outside it (naming both sets), 403 for a partially-outside list, 403 for `["*"]`, and NO key row and NO scope row on any refusal | `tests/keys.test.ts` (`PIN G2`) |
+| G3 | `POST /keys` rejects an EMPTY list (`400 invalid_scope`), a MIXED `["*",a]` list (`400 invalid_scope`) and a store that does not exist (`404 not_found`), each with nothing minted; the OLD `store` field is `400 bad_request` naming `stores` | `tests/keys.test.ts` (`PIN G3`) |
+| G4 | `GET /whoami` returns `id`, `label`, `stores` and `perms` (plus `expiresAt`/`lastUsedAt`) — the body carries EXACTLY those keys and never the raw key — and is 401 without a key | `tests/keys.test.ts` (`PIN G4`) |
+| G5 | a master key (`["*"]`) spans every store INCLUDING one created AFTER it was minted, and only a master may grant `admin`: master + `["*"]` → 201 (and the child administers stores), a scoped admin → 403, a named store → 403 | `tests/keys.test.ts` (`PIN G5`) |
+| G6 | a key row written in the OLD single-store shape still authorizes exactly as before: the old column is GONE, `store='*'` became `scope_all`, a named store became one `key_stores` row, the legacy scoped key works in its store (201/200) and is refused another (403), and a legacy `*` key spans every store | `tests/keys.test.ts` (`PIN G6`) |
+
+The M1–M5 pins above keep their meaning (only an `admin` key may mint; a scoped admin
+mints within its set; an `admin` grant needs a master admin and `["*"]`), and PIN 2
+(`tests/auth.test.ts`) is now the **single-store case of the same membership test** G1
+exercises with a set.
+
+## The key-scope differential (2 arms + two controls)
+
+Machinery: `checkpoints/key-stores-differential.sh`. Raw transcript:
+`checkpoints/key-stores-differential.out` (per-arm logs are `*.log`, so gitignored).
+
+Same shape as the earlier differentials — the slice is committed FIRST, the same lock
+`scripts/gate.sh` takes is held across every arm, each mutated file's sha256 is printed
+before and after, restore is `git checkout HEAD --` inside an `EXIT INT TERM` trap, and a
+control runs BEFORE **and** AFTER. Each arm edits ONE anchored line in a DIFFERENT file,
+so the harness can refuse a VOID probe (an unchanged hash, or two arms with the same hash).
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| A | `authorize` IGNORES the store set (`… && false`), so a scoped key spans everything — the AUTHORIZE half | `src/server/app.ts` | `921e3f32…2101` → `12a37481…a243e5` | `PIN G1: a key scoped to [a,b] reads and writes a and b, and is refused c` — `expected 200 to be 403` (the cross-scope READ reached `c`); **G2/G3 stayed GREEN** (the MINTING branch is untouched, so the arm did not simply break the tree) |
+| B | the MIGRATION skips the legacy row (the `INSERT INTO key_stores … SELECT …` is dropped), so a pre-existing key loses its scope — the MIGRATION half | `src/core/db.ts` | `1c715908…d76a` → `fa0976a8…1b53` | `PIN G6: a key row written in the OLD single-store shape still works after the migration` — `expected [] to deeply equal [ { store: 'alpha' } ]` (the scope row was never written); **G1/G2/G4/G5 stayed GREEN** |
+| control | none — the committed tree, same lock held | — | — | **GREEN**: 11 files · 86 tests |
+| control | none — the restored tree, both files back at their before hashes | — | `921e3f32…2101` / `1c715908…d76a` | **GREEN**: 11 files · 86 tests |
+
+- The arms are the two halves of the ONE seam, in opposite directions: AUTHORIZE (A) and
+  MIGRATION (B). **Arm B is what proves the migration is REAL rather than asserted** — the
+  pin is not "the old column is gone", it is "the carried-over SCOPE still authorizes
+  exactly as before", and dropping only the data half reddens it.
+- **Arm A also reddens PIN 2 and PIN G6, and that is recorded rather than hidden:** all
+  three stand on the same membership predicate, so removing it necessarily reddens them.
+  The harness asserts only what the arm can isolate (G2/G3 GREEN), and the slice-2 lesson
+  is applied in the honest direction: the claim is "G1 catches `authorize` ignoring the
+  set", not "only G1 fell". PIN 2 is the single-store case of the same predicate; G6's
+  behavioral half asks the migrated key to be refused a store outside its scope.
+- No hash was unchanged (a VOID probe would have been refused by the harness), the two arms
+  produced DIFFERENT hashes in DIFFERENT files, and both controls are GREEN — so the
+  injection, and nothing else, was the difference.
+
 The doc a **client developer** reads is `docs/API.md`, and it is held to the code by
 `tests/api-doc.test.ts` — the truth is DERIVED, never restated. Both directions matter:
 the doc may not omit a route and may not invent one.
@@ -361,3 +417,13 @@ for the specific landing it verified.
 - **PIN S3 depends on this host's `~/.git-credentials` existing.** On a machine
   without it the gate is RED by design: "cannot check" is not a pass (AGENTS.md
   rule 1).
+- **The scope migration's LOUD failure path is unexercised.** G6 migrates a legacy row
+  whose store exists; a legacy row naming a store that has since vanished makes the
+  `key_stores` foreign key fail (wrapped in a boot-time error, deliberately — see
+  `migrateLegacyKeyScope`), and nothing asserts that message. It cannot happen today
+  through the API (there is no store-delete route and `POST /keys` refused a missing
+  store before this slice too), which is exactly why it is declared rather than claimed.
+- **`GET /whoami`'s `lastUsedAt` is the CURRENT request's timestamp.** `touchKey` now
+  returns the value it wrote and the guard puts it on the record, so the field is never
+  the previous call's — pinned only implicitly by G4's `typeof string`; the exact
+  equality is not asserted against a clock.
