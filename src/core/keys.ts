@@ -5,19 +5,30 @@
  *   - `id`     12 base64url characters (9 random bytes) — the public lookup id.
  *   - `secret` 32 random bytes, base64url — never stored, never logged.
  *
- * What is PERSISTED: `sha256(raw)` hex, the display `prefix`, and the `id`. The raw
- * key exists only in the return value of `mintKey` — it is printed once by whoever
- * asked for it and is unrecoverable after that (ledger row 6).
+ * What is PERSISTED: `sha256(raw)` hex, the display `prefix`, the `id`, and the key's
+ * SCOPE (ledger row 41): `access_keys.scope_all` for the master case, plus one
+ * `key_stores` row per store for every other scope. The raw key exists only in the
+ * return value of `mintKey` — it is printed once by whoever asked for it and is
+ * unrecoverable after that (ledger row 6).
  *
  * Verification compares hashes with `timingSafeEqual`, because a byte-by-byte string
  * comparison leaks how much of a guess was right.
+ *
+ * The scope is loaded HERE, once per resolved key, together with the row (no N+1 in
+ * `authorize`, which only ever reads the record it was handed).
  */
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { StoreError } from "./errors.ts";
-import { parseStoreName, parseStoredPermissions } from "./validate.ts";
-import type { AccessKeyRecord, MintedKey, Permission, SubjectKind } from "./types.ts";
+import { parseStoredPermissions, parseStores } from "./validate.ts";
+import {
+  ALL_STORES,
+  type AccessKeyRecord,
+  type MintedKey,
+  type Permission,
+  type SubjectKind,
+} from "./types.ts";
 
 /** The wire prefix every key carries. */
 export const KEY_PREFIX = "ssk_";
@@ -28,12 +39,9 @@ export const DISPLAY_PREFIX_LENGTH = 12;
 const ID_BYTES = 9;
 const SECRET_BYTES = 32;
 
-/** `*` means "every store", and is only meaningful for an admin key. */
-export const ALL_STORES = "*";
-
 interface AccessKeyRow {
   id: string;
-  store: string;
+  scope_all: number;
   label: string;
   key_hash: string;
   prefix: string;
@@ -54,14 +62,41 @@ function base64url(bytes: Uint8Array): string {
 }
 
 /**
- * Mint a key and persist only its hash. The caller gets `raw` exactly once.
+ * Build the raw string for a new key.
  *
- * `store` is a store name, or `*` for an admin key that spans every store.
+ * The ONE place the wire format is assembled: `mintKey` uses it, and the test
+ * fixture uses it to write a key row in the PRE-slice-8 shape (pin G6) without
+ * knowing the format itself.
+ */
+export function newRawKey(): string {
+  return `${KEY_PREFIX}${base64url(randomBytes(ID_BYTES))}_${base64url(randomBytes(SECRET_BYTES))}`;
+}
+
+/**
+ * Render a key's scope for a human-readable message (a refusal, the CLI's stderr).
+ *
+ * `["*"]` reads as "every store", never as the literal name `*`, and an empty list
+ * says so instead of printing nothing.
+ */
+export function describeStores(stores: readonly string[]): string {
+  if (stores.length === 1 && stores[0] === ALL_STORES) return `every store (${ALL_STORES})`;
+  if (stores.length === 0) return "no stores";
+  return stores.map((store) => JSON.stringify(store)).join(", ");
+}
+
+/**
+ * Mint a key and persist only its hash.
+ *
+ * `stores` is the key's SCOPE, canonical as `parseStores()` returns it: `["*"]` for a
+ * master key, or a non-empty list of existing store names. The row and its
+ * `key_stores` rows are written in ONE transaction, so a scope that names a store
+ * that does not exist (a foreign-key failure) mints NOTHING rather than a key with a
+ * partial scope.
  */
 export function mintKey(
   db: DatabaseSync,
   options: {
-    readonly store: string;
+    readonly stores: readonly string[];
     readonly label: string;
     readonly perms: readonly Permission[];
     readonly now: () => number;
@@ -75,37 +110,55 @@ export function mintKey(
   if (options.perms.length === 0) {
     throw new StoreError("bad_request", "a key must carry at least one permission");
   }
-  const store = options.store === ALL_STORES ? ALL_STORES : parseStoreName(options.store);
-  const id = base64url(randomBytes(ID_BYTES));
-  const secret = base64url(randomBytes(SECRET_BYTES));
-  const raw = `${KEY_PREFIX}${id}_${secret}`;
+  // The ONE scope parser: a direct caller (the CLI, a test) gets the same refusals
+  // the HTTP route does, and cannot write a mixed or empty scope.
+  const stores = parseStores(options.stores);
+  const scopeAll = stores.length === 1 && stores[0] === ALL_STORES;
+  const raw = newRawKey();
+  const id = keyIdFromRaw(raw);
+  if (id === null) {
+    // Unreachable unless `newRawKey` drifts from the parser; loud rather than a key
+    // that can never be resolved.
+    throw new StoreError("internal", "minted a key whose id does not parse");
+  }
   const prefix = raw.slice(0, DISPLAY_PREFIX_LENGTH);
   const createdAt = new Date(options.now()).toISOString();
   const expiresAt = options.expiresAt ?? null;
   const subjectKind: SubjectKind = options.subjectKind ?? "token";
   const perms = [...options.perms];
 
-  db.prepare(
-    `INSERT INTO access_keys
-       (id, store, label, key_hash, prefix, perms, subject_kind, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    store,
-    options.label,
-    sha256Hex(raw),
-    prefix,
-    perms.join(","),
-    subjectKind,
-    createdAt,
-    expiresAt,
-  );
+  db.exec("BEGIN");
+  try {
+    db.prepare(
+      `INSERT INTO access_keys
+         (id, scope_all, label, key_hash, prefix, perms, subject_kind, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      scopeAll ? 1 : 0,
+      options.label,
+      sha256Hex(raw),
+      prefix,
+      perms.join(","),
+      subjectKind,
+      createdAt,
+      expiresAt,
+    );
+    if (!scopeAll) {
+      const insertStore = db.prepare("INSERT INTO key_stores(key_id, store) VALUES (?, ?)");
+      for (const store of stores) insertStore.run(id, store);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 
   return {
     raw,
     record: {
       id,
-      store,
+      stores,
       label: options.label,
       prefix,
       perms,
@@ -124,7 +177,25 @@ export function keyIdFromRaw(raw: string): string | null {
   return match?.[1] ?? null;
 }
 
-function rowToRecord(row: AccessKeyRow): AccessKeyRecord {
+/** Read a key's scope: the master flag, or its `key_stores` rows. */
+function loadStores(db: DatabaseSync, row: AccessKeyRow): string[] {
+  if (row.scope_all === 1) return [ALL_STORES];
+  const rows = db
+    .prepare("SELECT store FROM key_stores WHERE key_id = ? ORDER BY store")
+    .all(row.id) as unknown as { store: string }[];
+  if (rows.length === 0) {
+    // Not a valid key in this model: every key spans all stores OR at least one named
+    // store. A row that is neither is corruption, and a silent empty scope would make
+    // it a key that can do nothing while looking healthy (AGENTS.md rule 1).
+    throw new StoreError(
+      "internal",
+      `key ${row.id} has scope_all = 0 and no key_stores rows; its scope was never written`,
+    );
+  }
+  return rows.map((entry) => entry.store);
+}
+
+function rowToRecord(db: DatabaseSync, row: AccessKeyRow): AccessKeyRecord {
   if (row.subject_kind !== "token") {
     // This slice implements `token` only. A row this process cannot interpret is a
     // loud failure, not a silent coercion into the one kind we do know.
@@ -135,7 +206,7 @@ function rowToRecord(row: AccessKeyRow): AccessKeyRecord {
   }
   return {
     id: row.id,
-    store: row.store,
+    stores: loadStores(db, row),
     label: row.label,
     prefix: row.prefix,
     perms: parseStoredPermissions(row.perms),
@@ -185,15 +256,21 @@ export function resolveKey(
     if (now() >= expires) return null;
   }
 
-  return rowToRecord(row);
+  // The scope is loaded ONCE, here, with the key — `authorize()` never queries.
+  return rowToRecord(db, row);
 }
 
-/** Record that a key was just used. Called only after a key VERIFIED. */
-export function touchKey(db: DatabaseSync, id: string, now: () => number): void {
-  db.prepare("UPDATE access_keys SET last_used_at = ? WHERE id = ?").run(
-    new Date(now()).toISOString(),
-    id,
-  );
+/**
+ * Record that a key was just used, and return the timestamp written.
+ *
+ * Called only after a key VERIFIED. Returning the value lets the caller keep the
+ * in-memory record in step with the row it just wrote, so `GET /whoami` reports the
+ * use it is part of rather than the previous one.
+ */
+export function touchKey(db: DatabaseSync, id: string, now: () => number): string {
+  const usedAt = new Date(now()).toISOString();
+  db.prepare("UPDATE access_keys SET last_used_at = ? WHERE id = ?").run(usedAt, id);
+  return usedAt;
 }
 
 /** Revoke a key. Rotation is mint-new + revoke-old (ledger row 6). */
@@ -209,5 +286,5 @@ export function findKeyById(db: DatabaseSync, id: string): AccessKeyRecord | nul
   const row = db.prepare("SELECT * FROM access_keys WHERE id = ?").get(id) as
     | AccessKeyRow
     | undefined;
-  return row === undefined ? null : rowToRecord(row);
+  return row === undefined ? null : rowToRecord(db, row);
 }

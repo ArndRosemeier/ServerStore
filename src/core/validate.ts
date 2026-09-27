@@ -11,7 +11,7 @@
  */
 
 import { StoreError } from "./errors.ts";
-import { PERMISSIONS, STORE_KINDS, type Permission, type StoreKind } from "./types.ts";
+import { ALL_STORES, PERMISSIONS, STORE_KINDS, type Permission, type StoreKind } from "./types.ts";
 
 /** 64 characters total: the leading char plus 0-63 more. */
 export const NAME_MAX_LENGTH = 64;
@@ -64,18 +64,54 @@ export function parseObjectName(raw: unknown): string {
   return parseName(raw, "object name");
 }
 
-/** The one scope value that is not a store name: `*` means every store. */
-export const ALL_STORES = "*";
-
 /**
- * Parse a key SCOPE: a store name, or `*` for a master key.
+ * Parse a key SCOPE from the wire: the set of stores the key may touch.
  *
- * `*` is a scope, not a name — it must never reach the name parser (which would
- * refuse it as invalid and turn a permissions decision into a 400).
+ * This is the ONE place a scope is parsed, and the only thing that produces the
+ * canonical shape `AccessKeyRecord.stores` holds (ledger row 41):
+ *   - `["*"]` alone is the MASTER case — every store, including ones created later;
+ *   - anything else is a non-empty list of real store NAMES, returned de-duplicated
+ *     and sorted, so two requests that mean the same set produce the same scope.
+ *
+ * Refused, each LOUDLY with a named code and before anything is minted:
+ *   - not an array, or an empty array  → `invalid_scope` (a key with no store can do
+ *     nothing; an empty list is far more likely to be a bug than an intent);
+ *   - `*` combined with anything else  → `invalid_scope` (mixing "every store" with
+ *     names has no meaning that is not just "every store");
+ *   - the same store twice             → `invalid_scope` (the stored set would differ
+ *     from the requested list);
+ *   - a malformed name                 → `invalid_name` from the ONE name parser.
+ *
+ * `*` must never reach the name parser, which would refuse it as invalid and turn a
+ * scope decision into a confusing 400.
  */
-export function parseStoreScope(raw: unknown): string {
-  if (raw === ALL_STORES) return ALL_STORES;
-  return parseStoreName(raw);
+export function parseStores(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new StoreError(
+      "invalid_scope",
+      `stores must be a non-empty array of store names; use ["${ALL_STORES}"] for every store`,
+    );
+  }
+  const wildcards = raw.filter((entry) => entry === ALL_STORES).length;
+  if (wildcards > 0) {
+    if (raw.length > 1) {
+      throw new StoreError(
+        "invalid_scope",
+        `stores may not combine '${ALL_STORES}' with other entries: send ["${ALL_STORES}"] alone for ` +
+          `every store, or a list of store names`,
+      );
+    }
+    return [ALL_STORES];
+  }
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    const name = parseStoreName(entry);
+    if (seen.has(name)) {
+      throw new StoreError("invalid_scope", `stores lists ${JSON.stringify(name)} more than once`);
+    }
+    seen.add(name);
+  }
+  return [...seen].sort();
 }
 
 /** Refuse a path that carries a traversal segment anywhere, before any routing. */

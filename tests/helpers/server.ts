@@ -8,19 +8,49 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createApp } from "../../src/server/app.ts";
-import { keyIdFromRaw, mintKey } from "../../src/core/keys.ts";
+import { DISPLAY_PREFIX_LENGTH, keyIdFromRaw, mintKey, newRawKey } from "../../src/core/keys.ts";
 import type { Permission, StoreKind } from "../../src/core/types.ts";
+
+/**
+ * A key row in the PRE-slice-8 shape (ONE nullable `access_keys.store`), for pin G6.
+ *
+ * `store` is the old single value: a store name, or `*` for a master key.
+ */
+export interface LegacyKeySeed {
+  readonly store: string;
+  readonly label: string;
+  readonly perms: readonly Permission[];
+}
 
 export interface CreateServerOptions {
   /** Fixed clock, ms since epoch. Advanced by mutating `clock.value`. */
   readonly now?: number;
   readonly maxBytes?: number;
   readonly dataRoot?: string;
+  /**
+   * Stores to create in a LEGACY database before the migrated key rows that name
+   * them. Only meaningful together with `legacyKeys`.
+   */
+  readonly legacyStores?: readonly string[];
+  /**
+   * Seed the database file in the OLD single-store shape BEFORE `createApp` opens it,
+   * so the scope migration has something real to carry (pin G6). The raw keys come
+   * back on `TestServer.legacyKeys`, in seed order.
+   */
+  readonly legacyKeys?: readonly LegacyKeySeed[];
 }
 
 export interface TestServer {
@@ -36,7 +66,7 @@ export interface TestServer {
   seedStore(name: string, kind?: StoreKind): void;
   /** Mint directly, bypassing HTTP — for revoke/expire and scoped-key fixtures. */
   mint(options: {
-    store: string;
+    stores: readonly string[];
     perms: readonly Permission[];
     label?: string;
     expiresAt?: string | null;
@@ -49,6 +79,8 @@ export interface TestServer {
   listDataFiles(): string[];
   /** Every file under `stores/` (i.e. bytes a request could have written). */
   listBlobFiles(): string[];
+  /** Raw keys seeded in the legacy shape, in seed order (empty unless requested). */
+  readonly legacyKeys: readonly string[];
   readonly dataRoot: string;
   readonly dbPath: string;
   readonly clock: { value: number };
@@ -61,6 +93,7 @@ function build(deps: {
   dbPath: string;
   clock: { value: number };
   maxBytes: number;
+  legacyKeys: readonly string[];
 }): TestServer {
   const app = createApp({
     dataRoot: deps.dataRoot,
@@ -110,7 +143,7 @@ function build(deps: {
       direct(
         (db) =>
           mintKey(db, {
-            store: options.store,
+            stores: options.stores,
             label: options.label ?? "fixture",
             perms: options.perms,
             now: () => deps.clock.value,
@@ -133,6 +166,7 @@ function build(deps: {
     dataRoot: deps.dataRoot,
     dbPath: deps.dbPath,
     clock: deps.clock,
+    legacyKeys: deps.legacyKeys,
   };
   servers.push(server);
   return server;
@@ -154,15 +188,98 @@ function walk(root: string): string[] {
   return out;
 }
 
+/** The created_at every seeded legacy row carries (the clock is fixed anyway). */
+const LEGACY_CREATED_AT = "1970-01-01T00:00:00.000Z";
+
+/**
+ * Write a database file in the PRE-slice-8 shape: ONE nullable `access_keys.store`
+ * column and no `key_stores` table. The raw keys are returned so the test can present
+ * them to the migrated app.
+ *
+ * This is the ONE place the OLD shape is written, and it is written from the REAL key
+ * format (`newRawKey()` + `keyIdFromRaw()`), never from a hand-rolled string — a
+ * migration pin whose fixture guesses the format proves nothing about the migration.
+ */
+function seedLegacyDatabase(
+  dbPath: string,
+  storeNames: readonly string[],
+  keys: readonly LegacyKeySeed[],
+): string[] {
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const db = new DatabaseSync(dbPath);
+  const raw: string[] = [];
+  try {
+    db.exec(
+      `CREATE TABLE stores (
+         name TEXT PRIMARY KEY,
+         kind TEXT NOT NULL,
+         created_at TEXT NOT NULL
+       )
+       STRICT`,
+    );
+    db.exec(
+      `CREATE TABLE access_keys (
+         id TEXT PRIMARY KEY,
+         store TEXT,
+         label TEXT NOT NULL,
+         key_hash TEXT NOT NULL,
+         prefix TEXT NOT NULL,
+         perms TEXT NOT NULL,
+         subject_kind TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         expires_at TEXT,
+         last_used_at TEXT,
+         revoked_at TEXT
+       )
+       STRICT`,
+    );
+    // `master` is seeded by every boot (ensureMasterStore), so a legacy database has it.
+    const insertStore = db.prepare(
+      "INSERT INTO stores (name, kind, created_at) VALUES (?, 'bytes', ?)",
+    );
+    for (const name of ["master", ...storeNames]) insertStore.run(name, LEGACY_CREATED_AT);
+
+    const insertKey = db.prepare(
+      `INSERT INTO access_keys
+         (id, store, label, key_hash, prefix, perms, subject_kind, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'token', ?)`,
+    );
+    for (const seed of keys) {
+      const keyRaw = newRawKey();
+      const id = keyIdFromRaw(keyRaw);
+      if (id === null) throw new Error("the legacy fixture minted a key whose id does not parse");
+      insertKey.run(
+        id,
+        seed.store,
+        seed.label,
+        sha256Hex(keyRaw),
+        keyRaw.slice(0, DISPLAY_PREFIX_LENGTH),
+        seed.perms.join(","),
+        LEGACY_CREATED_AT,
+      );
+      raw.push(keyRaw);
+    }
+  } finally {
+    db.close();
+  }
+  return raw;
+}
+
 /** Create a server on a fresh temp data root. */
 export function createTestServer(options: CreateServerOptions = {}): TestServer {
   const dataRoot = options.dataRoot ?? mkdtempSync(join(tmpdir(), "serverstore-test-"));
+  const dbPath = join(dataRoot, "serverstore.db");
   const clock = { value: options.now ?? Date.UTC(2026, 0, 1, 0, 0, 0) };
+  const legacyKeys =
+    options.legacyKeys === undefined
+      ? []
+      : seedLegacyDatabase(dbPath, options.legacyStores ?? [], options.legacyKeys);
   return build({
     dataRoot,
-    dbPath: join(dataRoot, "serverstore.db"),
+    dbPath,
     clock,
     maxBytes: options.maxBytes ?? 64 * 1024 * 1024,
+    legacyKeys,
   });
 }
 

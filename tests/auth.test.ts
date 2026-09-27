@@ -47,14 +47,14 @@ describe("auth: the key is the whole perimeter (ledger row 6, pin 1)", () => {
 
   test("x-api-key is accepted exactly like Authorization: Bearer", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const response = await server.request("/stores", { headers: { "x-api-key": key } });
     expect(response.status).toBe(200);
   });
 
   test("a verified key gets last_used_at; a refused request does not touch it", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const before = lastUsedAt(server);
     expect(before).toBeNull();
 
@@ -69,7 +69,7 @@ describe("auth: the key is the whole perimeter (ledger row 6, pin 1)", () => {
 describe("auth: a scoped key cannot leave its store (pin 2)", () => {
   test("PIN 2: a key scoped to store A gets 403 on store B, and B's bytes are untouched", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.postJson("/stores", { name: "alpha" }, master);
     await server.postJson("/stores", { name: "beta" }, master);
     const alphaKey = await mintScoped(server, master, "alpha", ["read", "write", "delete"]);
@@ -106,7 +106,7 @@ describe("auth: a scoped key cannot leave its store (pin 2)", () => {
 
   test("a missing permission on the RIGHT store is 403, not 401", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.postJson("/stores", { name: "alpha" }, master);
     const readOnly = await mintScoped(server, master, "alpha", ["read"]);
 
@@ -120,21 +120,21 @@ describe("auth: a scoped key cannot leave its store (pin 2)", () => {
 
   test("a scoped key cannot mint a key for another store", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.postJson("/stores", { name: "alpha" }, master);
     await server.postJson("/stores", { name: "beta" }, master);
     const alphaKey = await mintScoped(server, master, "alpha", ["read", "write"]);
 
-    const cross = await server.postJson("/keys", { store: "beta", perms: ["read"] }, alphaKey);
+    const cross = await server.postJson("/keys", { stores: ["beta"], perms: ["read"] }, alphaKey);
     expect(cross.status).toBe(403);
 
-    const admin = await server.postJson("/keys", { store: "*", perms: ["admin"] }, alphaKey);
+    const admin = await server.postJson("/keys", { stores: ["*"], perms: ["admin"] }, alphaKey);
     expect(admin.status).toBe(403);
   });
 
   test("listing stores requires a master admin key", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.postJson("/stores", { name: "alpha" }, master);
     const scoped = await mintScoped(server, master, "alpha", ["read"]);
     expect((await server.get("/stores")).status).toBe(401);
@@ -144,10 +144,10 @@ describe("auth: a scoped key cannot leave its store (pin 2)", () => {
 
   test("a non-admin key cannot be minted with admin permission", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     const scoped = await mintScoped(server, master, "master", ["read"]);
     // `scoped` is scoped to the master STORE, not to every store, so it is not a master key.
-    const response = await server.postJson("/keys", { store: "*", perms: ["admin"] }, scoped);
+    const response = await server.postJson("/keys", { stores: ["*"], perms: ["admin"] }, scoped);
     expect(response.status).toBe(403);
   });
 });
@@ -155,7 +155,7 @@ describe("auth: a scoped key cannot leave its store (pin 2)", () => {
 describe("auth: revocation and expiry (pin 3)", () => {
   test("PIN 3: A REVOKED key is refused 401", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"], label: "doomed" });
+    const key = server.mint({ stores: ["*"], perms: ["admin"], label: "doomed" });
     expect((await server.get("/stores", key)).status).toBe(200);
 
     const id = keyId(key);
@@ -173,7 +173,7 @@ describe("auth: revocation and expiry (pin 3)", () => {
   test("PIN 3: an expired key is refused 401, and is still valid one millisecond before", async () => {
     const server = createTestServer();
     const key = server.mint({
-      store: "*",
+      stores: ["*"],
       perms: ["admin"],
       label: "short-lived",
       expiresAt: "2026-01-01T00:00:01.000Z",
@@ -190,7 +190,7 @@ describe("auth: revocation and expiry (pin 3)", () => {
 
   test("a revoked key cannot write, and writes nothing", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     server.direct((db) =>
       db.prepare("UPDATE access_keys SET revoked_at = ? WHERE id = ?").run("2026-01-02T00:00:00Z", keyId(key)),
     );
@@ -244,7 +244,11 @@ async function mintScoped(
   store: string,
   perms: readonly string[],
 ): Promise<string> {
-  const response = await server.postJson("/keys", { store, perms, label: `${store}-key` }, master);
+  const response = await server.postJson(
+    "/keys",
+    { stores: [store], perms, label: `${store}-key` },
+    master,
+  );
   expect(response.status, await response.clone().text()).toBe(201);
   const body = (await response.json()) as { key: string };
   return body.key;

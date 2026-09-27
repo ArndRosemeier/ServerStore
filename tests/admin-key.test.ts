@@ -92,7 +92,7 @@ describe("the local bootstrap (pin 9, ledger row 7)", () => {
 
   test("the CLI mints a store-scoped key that cannot leave its store", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.postJson("/stores", { name: "notes" }, master);
 
     const run = runAdminKeyModule(server.dataRoot, ["--store", "notes", "--perms", "read,write"]);
@@ -122,13 +122,13 @@ describe("the local bootstrap (pin 9, ledger row 7)", () => {
   test("PIN 9 (inverse): no HTTP route mints an admin key without an existing admin key", async () => {
     const server = createTestServer();
     // Without a key: refused.
-    const anonymous = await server.postJson("/keys", { store: "*", perms: ["admin"] });
+    const anonymous = await server.postJson("/keys", { stores: ["*"], perms: ["admin"] });
     expect(anonymous.status).toBe(401);
 
     // With an unknown key: refused.
     const unknown = await server.postJson(
       "/keys",
-      { store: "*", perms: ["admin"] },
+      { stores: ["*"], perms: ["admin"] },
       `ssk_AAAAAAAAAAAA_${"b".repeat(43)}`,
     );
     expect(unknown.status).toBe(401);

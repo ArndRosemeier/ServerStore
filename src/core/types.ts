@@ -20,6 +20,16 @@ export const SUBJECT_KINDS = ["token"] as const;
 
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];
 
+/**
+ * The ONE value that is not a store name: `*` means every store.
+ *
+ * A key's scope is a SET of stores, and `["*"]` is the master case (ledger rows 30,
+ * 41). It lives here — the shared vocabulary — because BOTH the scope parser
+ * (`src/core/validate.ts`) and the key model (`src/core/keys.ts`) need it, and two
+ * constants meaning "every store" is exactly the drift this file exists to prevent.
+ */
+export const ALL_STORES = "*";
+
 /** A declared store: a name plus the kind that says how its bytes are handled. */
 export interface Store {
   readonly name: string;
@@ -27,10 +37,17 @@ export interface Store {
   readonly createdAt: string;
 }
 
-/** A persisted access key. The raw key is NEVER in this record. */
+/**
+ * A persisted access key. The raw key is NEVER in this record.
+ *
+ * `stores` is the key's SCOPE — the set of stores it may touch (ledger row 41).
+ * It is canonical: either exactly `["*"]` (every store, the master case) or a
+ * non-empty, sorted list of real store names. `src/core/validate.ts` `parseStores()`
+ * is the only thing that produces one, so a mixed or empty scope cannot exist.
+ */
 export interface AccessKeyRecord {
   readonly id: string;
-  readonly store: string;
+  readonly stores: readonly string[];
   readonly label: string;
   readonly prefix: string;
   readonly perms: readonly Permission[];
@@ -44,7 +61,7 @@ export interface AccessKeyRecord {
 /** What a successful key resolution yields. */
 export interface ResolvedKey {
   readonly id: string;
-  readonly store: string;
+  readonly stores: readonly string[];
   readonly perms: readonly Permission[];
   readonly subjectKind: SubjectKind;
 }

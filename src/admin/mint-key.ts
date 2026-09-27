@@ -16,7 +16,12 @@
  * to this script as a positional argument, which is refused):
  *   pnpm run admin:key                       # master admin key (scope `*`, perms admin)
  *   pnpm run admin:key --store notes         # scoped key (default perms read,write)
+ *   pnpm run admin:key --store a --store b --perms admin   # a scoped admin with a SET
  *   pnpm run admin:key --db /path/serverstore.db --json
+ *
+ * `--store` may be repeated: a key's scope is a SET of stores (ledger row 41). This
+ * is the ONLY path that can mint a store-scoped ADMIN key with more than one store,
+ * because the HTTP route refuses an admin grant for anything but `["*"]` (row 40).
  */
 
 import { parseArgs } from "node:util";
@@ -24,14 +29,15 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { openDatabase } from "../core/db.ts";
 import { StoreError } from "../core/errors.ts";
-import { ALL_STORES, mintKey } from "../core/keys.ts";
-import { parseExpiresAt, parsePermissions, parseStoreName } from "../core/validate.ts";
+import { describeStores, mintKey } from "../core/keys.ts";
+import { ALL_STORES } from "../core/types.ts";
+import { parseExpiresAt, parsePermissions, parseStores } from "../core/validate.ts";
 import { ensureMasterStore, getStore } from "../stores/registry.ts";
 import { resolveConfig } from "../server/config.ts";
 
 const { values } = parseArgs({
   options: {
-    store: { type: "string" },
+    store: { type: "string", multiple: true },
     perms: { type: "string" },
     label: { type: "string" },
     expires: { type: "string" },
@@ -44,7 +50,7 @@ const { values } = parseArgs({
 
 if (values.help) {
   process.stdout.write(
-    "usage: pnpm run admin:key [--store <name>] [--perms read,write] [--label <text>]\n" +
+    "usage: pnpm run admin:key [--store <name>]... [--perms read,write] [--label <text>]\n" +
       "                          [--expires <ISO-8601>] [--db <path>] [--json]\n",
   );
   process.exit(0);
@@ -57,20 +63,25 @@ const db = openDatabase(dbPath);
 ensureMasterStore(db, () => Date.now());
 
 try {
-  const store = values.store === undefined ? ALL_STORES : parseStoreName(values.store);
-  if (store !== ALL_STORES) {
+  // No `--store` means the master scope, exactly as before. `parseStores` refuses a
+  // mixed list (`--store '*' --store notes`) and an empty one, in the ONE parser the
+  // HTTP route uses too.
+  const requested = values.store ?? [];
+  const stores = parseStores(requested.length === 0 ? [ALL_STORES] : requested);
+  for (const store of stores) {
     // A key for a store that does not exist would be a silent dud; refuse instead.
-    getStore(db, store);
+    if (store !== ALL_STORES) getStore(db, store);
   }
+  const masterScope = stores.length === 1 && stores[0] === ALL_STORES;
   const perms = parsePermissions(
     values.perms === undefined
-      ? store === ALL_STORES
+      ? masterScope
         ? ["admin"]
         : ["read", "write"]
       : values.perms.split(",").map((entry) => entry.trim()).filter((entry) => entry !== ""),
   );
   const minted = mintKey(db, {
-    store,
+    stores,
     label: values.label ?? "bootstrap",
     perms,
     now: () => Date.now(),
@@ -83,7 +94,7 @@ try {
         key: minted.raw,
         id: minted.record.id,
         prefix: minted.record.prefix,
-        store: minted.record.store,
+        stores: minted.record.stores,
         perms: minted.record.perms,
         expiresAt: minted.record.expiresAt,
       })}\n`,
@@ -92,7 +103,7 @@ try {
     process.stdout.write(`${minted.raw}\n`);
     process.stderr.write(
       `minted ${minted.record.perms.join(",")} key ${minted.record.id} ` +
-        `for store ${minted.record.store} — shown once, stored hashed, not recoverable\n`,
+        `for ${describeStores(minted.record.stores)} — shown once, stored hashed, not recoverable\n`,
     );
   }
   process.exitCode = 0;

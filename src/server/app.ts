@@ -19,17 +19,16 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { openDatabase } from "../core/db.ts";
 import { errorBody, StoreError, toStoreError, type ErrorCode } from "../core/errors.ts";
-import { ALL_STORES, mintKey, resolveKey, touchKey } from "../core/keys.ts";
+import { describeStores, mintKey, resolveKey, touchKey } from "../core/keys.ts";
 import {
   assertNoTraversalSegments,
   parseExpiresAt,
   parsePermissions,
   parseObjectName,
   parseStoreKind,
-  parseStoreName,
-  parseStoreScope,
+  parseStores,
 } from "../core/validate.ts";
-import { type Permission, type AccessKeyRecord } from "../core/types.ts";
+import { ALL_STORES, type Permission, type AccessKeyRecord } from "../core/types.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_HOST, DEFAULT_PORT } from "./config.ts";
 import { createStore, ensureMasterStore, listStores, requireStore } from "../stores/registry.ts";
 import { handlerFor } from "../storage/kinds.ts";
@@ -68,7 +67,7 @@ class Auth {
   }
 
   get spansStores(): boolean {
-    return this.key.store === ALL_STORES;
+    return this.key.stores.includes(ALL_STORES);
   }
 
   /**
@@ -91,10 +90,21 @@ class Auth {
     }
   }
 
-  /** 403 unless the key carries `permission` for `store` (admin implies all). */
+  /**
+   * 403 unless the key carries `permission` for `store` (admin implies all).
+   *
+   * THE membership test for a key's scope, and the only one (ledger row 41): the key
+   * passes when it spans every store (`["*"]`) OR when `store` is in its SET. The
+   * record was loaded whole by `resolveKey`, so nothing here queries: a request is
+   * one scope read, never one per store.
+   */
   authorize(store: string, permission: Permission): void {
-    if (!this.spansStores && this.key.store !== store) {
-      throw new StoreError("forbidden", `key is scoped to store ${JSON.stringify(this.key.store)}`);
+    if (!this.spansStores && !this.key.stores.includes(store)) {
+      throw new StoreError(
+        "forbidden",
+        `key is scoped to ${describeStores(this.key.stores)}; ` +
+          `it does not include store ${JSON.stringify(store)}`,
+      );
     }
     if (this.key.perms.includes("admin") || this.key.perms.includes(permission)) {
       // The operation must also be one this store kind implements.
@@ -206,8 +216,10 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
           : "access key is unknown, revoked or expired",
       );
     }
-    touchKey(ctx.db, record.id, deps.now);
-    c.set("auth", new Auth(record, ctx));
+    // The record is kept in step with the row just touched, so `GET /whoami` reports
+    // the use it is part of rather than the one before it.
+    const usedAt = touchKey(ctx.db, record.id, deps.now);
+    c.set("auth", new Auth({ ...record, lastUsedAt: usedAt }, ctx));
     await next();
   };
 
@@ -234,24 +246,42 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     // key's request is refused with no parsing and no side effect at all.
     auth.requireAdmin();
     const body = await readJsonObject(c.req.raw, deps.maxBytes);
+    if (body.store !== undefined) {
+      // The single-store field was replaced by the SET (ledger row 41). Named
+      // explicitly rather than ignored: a client written against the old contract
+      // must not silently get a scope it did not ask for.
+      throw new StoreError(
+        "bad_request",
+        `the 'store' field was replaced by 'stores' (an array): send stores: [<name>]`,
+      );
+    }
+    const stores = parseStores(body.stores);
     const perms = parsePermissions(body.perms);
-    const targetStore = body.store === undefined ? auth.key.store : parseStoreScope(body.store);
     if (perms.includes("admin")) {
-      // Only a master admin key may hand out admin, and only for `*`: a store-scoped
-      // admin grant is a second kind of admin this slice does not model.
+      // Only a master admin key may hand out admin, and only for the master scope:
+      // a store-scoped admin grant is a second kind of admin this model does not have
+      // (it is minted out of band by `pnpm run admin:key`, ledger row 40).
       auth.requireMasterAdmin();
-      if (targetStore !== ALL_STORES) {
-        throw new StoreError("forbidden", "an admin grant must be scoped to '*'");
+      if (!(stores.length === 1 && stores[0] === ALL_STORES)) {
+        throw new StoreError("forbidden", `an admin grant must be scoped to ["${ALL_STORES}"]`);
       }
-    } else if (auth.spansStores) {
-      if (targetStore === ALL_STORES) {
-        throw new StoreError("forbidden", "a non-admin grant must name a store");
+    } else if (!auth.spansStores) {
+      // A scoped admin mints only WITHIN its own set: every requested store must be
+      // one the minter itself holds. (`["*"]` is never inside a scoped set.)
+      const outside = stores.filter(
+        (store) => store === ALL_STORES || !auth.key.stores.includes(store),
+      );
+      if (outside.length > 0) {
+        throw new StoreError(
+          "forbidden",
+          `key is scoped to ${describeStores(auth.key.stores)}; ` +
+            `it may not mint for ${describeStores(outside)}`,
+        );
       }
-      // The named store must exist before a key can point at it.
-      requireStore(ctx.db, targetStore);
-    } else if (targetStore !== auth.key.store) {
-      // A scoped key can only ever mint within its own store.
-      throw new StoreError("forbidden", `key is scoped to store ${JSON.stringify(auth.key.store)}`);
+    }
+    // Every named store must already exist (the master scope has no names to check).
+    for (const store of stores) {
+      if (store !== ALL_STORES) requireStore(ctx.db, store);
     }
     // The slice-6 subset check (`lacks` / `grantablePermissions`) is DELETED as
     // unreachable: `requireAdmin()` above means every minter holds `admin`, which
@@ -262,7 +292,7 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     const expiresAt = parseExpiresAt(body.expiresAt);
     const label = typeof body.label === "string" && body.label.trim() !== "" ? body.label : "unlabelled";
     const minted = mintKey(ctx.db, {
-      store: targetStore,
+      stores,
       label,
       perms,
       now: deps.now,
@@ -274,12 +304,27 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
         key: minted.raw,
         id: minted.record.id,
         prefix: minted.record.prefix,
-        store: minted.record.store,
+        stores: minted.record.stores,
         perms: minted.record.perms,
         expiresAt: minted.record.expiresAt,
       },
       201,
     );
+  });
+
+  // WHO AM I — the caller's own identity and scope, and NEVER a secret (ledger rows
+  // 30, 41). `id` is the public lookup id already shown at mint time; the raw key,
+  // its secret and its hash are not in this body and never will be.
+  app.get("/whoami", (c) => {
+    const key = c.get("auth").key;
+    return c.json({
+      id: key.id,
+      label: key.label,
+      stores: key.stores,
+      perms: key.perms,
+      expiresAt: key.expiresAt,
+      lastUsedAt: key.lastUsedAt,
+    });
   });
 
   app.get("/stores/:store/objects", (c) => {

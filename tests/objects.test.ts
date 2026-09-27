@@ -19,7 +19,7 @@ const PAYLOAD = "the quick brown fox jumps over the lazy dog\n";
 describe("the object round-trip (pin 4)", () => {
   test("PIN 4: PUT then GET returns byte-identical content (sha256 equal)", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
 
     const put = await server.put("/stores/master/objects/greeting.txt", PAYLOAD, key);
     expect(put.status).toBe(201);
@@ -43,7 +43,7 @@ describe("the object round-trip (pin 4)", () => {
 
   test("binary bytes survive the round trip exactly", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const bytes = new Uint8Array(512);
     for (let i = 0; i < bytes.length; i += 1) bytes[i] = i % 256;
 
@@ -54,7 +54,7 @@ describe("the object round-trip (pin 4)", () => {
 
   test("an empty body is refused 400 and creates no object", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const response = await server.put("/stores/master/objects/empty.txt", "", key);
     expect(response.status).toBe(400);
     expect((await readError(response)).code).toBe("invalid_body");
@@ -63,7 +63,7 @@ describe("the object round-trip (pin 4)", () => {
 
   test("PUT is an upsert: the same name replaces the object and its metadata", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.put("/stores/master/objects/x.txt", "one", key);
     await server.put("/stores/master/objects/x.txt", "two", key);
 
@@ -77,7 +77,7 @@ describe("the object round-trip (pin 4)", () => {
 
   test("GET of a missing object is 404 with the one error shape", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const response = await server.get("/stores/master/objects/nope.txt", key);
     expect(response.status).toBe(404);
     expect((await readError(response)).code).toBe("not_found");
@@ -85,7 +85,7 @@ describe("the object round-trip (pin 4)", () => {
 
   test("a GET where the blob is missing from disk fails loudly, not with empty bytes", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.put("/stores/master/objects/gone.txt", PAYLOAD, key);
     // Prove the failure path: remove the blob behind the row's back.
     const { rmSync } = await import("node:fs");
@@ -98,7 +98,7 @@ describe("the object round-trip (pin 4)", () => {
 
   test("DELETE removes the row and leaves the blob (GC is out of scope, stated)", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.put("/stores/master/objects/temp.txt", PAYLOAD, key);
     const blobs = server.listBlobFiles();
 
@@ -111,7 +111,7 @@ describe("the object round-trip (pin 4)", () => {
 
   test("the object listing is scoped to its store and sorted by name", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.postJson("/stores", { name: "other" }, key);
     await server.put("/stores/master/objects/b.txt", "b", key);
     await server.put("/stores/master/objects/a.txt", "a", key);
@@ -127,10 +127,10 @@ describe("the object round-trip (pin 4)", () => {
 describe("the raw key is never stored (pin 5)", () => {
   test("PIN 5: the presented key string never appears in the database file", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"], label: "master" });
+    const master = server.mint({ stores: ["*"], perms: ["admin"], label: "master" });
     const scopedResponse = await server.postJson(
       "/keys",
-      { store: "master", perms: ["read", "write"], label: "scoped" },
+      { stores: ["master"], perms: ["read", "write"], label: "scoped" },
       master,
     );
     const scoped = ((await scopedResponse.json()) as { key: string }).key;
@@ -170,7 +170,7 @@ describe("the raw key is never stored (pin 5)", () => {
 describe("named boundary refusals (pin 8)", () => {
   test("PIN 8: a path-traversal attempt is refused 400 and writes nothing", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const before = server.listDataFiles();
 
     const attempts = [
@@ -191,7 +191,7 @@ describe("named boundary refusals (pin 8)", () => {
 
   test("PIN 8: an over-cap body is refused 413 and stores nothing", async () => {
     const server = createTestServer({ maxBytes: 1024 });
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const over = "x".repeat(4096);
 
     const response = await server.put("/stores/master/objects/big.bin", over, key);
@@ -205,7 +205,7 @@ describe("named boundary refusals (pin 8)", () => {
 
   test("PIN 8: a body exactly at the cap is accepted", async () => {
     const server = createTestServer({ maxBytes: 1024 });
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const exact = "x".repeat(1024);
     const response = await server.put("/stores/master/objects/exact.bin", exact, key);
     expect(response.status).toBe(201);
@@ -215,7 +215,7 @@ describe("named boundary refusals (pin 8)", () => {
 
   test("PIN 8: an illegal store or object name is 400 invalid_name", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const names = ["UPPER", "with space", ".hidden", "..hidden", "-leading", "a".repeat(65), "semi;colon"];
     for (const name of names) {
       const put = await server.put(`/stores/master/objects/${encodeURIComponent(name)}`, "x", key);
@@ -232,7 +232,7 @@ describe("named boundary refusals (pin 8)", () => {
     // no path layer interprets them: they are refused neither as names nor as paths.
     // The refusal rule is about `..` AS A SEGMENT, not about the two characters.
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     for (const name of ["dot.start", "a..b", "v1.2.3-beta_1"]) {
       const put = await server.put(`/stores/master/objects/${name}`, name, key);
       expect(put.status, `object name ${name}`).toBe(201);
@@ -243,7 +243,7 @@ describe("named boundary refusals (pin 8)", () => {
 
   test("PIN 8: an unknown store kind is refused at the boundary, never defaulted", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const response = await server.postJson("/stores", { name: "weird", kind: "json" }, key);
     expect(response.status).toBe(400);
     expect((await readError(response)).code).toBe("bad_request");

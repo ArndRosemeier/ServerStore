@@ -10,11 +10,11 @@ below cannot silently rot (pins **A1–A3**, `docs/TESTING.md`).
 ServerStore is a small self-hosted **multi-store object service**: named *stores*
 (a store is a name plus a kind; today the only kind is `bytes`) each hold opaque
 byte objects under string names. Every request is authenticated by an **access key**
-— an opaque bearer token that is scoped to exactly one store (or `*` for a master
-key) and carries a subset of `read`, `write`, `delete`, `admin`. There is no user
-account, no session and no cookie: the key **is** the principal. It is one Node
-process (Node 24, TypeScript, `node:sqlite` for metadata, content-addressed files for
-bytes), it is meant for shared state between programs and players, and it is
+— an opaque bearer token **scoped to a SET of stores** (or to `["*"]`, every store,
+for a master key) and carrying a subset of `read`, `write`, `delete`, `admin`. There
+is no user account, no session and no cookie: the key **is** the principal. It is one
+Node process (Node 24, TypeScript, `node:sqlite` for metadata, content-addressed files
+for bytes), it is meant for shared state between programs and players, and it is
 deliberately small: an object is a name and a byte string, nothing more.
 
 ## Where it lives
@@ -83,12 +83,17 @@ or a log line — it would end up in access logs and browser history.
   | `GET /stores/{store}/objects`, `GET …/objects/{name}` | `read` or `admin` |
   | `PUT …/objects/{name}` | `write` or `admin` |
   | `DELETE …/objects/{name}` | `delete` or `admin` |
-  | `GET /stores`, `POST /stores` | a **master admin** key: scope `*` **and** `admin` |
+  | `GET /stores`, `POST /stores` | a **master admin** key: scope `["*"]` **and** `admin` |
 
-- **Scope today is exactly one store name, or `*`.** There is no set-of-stores scope
-  yet (that is planned, ledger row 30 — not promised here). A `*` + `admin` key is a
-  **master admin**: it may administer stores and mint keys. Via `POST /keys`, an
-  `admin` grant is only ever issued by a master admin, and only for scope `*`.
+- **A key's scope is a SET of stores.** At mint time you name the stores the key may
+  touch (`"stores": ["game", "notes"]`), or `["*"]` for **every store** — the master
+  case. `["*"]` also covers stores created *after* the key was minted; a named set is
+  exactly those stores. Every request is checked against that set: a key is refused
+  `403 forbidden` for a store outside it, and the message names the key's actual scope.
+  A key's own scope is reported by `GET /whoami`.
+- **A `*` + `admin` key is a master admin**: it may administer stores and mint keys.
+  Via `POST /keys`, an `admin` grant is only ever issued by a master admin, and only
+  for scope `["*"]`.
 - **There is no identity beyond the key.** A player pasting a key is not "logged in":
   the server keeps no session, and `last_used_at` on the key row is the only audit
   trail. Treat every key as a password.
@@ -96,26 +101,28 @@ or a log line — it would end up in access logs and browser history.
   with `403 forbidden` ("only an admin key may mint keys") **before anything is
   minted** — a read-only key cannot mint even a read-only key, so **every key traces
   back to an admin action** (the operator's UI, or a game backend he handed an admin key
-  for its store). An admin key **scoped to one store** is the **game-backend flow**: it
-  may mint keys **for its own store only**, and is the kind of key an operator mints on
-  the box with `pnpm run admin:key --store <store> --perms admin`. A **master admin** key
-  (`*` + `admin`) may mint any non-`admin` permission for any existing store — the
+  for its stores). An admin key **scoped to a set of stores** is the **game-backend
+  flow**: it may mint keys **for stores inside its own set only**, and is the kind of key
+  an operator mints on the box with `pnpm run admin:key --store <store> --perms admin`
+  (repeat `--store` for a set). A **master admin** key
+  (`["*"]` + `admin`) may mint any non-`admin` permission for any existing store — the
   operator's bootstrap path. Granting `admin` is stricter than minting at all: it
-  requires a **master admin caller and scope `*`**, so neither a store-scoped admin key
+  requires a **master admin caller and scope `["*"]`**, so neither a scoped admin key
   nor any non-admin key can create another admin. A request refused for any of these
-  reasons mints nothing (no key row, no side effect).
+  reasons mints nothing (no key row, no scope row, no side effect).
 
 ## Routes
 
-All eight routes that exist. `{store}` and `{name}` are path placeholders. Request and
+All nine routes that exist. `{store}` and `{name}` are path placeholders. Request and
 response bodies are JSON unless the row says otherwise.
 
 | Method | Path | Who may call it | Request | Response | Statuses |
 | --- | --- | --- | --- | --- | --- |
 | `GET` | `/healthz` | anyone — no key required | — | `{"ok":true}` | `200` |
+| `GET` | `/whoami` | any valid key — reports the CALLER | — | `{"id","label","stores","perms","expiresAt","lastUsedAt"}` | `200`, `401` |
 | `GET` | `/stores` | master admin key | — | `{"stores":[{"name","kind","createdAt"}]}` | `200`, `401`, `403` |
 | `POST` | `/stores` | master admin key | `{"name":"game","kind":"bytes"?}` | `{"store":{"name","kind","createdAt"}}` | `201`, `400`, `401`, `403`, `409` |
-| `POST` | `/keys` | an **`admin`** key — a store-scoped admin key only within its own store; an `admin` grant needs a master admin key and scope `*` | `{"store"?,"perms":[…],"label"?,"expiresAt"?}` | `{"key":"ssk_…","id","prefix","store","perms","expiresAt"}` | `201`, `400`, `401`, `403`, `404` |
+| `POST` | `/keys` | an **`admin`** key — a store-scoped admin key only within its own set; an `admin` grant needs a master admin key and `["*"]` | `{"stores":[…],"perms":[…],"label"?,"expiresAt"?}` | `{"key":"ssk_…","id","prefix","stores","perms","expiresAt"}` | `201`, `400`, `401`, `403`, `404` |
 | `GET` | `/stores/{store}/objects` | `read` or `admin` on `{store}` | — | `{"objects":[{"store","name","sha256","size","createdAt"}]}` | `200`, `401`, `403`, `404` |
 | `PUT` | `/stores/{store}/objects/{name}` | `write` or `admin` on `{store}` | raw bytes (any `content-type`; ignored) | `{"store","name","sha256","size","createdAt"}` | `201`, `400`, `401`, `403`, `404`, `413` |
 | `GET` | `/stores/{store}/objects/{name}` | `read` or `admin` on `{store}` | — | raw bytes (+ `x-serverstore-sha256`) | `200`, `401`, `403`, `404` |
@@ -146,21 +153,42 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
 - **`POST /stores`** — `name` required; `kind` optional, and `"bytes"` is the only
   value that exists today; an absent `kind` means `bytes`. `409 store_exists` if the
   name is taken. The response is `201` with the new store.
+- **`GET /whoami`** — the **caller's own** key, for a client that needs to know which
+  player it is holding a key for. Fields:
+  - `id` — the key's public lookup id (the same value `POST /keys` returned).
+  - `label` — the operator's label for the key.
+  - `stores` — the key's scope: `["*"]` for a master key, otherwise the store names it
+    may touch, sorted.
+  - `perms` — the key's permissions, in the canonical order.
+  - `expiresAt` — the key's expiry, or `null`.
+  - `lastUsedAt` — when the key was last used, **including this request** (it is
+    updated on every authenticated request, so it is never older than the response).
+
+  **No secret is ever in this body** — not the raw key, not its hash, not its prefix.
+  Without a key the route is `401 unauthorized`, like every route except `/healthz`.
 - **`POST /keys`** — the request body:
+  - `stores` (**required**, non-empty array) — the key's scope. Either `["*"]` alone
+    (every store: the **master** case) or a list of store names. A single-element list
+    is a normal, legal scope. The list may not be **empty** (`400 invalid_scope`), may
+    not **mix** `"*"` with names (`400 invalid_scope`), and may not repeat a store
+    (`400 invalid_scope`). Every named store must already exist (`404 not_found`).
+    The OLD single-string field is gone: a body carrying `"store"` is refused
+    `400 bad_request`, naming `stores`, rather than silently scored as one store.
   - `perms` (**required**, non-empty array) — a subset of `read|write|delete|admin`.
     The stored order is always `read,write,delete,admin`. Only an **`admin`** key may
     mint at all (see Authentication): any other key is `403 forbidden` and **no key is
     minted**. An `admin` value additionally requires a **master admin** caller and
-    `store: "*"`.
-  - `store` (optional) — the store to scope to. An omitted `store` means the caller's
-    own scope. A non-`admin` grant **must name a store**; an `admin` grant must be
-    `"*"` and requires a master admin caller. A named store must already exist
-    (`404` otherwise).
+    `stores: ["*"]`.
   - `label` (optional string; defaults to `"unlabelled"`).
   - `expiresAt` (optional ISO-8601 string or `null`) — after this instant the key is
     refused with `401`.
 
-  The `201` body is `{"key":"ssk_…","id","prefix","store","perms","expiresAt"}`. **The
+  Every requested store must lie **inside the minter's own set**: a store-scoped admin
+  key may mint only for stores it already holds (`403 forbidden` naming both sets),
+  and may not escape to `["*"]`. A refusal mints nothing.
+
+  The `201` body is `{"key":"ssk_…","id","prefix","stores","perms","expiresAt"}`.
+  `stores` is always the canonical scope (`["*"]`, or the names sorted). **The
   `key` field is the raw key. It is returned here and nowhere else, ever.**
 - **`GET /stores/{store}/objects`** — all objects in the store, ordered by name.
   Fields: `store`, `name`, `sha256` (the content address), `size` (bytes),
@@ -193,9 +221,10 @@ what a client should do about it:
 | `bad_request` | `400` | The request was understood but malformed — e.g. an unknown `kind`, an unknown permission, an unparseable `expiresAt`. Fix the request; retrying it unchanged will fail again. |
 | `invalid_name` | `400` | A store/object name failed the charset rule, or the path carried a `.`/`..` segment. Fix the name; do not try to encode around it. |
 | `invalid_body` | `400` | A JSON body was missing, empty, not valid JSON, not a JSON object, or a `PUT` carried no bytes. Send a JSON object / non-empty body. |
+| `invalid_scope` | `400` | A key scope (`stores`) was not a legal set: not an array, empty, mixing `"*"` with store names, or naming the same store twice. Send `["*"]` alone, or a non-empty list of distinct store names. |
 | `payload_too_large` | `413` | The request body exceeded `SERVERSTORE_MAX_BYTES`. The body was **not** stored (never truncated). Send less. |
 | `unauthorized` | `401` | No key, or the key is unknown/revoked/expired. Present a valid key; if you had one, it is gone — mint a replacement. |
-| `forbidden` | `403` | A valid key that is not permitted for this store or operation. Use a key with the right scope and permission; retrying will not help. |
+| `forbidden` | `403` | A valid key that is not permitted for this store, operation or scope. Use a key whose `stores` include this store and whose `perms` include the operation; retrying will not help. |
 | `not_found` | `404` | No such store, no such object, or no such route/method. Create the store, check the name, or fix the path. |
 | `store_exists` | `409` | `POST /stores` with a name already in use. Pick another name (or treat it as success after `GET /stores`). |
 | `name_taken` | `409` | **Reserved.** No route emits this code today; it exists in the vocabulary. Treat it as "pick another name". |
@@ -240,11 +269,11 @@ curl -s -X POST "$BASE/stores" \
   -d '{"name":"game"}'
 # {"store":{"name":"game","kind":"bytes","createdAt":"2026-09-27T20:24:33.498Z"}}
 
-# 2. Mint one key per player, scoped to that store. THE KEY IN THIS RESPONSE IS THE ONLY TIME IT IS EVER SHOWN.
+# 2. Mint one key per player, scoped to a SET of stores. THE KEY IN THIS RESPONSE IS THE ONLY TIME IT IS EVER SHOWN.
 curl -s -X POST "$BASE/keys" \
   -H "Authorization: Bearer $ADMIN_KEY" -H 'content-type: application/json' \
-  -d '{"store":"game","perms":["read","write","delete"],"label":"player-1"}'
-# {"key":"ssk_…","id":"…","prefix":"ssk_…","store":"game","perms":["read","write","delete"],"expiresAt":null}
+  -d '{"stores":["game"],"perms":["read","write","delete"],"label":"player-1"}'
+# {"key":"ssk_…","id":"…","prefix":"ssk_…","stores":["game"],"perms":["read","write","delete"],"expiresAt":null}
 export PLAYER_KEY=ssk_...                       # from the line above, once
 
 # 3. Write an object (the body IS the object — JSON here, any bytes in general).
@@ -268,6 +297,14 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$BASE/stores/game/objects/ro
 ```
 
 `x-api-key: $PLAYER_KEY` works in place of every `Authorization: Bearer` above.
+
+A caller can always ask which key it is holding — the answer carries no secret:
+
+```bash
+# 7. Who am I? (id, label, the scope this key may touch, its permissions)
+curl -s "$BASE/whoami" -H "Authorization: Bearer $PLAYER_KEY"
+# {"id":"…","label":"player-1","stores":["game"],"perms":["read","write","delete"],"expiresAt":null,"lastUsedAt":"2026-09-27T20:31:02.114Z"}
+```
 
 ## Non-goals (read this before you design around it)
 
@@ -294,7 +331,12 @@ These are **not** implemented today. A client that assumes them will break:
    there are no multi-object transactions.
 7. **No server-side format.** Objects are opaque bytes; the service never parses or
    validates their contents.
-8. **No revoke, rotate or "who am I" route.** Keys are minted over HTTP and by the
-   operator's local command; revocation is an operator action, and there is no
-   `GET /whoami` yet.
-9. **One store per key, or `*`.** A key cannot be scoped to a set of stores yet.
+8. **No revoke or rotate route.** Keys are minted over HTTP and by the operator's
+   local command; revocation is an operator action on the box, and rotation is
+   "mint a new key, stop using the old one" until a revoke route exists. `GET
+   /whoami` **does** exist (above).
+9. **No per-store permissions.** A key's `perms` apply to every store in its scope:
+   "read on `a`, write on `b`" is not expressible yet (ledger row 41 records it as
+   unproven). Mint a separate key per permission shape if you need that today.
+10. **No key listing.** There is no route that lists the keys you hold; `POST /keys`
+    and the operator's local command are the only ways to see one (once, at mint).

@@ -13,7 +13,7 @@ afterEach(cleanupTestServers);
 describe("the store registry (ledger rows 5 and 10)", () => {
   test("PIN 6: the master store exists after first boot, and a second boot does not duplicate it", async () => {
     const first = createTestServer();
-    const master = first.mint({ store: "*", perms: ["admin"] });
+    const master = first.mint({ stores: ["*"], perms: ["admin"] });
 
     const before = await first.get("/stores", master);
     expect(before.status).toBe(200);
@@ -42,14 +42,14 @@ describe("the store registry (ledger rows 5 and 10)", () => {
 
   test("PIN 6: the master store can hold objects on first boot without any store being created", async () => {
     const server = createTestServer();
-    const key = server.mint({ store: "*", perms: ["admin"] });
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
     const put = await server.put("/stores/master/objects/seed.txt", "works", key);
     expect(put.status).toBe(201);
   });
 
   test("many stores coexist from day one and do not see each other's objects", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     for (const name of ["alpha", "beta", "gamma"]) {
       const created = await server.postJson("/stores", { name }, master);
       expect(created.status, await created.clone().text()).toBe(201);
@@ -66,7 +66,7 @@ describe("the store registry (ledger rows 5 and 10)", () => {
 
     const alphaKey = await server.postJson(
       "/keys",
-      { store: "alpha", perms: ["read", "write"] },
+      { stores: ["alpha"], perms: ["read", "write"] },
       master,
     );
     expect(alphaKey.status, await alphaKey.clone().text()).toBe(201);
@@ -80,7 +80,7 @@ describe("the store registry (ledger rows 5 and 10)", () => {
 
   test("creating a store that exists is a 409, not a silent no-op", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     expect((await server.postJson("/stores", { name: "dup" }, master)).status).toBe(201);
     const again = await server.postJson("/stores", { name: "dup" }, master);
     expect(again.status).toBe(409);
@@ -89,13 +89,13 @@ describe("the store registry (ledger rows 5 and 10)", () => {
 
   test("only a master admin key may create a store", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.postJson("/stores", { name: "alpha" }, master);
-    const scoped = await server.postJson("/keys", { store: "alpha", perms: ["admin"] }, master);
+    const scoped = await server.postJson("/keys", { stores: ["alpha"], perms: ["admin"] }, master);
     expect(scoped.status).toBe(403); // a store-scoped admin grant is not modelled
 
     // A scoped read/write key may not reach POST /stores either.
-    const scopedRw = await server.postJson("/keys", { store: "alpha", perms: ["read", "write"] }, master);
+    const scopedRw = await server.postJson("/keys", { stores: ["alpha"], perms: ["read", "write"] }, master);
     const { key } = (await scopedRw.json()) as { key: string };
     const attempt = await server.postJson("/stores", { name: "beta" }, key);
     expect(attempt.status).toBe(403);
@@ -109,7 +109,7 @@ describe("the store registry (ledger rows 5 and 10)", () => {
 
   test("a store row whose kind no handler implements fails loudly, never defaults to bytes", async () => {
     const server = createTestServer();
-    const master = server.mint({ store: "*", perms: ["admin"] });
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
     // Bypass the route on purpose: simulate a row a future schema wrote.
     server.direct((db) => {
       db.exec("INSERT INTO store_kinds(kind) VALUES ('future')");
