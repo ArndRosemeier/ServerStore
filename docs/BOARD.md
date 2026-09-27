@@ -120,6 +120,18 @@ LANDED | row=27 | sha=e1e363f (the docs tip; the CODE tip 1439f61 is its parent)
   | this slice creates no such directory (the probe writes to stdout; the differential's logs are
   | `*.log`, already ignored). Adding a rule for a path that never exists blesses an imaginary file.
 
+IN-FLIGHT | row=33 | writer=session-d037deb5-84e8-4aa6-b065-4a672c93ffe2 | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/api-doc | branch=feat/api-doc
+  | base=2991ec6 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 2026-09-27T20:24Z, no commit yet | brief=docs/briefs/slice-5-api-doc.md
+  | note=STEP A of the owner's approved order: `docs/API.md`, the CLIENT contract another agent codes
+  |   against — base URL, auth (401 vs 403, one store or `*`), all eight routes with shapes, the
+  |   `{error:{code,message}}` envelope with EVERY `ERROR_CODES` entry, caps, a curl "first five
+  |   minutes", and explicit non-goals (no GC, no concurrency control, no CORS, no rate limiting, no
+  |   identity beyond keys). Pins bind the doc to the CODE both ways: A1 routes (derived from
+  |   `createApp().routes`, middleware filtered), A2 error codes (from `ERROR_CODES`), A3 the
+  |   max-bytes default. `src/` must NOT change; a contract/code disagreement is reported, not fixed.
+
 (The slice-3 writer is RETIRED: slice 3 LANDED, was verified by the dispatcher, and its worktree
 worktrees/tripwire, branch feat/tripwire (fully merged) and session ebb420aa… are gone. No writer
 is in flight. The dispatcher then fixed forward the two pins that could not fail — ledger row 25,
@@ -189,6 +201,9 @@ QUEUE | row=31 | BLOCKED ON THE OWNER, one dashboard change: a ZONE-WIDE Cloudfl
   covers this name. THEN, in his own shell: `pnpm run admin:key` (the master key is his; the
   dispatcher must never hold it) and his key-bearing round-trip. The dispatcher then re-runs
   `scripts/probe-live.sh https://store.futuremagic.de` and records the result.
+  | RATIFIED 2026-09-27: the owner RE-CHOSE keys-only with the wildcard KNOWN, rejecting
+  |   Access-as-identity-provider (which would have given browsers a real login and let the store
+  |   trust the tunnel's Access JWT, at the price of an Access seat per player) — ledger row 32.
 QUEUE | row=28 | API DOC: `docs/API.md` — the CLIENT contract (base URL, the auth header, the eight
   routes that actually exist, the `{error:{code,message}}` envelope with its codes, and the caps),
   PINNED to the code by a test that derives the route list from the app. Next landing after the
