@@ -197,6 +197,13 @@ TRAP | t1 | Adding a hostname to /etc/cloudflared/config.yml REQUIRES RESTARTING
 TRAP | t2 | Two FOREIGN processes were mid-run at reconcile in BlasterMaster/worktrees/dup-tripwire
   | (`npm run gate`, `npm run build`). The gate lock is PER-REPO, so it does not exclude a peer
   | project's suite; check pgrep / board.sh before a big run.
+TRAP | t4 | A DIFFERENTIAL HARNESS's restore is itself code that can be wrong, and it was TWICE in
+  | the row-27 harness: `restore` knew only the FIRST file it mutated (the unit stayed mutated after
+  | arm D6), and a `RESTORED=0/1` "already restored" guard then made the SECOND explicit `restore`
+  | return early (the unit survived a second run). Both left the tree dirty with no error. Rule:
+  | a restore restores EVERY mutated path, is NEVER guarded by a "already done" flag (`git checkout
+  | HEAD --` is idempotent), and the harness must assert each hash is back before it claims success
+  | — the hash check is what caught it, not the trap.
 
 GUARD | g1 | Never bind to 0.0.0.0. Loopback + tunnel is how every service on this box is exposed
   | (precedent: apps-web.service).
