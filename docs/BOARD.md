@@ -58,13 +58,11 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer landing B0.1 (row 39: only an admin key may mint; the subset rule deleted as
-  |   unreachable); slices 1-6 verified and retired. THIS writer does not retire itself: the
-  |   worktree worktrees/mint-admin and branch feat/mint-admin are the dispatcher's to retire after
-  |   ITS OWN verification, which is OWED.
-  |   serverstore.service is installed, enabled and active on 127.0.0.1:8477 ONLY (local probe
-  |   PASS exit 0); the PUBLIC name is still blocked by the zone-wide Cloudflare Access policy
-  |   (row 31 — one dashboard change from the owner).
+  | state=NO writer in flight; slices 1-7 verified and retired. NEXT = step B (multi-store scope per
+  |   key + `whoami` + the missing REVOKE route), then step C (the admin UI). serverstore.service is
+  |   installed, enabled and active on 127.0.0.1:8477 ONLY (local probe PASS exit 0); the PUBLIC name
+  |   is still blocked by the zone-wide Cloudflare Access policy (row 31 — one dashboard change from
+  |   the owner, explained in the session).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -286,19 +284,12 @@ LANDED | row=27 | sha=e1e363f (the docs tip; the CODE tip 1439f61 is its parent)
 Q RED on PIN K1 and PIN K4), and its worktree worktrees/keys-subset, branch feat/keys-subset and
 session 6e744d65… are RETIRED. Audit after: lock free, 0 suite processes, 0 browser processes.)
 
-IN-FLIGHT | row=39 | writer=session-d4c6cb54-7687-4433-9f1e-bb8e7d9547e4 | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/mint-admin | branch=feat/mint-admin
-  | base=aae3eb4 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=CLOSED by the LANDED row=39 record above (CODE tip 1063e29, rebased onto 45c3e8a)
-  | brief=docs/briefs/slice-7-mint-admin.md
-  | note=B0.1 implements the owner's STRICTER rule (ledger row 38): only a key holding `admin` may
-  |   mint — a store-scoped admin within its own store, a master admin anywhere; a non-admin grant
-  |   still needs a named existing store, and an `admin` grant still needs a master admin plus
-  |   `scope *`. The subset check B0 landed becomes UNREACHABLE under that rule, so the writer must
-  |   delete it or keep it with its reinstatement condition written down, and must record the
-  |   prerequisite: any future slice that lets a NON-admin key mint reinstates the subset rule in
-  |   the same commit. Pins M1-M5; arms in OPPOSITE directions (delete the admin check → M1 red;
-  |   require a MASTER admin → M2 red while M1/M5 stay green). docs/API.md changes in the same commit.
+(B0.1 is CLOSED: verified by the dispatcher (row 40 — gate 11 files / 80 tests / 2.12s; arms R and
+S RED on PIN M1 and PIN M4), and its worktree worktrees/mint-admin, branch feat/mint-admin and
+session d4c6cb54… are RETIRED. Audit after: lock free, 0 node/vitest/chrome processes.
+ONLY AN ADMIN KEY MAY MINT — the owner's rule (row 38/39), pinned in both directions, and the
+unreachable subset branch is deleted with its reinstatement prerequisite in the code and the seam
+index.)
 
 (The row=39 landing (B0.1: only an admin key may mint) is recorded in the LANDED row=39
 block above; its worktree worktrees/mint-admin and branch feat/mint-admin are the
@@ -382,6 +373,14 @@ QUEUE | row=31 | BLOCKED ON THE OWNER, one dashboard change: a ZONE-WIDE Cloudfl
   | RATIFIED 2026-09-27: the owner RE-CHOSE keys-only with the wildcard KNOWN, rejecting
   |   Access-as-identity-provider (which would have given browsers a real login and let the store
   |   trust the tunnel's Access JWT, at the price of an Access seat per player) — ledger row 32.
+QUEUE | row=40 | B0.1 LANDED (row 39, verified row 40): ONLY AN ADMIN KEY MAY MINT, and the subset
+  check is deleted as unreachable, with its reinstatement prerequisite written into the code comment
+  and docs/SEAM-INDEX.md. NEXT = step B (multi-store scope per key + `whoami` + the missing REVOKE
+  ROUTE), then step C (the admin UI). One finding for C: a store-scoped admin key CANNOT be minted
+  over HTTP — `pnpm run admin:key --store <s> --perms read,write,delete,admin` is the one-command
+  bootstrap per game, and the UI needs no change unless we later widen the admin-grant rule so a
+  master admin may grant `admin` scoped to an existing store (a deliberate new kind of admin, with
+  its own pins: it must not mint `admin` for another store, and must not grant `*`).
 QUEUE | row=38 | B0 as LANDED implements the SUBSET rule; the owner chose ADMIN-ONLY minting, so
   B0.1 (row 39) implements HIS rule and must decide the fate of the now-unreachable subset branch.
   The dispatcher's sequencing error is recorded in row 38: the fork was asked in the same breath as
@@ -447,6 +446,7 @@ retired_branch=feat/core
 retired_branch=feat/tripwire
 retired_branch=feat/api-doc
 retired_branch=feat/keys-subset
+retired_branch=feat/mint-admin
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -454,13 +454,13 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-39 (19, 23, 27, 33, 36 and 39 appended by writers, out
+  | decisions=docs/DECISION-LEDGER.md rows 1-40 (19, 23, 27, 33, 36 and 39 appended by writers, out
   |   of numeric order by design; 24 the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the
   |   explicit retirement key, 27 slice 4, 28 the multiplayer requirement, 29 its verification,
   |   30 the owner's registration model, 31 the Access blocker, 32 the perimeter re-ratification,
   |   33 the client contract, 34 its verification, 35 the CONFIRMED key escalation, 36 the subset
   |   fix, 37 its verification, 38 the owner's admin-only rule and the sequencing error, 39 that
-  |   rule implemented: only an admin key may mint, the subset rule deleted as unreachable)
+  |   rule implemented, 40 its verification)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -475,6 +475,18 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=40 | sha=9fc93b4 (the B0.1 record tip, pulled BEFORE gating)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 11 files · 80 tests ·
+  | 2.12s. My arms, neither of them the writer's: R the shared PREDICATE neutered
+  | (`requireAdmin()` -> no-op) → RED on PIN M1 (201 vs 403); S the ADMIN-GRANT SCOPE rule removed
+  | → RED on PIN M4. Both restored byte-identical. The §2 decision is ratified: the subset check and
+  | `grantablePermissions` are deleted as unreachable, prerequisite written in the code and the seam
+  | index. Finding for step C (checked, not assumed): a store-scoped admin key cannot be minted over
+  | HTTP, but `pnpm run admin:key --store <s> --perms read,write,delete,admin` can — one command per
+  | game; the UI needs no change unless the admin-grant rule is deliberately widened.
+  | retired=worktree worktrees/mint-admin · branch feat/mint-admin · session d4c6cb54…
+  | docs=ledger rows 39-40 · this board.
+
 LANDED | row=37 | sha=aae3eb4 (the B0 record tip, pulled BEFORE gating this time)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 11 files · 80 tests ·
   | 2.06s. My arms, neither of them the writer's: P the shared PREDICATE neutered
