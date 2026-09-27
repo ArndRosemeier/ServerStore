@@ -153,7 +153,7 @@ describe("auth: a scoped key cannot leave its store (pin 2)", () => {
 });
 
 describe("auth: revocation and expiry (pin 3)", () => {
-  test("PIN 3: a revoked key is refused 401", async () => {
+  test("PIN 3: A REVOKED key is refused 401", async () => {
     const server = createTestServer();
     const key = server.mint({ store: "*", perms: ["admin"], label: "doomed" });
     expect((await server.get("/stores", key)).status).toBe(200);
