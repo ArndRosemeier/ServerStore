@@ -58,14 +58,28 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=LIVE and CURRENT: main@262df1b, service restarted with C1 and re-probed — the ADMIN UI is
-  |   served publicly at https://store.futuremagic.de/ (200 HTML 4824 bytes; /app.js and /app.css
-  |   too). The page is public by design; the key gates every store and key operation behind it.
-  |   EXACTLY ONE live admin key (the owner's). NO writer in flight; NEXT = C2 (edit + rename +
-  |   audit stamp).
+  | state=ONE writer in flight (C2, row 53: named, EDITABLE keys + an audit stamp). LIVE at
+  |   https://store.futuremagic.de/ with the C1 console — the page is public by design and the key
+  |   gates every store and key operation behind it. The service runs the C1 code (restarted at
+  |   7e92967; every commit since is docs-only). EXACTLY ONE live admin key (the owner's).
+  |   After C2: a headless-browser test (owed) and rate limiting.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
+
+IN-FLIGHT | row=53 | writer=session-10c1ec41-c7cb-4c40-908c-13bc3fe856d0 | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/key-edit | branch=feat/key-edit
+  | base=a556854 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 21:28Z, no commit yet | brief=docs/briefs/slice-11-key-edit.md (committed)
+  | note=STEP C2, the owner's requirement (row 51): name a key ("key for tom"), then grant or remove
+  |   things later, and see the current permissions. `PATCH /keys/:id` takes any subset of
+  |   {label, stores, perms}; editing is a SECOND WAY TO GRANT PERMISSIONS, so it reuses the SAME
+  |   boundary as minting (the one containment predicate plus requireAdmin). Two new nullable columns
+  |   stamp the change (updated_at + updated_by = the editing key's id), returned by GET /keys.
+  |   Pins E1-E7; the two ARMS are the invariants that must not be assumed — E6 the key's VALUE is
+  |   unchanged (the same raw key still authenticates: no silent re-mint) and E3 a REVOKED key is not
+  |   editable back to life. The UI gains an Edit affordance, disabled for revoked keys, with a
+  |   warning when editing the key currently in use.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
