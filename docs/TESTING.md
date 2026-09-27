@@ -35,6 +35,29 @@ never empty bytes); a store row whose kind has no handler is a named 500, never 
 fallback to `bytes`; `x-api-key` behaves exactly like `Authorization: Bearer`; an
 illegal name that only *looks* like a traversal (`a..b`) is still a legal name.
 
+## The secret tripwire pins (slice 3)
+
+A public repo is fine for this project (ledger rows 20–21); "we won't push the key" is
+what needed a mechanism. The scanner is `tests/helpers/secrets.ts`, called by ONE test
+file, `tests/secrets.test.ts` — deliberately **not** a step in `scripts/gate.sh`, which
+is the ONE way the suite runs (a second check path there could be skipped silently).
+**Tracked** means what a push would PUBLISH (`git ls-files`).
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| S1 | the tracked tree carries no GitHub token shape (`ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`+36, `github_pat_`+22) | `tests/secrets.test.ts` (`PIN S1`) |
+| S2 | the tracked tree carries no PEM private key | `tests/secrets.test.ts` (`PIN S2`) |
+| S3 | the host credential's value appears in no tracked file — and an absent credential file makes this FAIL with "cannot check", never pass silently | `tests/secrets.test.ts` (`PIN S3`) |
+| S4 | the scanner DETECTS a planted fake token (the tripwire's falsifiability, on a throwaway git repo) | `tests/secrets.test.ts` (`PIN S4`) |
+| S5 | a legal `ssk_…` fixture is NOT flagged (the anti-cry-wolf pin) | `tests/secrets.test.ts` (`PIN S5`) |
+| S6 | no tracked `.db` / `.sqlite` / `.sqlite3` artifact, and `.gitignore` carries the three patterns | `tests/secrets.test.ts` (`PIN S6`) |
+
+**The rule that is deliberately absent: a bare `ssk_`-shaped scan.** Our own tests mint
+key-shaped fixtures (`tests/auth.test.ts`, `tests/admin-key.test.ts`), so such a rule
+would either red on the suite or force an exclusion list covering the very files most
+likely to hide a real leak. The planted token in `tests/secrets.test.ts` is likewise
+built from parts, never written as a literal, because that file is itself tracked.
+
 ## The writer's differential (4 arms + control)
 
 Machinery: `checkpoints/differential.sh`. Raw output: `checkpoints/differential.out`
@@ -73,11 +96,31 @@ make it (correctly) refuse itself with exit 9, which is VOID, not evidence.
 - The control run is the proof that the injection, and nothing else, was the
   difference: same tree, same lock, exit **0**.
 
-## The full gate, as landed
+## The tripwire's differential arm (slice 3)
 
-`bash scripts/gate.sh` → **exit 0** (GREEN). Cheap tier `tsc --noEmit` clean; full
-tier **6 test files, 52 tests, ~2.0s**. Raw log: `.gate-logs/gate.log` (gitignored).
-Peak: see `docs/BOARD.md`'s LANDED row.
+Machinery: `checkpoints/tripwire-differential.sh`. Raw output:
+`checkpoints/tripwire-differential.out` (the per-arm gate log is `*.log`, so gitignored).
+
+Because the tripwire is itself an arm, its differential is small: the slice is
+committed FIRST, an obviously fake GitHub token (`ghp_` + 36×`A`) is appended to a
+tracked file, and the ONE gate (`bash scripts/gate.sh`, with `GATE_LOG_DIR` redirected
+per arm so the green log survives) must go RED on PIN S1. The file's sha256 is printed
+before and after — an unchanged hash would be a VOID probe — and the restore runs from
+`HEAD` in an `EXIT INT TERM` trap, so a crash cannot leave the token in the tree. A
+control gate run on the restored tree must be GREEN.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| S | a fake `ghp_`+36×`A` appended to a tracked file | `AGENTS.md` | `2af90514d3fc…409e` → `d0034621e1d6…7f0e` | `PIN S1: the tracked tree carries no GitHub token shape` — `a GitHub token shape is TRACKED — it is already published: remove it and rotate it: expected [ Array(1) ] to deeply equal []`, received `["AGENTS.md: GitHub token shape at byte offset 7671"]` |
+| control | none — the restored tree | — | `2af90514d3fc…409e` (back) | **GREEN**: 7 files · 60 tests · ~2.0s |
+
+## The full gate
+
+`bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.
+Raw log: `.gate-logs/gate.log` (gitignored). This doc deliberately carries **no test
+count**: a tally restated in prose goes stale inside its own landing (ledger row 22
+deleted one for exactly that), so the LANDED row on `docs/BOARD.md` records the numbers
+for the specific landing it verified.
 
 ## What is NOT tested yet (honest unknowns)
 
@@ -91,3 +134,11 @@ Peak: see `docs/BOARD.md`'s LANDED row.
   deployment slice, which also owns the `systemctl --user` unit.
 - **No garbage collection test** — there is no GC (brief §4, ledger row 19).
 - **Memory ceiling (GUARD g3) not implemented**; the suite is still trivial.
+- **The tripwire only knows the pinned shapes.** A secret in a format outside
+  `ghp_`/`github_pat_`/PEM (or a github.com credential for another host) is not
+  caught; the tripwire is a net, not a proof.
+- **An UNTRACKED secret is out of scope by design** — tracked is what a push would
+  publish (ledger row 23).
+- **PIN S3 depends on this host's `~/.git-credentials` existing.** On a machine
+  without it the gate is RED by design: "cannot check" is not a pass (AGENTS.md
+  rule 1).

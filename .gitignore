@@ -7,3 +7,9 @@ dist/
 data/
 /.gate-logs/
 /.gate-lock/
+
+# The data root lives OUTSIDE the repo (ledger row 13). These are the preventive
+# half of PIN S6; the tripwire in tests/secrets.test.ts is the enforcing half.
+*.db
+*.sqlite
+*.sqlite3

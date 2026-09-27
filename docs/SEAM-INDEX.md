@@ -34,6 +34,7 @@ Everything the project will ever do is either **core** (a step above `dispatch`)
 | The store-kind dispatch point | `src/storage/kinds.ts` `handlerFor()` | Add a kind HERE and nowhere else |
 | Bytes on disk | `src/storage/fs.ts` | Content-addressed, atomic temp-file + rename |
 | Minting an admin key | `src/admin/mint-key.ts` (`pnpm run admin:key`) | Local, direct-to-SQLite. **No HTTP route may do this** |
+| Where a secret in the tracked tree is checked | `tests/helpers/secrets.ts` `scanTrackedTree()`, called only by `tests/secrets.test.ts` | **Tracked = what would be PUBLISHED** (`git ls-files`). Scans `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`+36 and `github_pat_`+22, PEM private-key headers, the literal value of the host credential read from `~/.git-credentials` (**compared in memory, never printed**), and tracked `.db`/`.sqlite`/`.sqlite3` paths; `*.db`/`*.sqlite`/`*.sqlite3` were added to `.gitignore` as the preventive half. Deliberately **no bare `ssk_` rule** (ledger row 23): our own fixtures are necessarily key-shaped, so it would red on the suite or force an exclusion list over the files most likely to hide a real leak. **Not in `scripts/gate.sh`**: the gate is the ONE way the suite runs, and a second check path there multiplies the ways a check can be silently skipped. An absent credential file makes PIN S3 FAIL with "cannot check" — never a silent pass (AGENTS.md rule 1). |
 
 ## The seam is extensible without a rewrite (the point of the slice)
 

@@ -105,6 +105,9 @@ QUEUE | row=21 | SLICE 3 (small, SERIALIZED after the core lands — it touches 
   `*.db`/`*.sqlite` to .gitignore. Rejected: scanning for `ssk_`-shaped strings — the writer's own
   fixtures are necessarily key-shaped, so it would either red on the tests or have to exclude the
   very files most likely to hide a real leak.
+QUEUE-CLOSED | row=21 | LANDED 2026-09-27 as row 23 (see the LANDED record below): the tripwire is
+  tests/helpers/secrets.ts + tests/secrets.test.ts, pins S1–S6, and it is deliberately NOT a step in
+  scripts/gate.sh.
 QUEUE-CLOSED | row=17 | RESOLVED 2026-09-27: fixed UPSTREAM in Toolbox at 830a224, with a
   BEHAVIOURAL pin (tests/scaffold-board.test.mjs) that Toolbox never had — its existing guards
   only read text, which is exactly why the defect survived there. Observed RED against the old
@@ -141,8 +144,8 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   row-19 landing, whose sha is the LANDED row below)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-22 + 24 (row 19 appended by the writer, out of
-  |   numeric order by design; row 23 belongs to the in-flight tripwire writer)
+  | decisions=docs/DECISION-LEDGER.md rows 1-24 (row 19 appended by the writer out of numeric
+  |   order; row 23 is the tripwire landing, row 24 the Toolbox upstream fix)
   | briefs=docs/BRIEF.md + docs/briefs/ | seams=docs/SEAM-INDEX.md | tests=docs/TESTING.md
   | sessions=~/.dsh/sessions/--home-administrator-projects-ServerStore--
 ```
