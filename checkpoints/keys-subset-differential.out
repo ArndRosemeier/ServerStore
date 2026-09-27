@@ -1,5 +1,5 @@
 lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
-=== CONTROL — the committed tree (b701cd3) ===
+=== CONTROL — the committed tree (9081b6e) ===
   CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/keys-subset/.diff-harness/control)
   control GREEN:  Test Files  11 passed (11)       Tests  80 passed (80) 
 === ARM A — the subset check is DELETED (a key may mint what it does not hold) ===
@@ -8,26 +8,26 @@ lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across 
   sha256: dc8ab00886dd0a95f41eb9c1bae8bc588250e4b964319da7b59ad9e267e85471  (after injection)
   ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/keys-subset/.diff-harness/arm-a)
   named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/keys-subset/.diff-harness/arm-a/full.log
-     × PIN K1: a READ-ONLY key cannot mint a permission it does not hold 50ms
-     × PIN K2: a key lacking 'delete' cannot mint 'delete' 8ms
-     ✓ PIN K3: a key passes on exactly what it holds, and no more 15ms
-     ✓ PIN K4: the boundaries that already held still hold 8ms
+     × PIN K1: a READ-ONLY key cannot mint a permission it does not hold 47ms
+     × PIN K2: a key lacking 'delete' cannot mint 'delete' 9ms
+     ✓ PIN K3: a key passes on exactly what it holds, and no more 19ms
+     ✓ PIN K4: the boundaries that already held still hold 7ms
      ✓ PIN K5: a master admin key still mints any non-admin permission for any existing store 8ms
- ✓ tests/auth.test.ts (16 tests) 120ms
- ✓ tests/gate.test.ts (7 tests) 343ms
+ ✓ tests/auth.test.ts (16 tests) 103ms
+ ✓ tests/gate.test.ts (7 tests) 344ms
 --
  FAIL  tests/keys.test.ts > keys: a key may not mint a permission it does not hold (pin K1-K5) > PIN K1: a READ-ONLY key cannot mint a permission it does not hold
 AssertionError: expected 201 to be 403 // Object.is equality
 
 - Expected
   named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/keys-subset/.diff-harness/arm-a/full.log
-     × PIN K2: a key lacking 'delete' cannot mint 'delete' 8ms
-     ✓ PIN K3: a key passes on exactly what it holds, and no more 15ms
-     ✓ PIN K4: the boundaries that already held still hold 8ms
+     × PIN K2: a key lacking 'delete' cannot mint 'delete' 9ms
+     ✓ PIN K3: a key passes on exactly what it holds, and no more 19ms
+     ✓ PIN K4: the boundaries that already held still hold 7ms
      ✓ PIN K5: a master admin key still mints any non-admin permission for any existing store 8ms
- ✓ tests/auth.test.ts (16 tests) 120ms
- ✓ tests/gate.test.ts (7 tests) 343ms
- ✓ tests/objects.test.ts (16 tests) 242ms
+ ✓ tests/auth.test.ts (16 tests) 103ms
+ ✓ tests/gate.test.ts (7 tests) 344ms
+ ✓ tests/objects.test.ts (16 tests) 252ms
 --
  FAIL  tests/keys.test.ts > keys: a key may not mint a permission it does not hold (pin K1-K5) > PIN K2: a key lacking 'delete' cannot mint 'delete'
 AssertionError: expected 201 to be 403 // Object.is equality
@@ -37,19 +37,19 @@ RESTORED: src/server/app.ts back at HEAD; lock released
 === ARM B — the check demands EQUALITY (a legal SUBSET is refused) ===
   file:   src/server/app.ts
   sha256: f4db030fbcf374a8d913f776dcfc140c21443fde77acdee701aa18a80cc4cb18  (before)
-  sha256: 8f69f28e04c32e3a22cea5415408353094d59f7f86a65d914c03ec0af25760c3  (after injection)
+  sha256: 5eebf6fa9d5a8622da3b6446dc4465952b4ee32e3dda73de2b5d6d93adaf95d8  (after injection)
   ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/keys-subset/.diff-harness/arm-b)
   named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/keys-subset/.diff-harness/arm-b/full.log
-     × PIN K3: a key passes on exactly what it holds, and no more 6ms
-     × PIN K4: the boundaries that already held still hold 5ms
-     × PIN K5: a master admin key still mints any non-admin permission for any existing store 6ms
-stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
-[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-BXCgB8/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
-
- ❯ tests/core.test.ts (6 tests | 2 failed) 107ms
+     × PIN K3: a key passes on exactly what it holds, and no more 17ms
+     ✓ PIN K4: the boundaries that already held still hold 9ms
+     ✓ PIN K5: a master admin key still mints any non-admin permission for any existing store 11ms
+ ✓ tests/auth.test.ts (16 tests) 135ms
+ ✓ tests/gate.test.ts (7 tests) 342ms
+ ✓ tests/objects.test.ts (16 tests) 261ms
+ ✓ tests/entrypoint.test.ts (4 tests) 793ms
 --
  FAIL  tests/keys.test.ts > keys: a key may not mint a permission it does not hold (pin K1-K5) > PIN K3: a key passes on exactly what it holds, and no more
-AssertionError: {"error":{"code":"forbidden","message":"key cannot grant 'read', 'write': it does not hold those permissions"}}: expected 403 to be 201 // Object.is equality
+AssertionError: {"error":{"code":"forbidden","message":"key cannot grant 'read': it does not hold that permission"}}: expected 403 to be 201 // Object.is equality
 
 - Expected
 RESTORED: src/server/app.ts back at HEAD; lock released

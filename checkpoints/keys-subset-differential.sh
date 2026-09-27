@@ -140,18 +140,22 @@ import sys
 path, anchor = sys.argv[1], sys.argv[2]
 src = open(path).read()
 assert src.count(anchor) == 1, "anchor is not unique"
-# ARM B: correct = subset; this arm demands EQUALITY, so passing on LESS than you
-# hold (a legal subset) is refused. That is the stricter-than-correct defect.
+# ARM B: correct = subset; this arm demands EQUALITY for a NON-ADMIN minter, so
+# passing on LESS than you hold (a legal subset) is refused. That is the
+# stricter-than-correct defect. The `admin` branch is left carrying the correct
+# subset behaviour ON PURPOSE: a mutation that also broke admin would poison every
+# fixture that mints through HTTP with a master admin key, and the arm would then
+# prove "arm B breaks many things" instead of "K3 catches over-strictness".
 arm = (
     "    const wanted = [...perms].sort().join(\",\");\n"
     "    const held = [...auth.grantablePermissions].sort().join(\",\");\n"
-    "    const lacks: Permission[] = wanted === held ? [] : [...perms];  // ARM B: EQUALITY, not subset"
+    "    const lacks: Permission[] = auth.grantablePermissions.includes(\"admin\") || wanted === held ? [] : [...perms];  // ARM B: EQUALITY for a non-admin minter"
 )
 src = src.replace(anchor, arm)
 open(path, "w").write(src)
 PY
 [ $? -eq 0 ] || fail "ARM B: the injection did not apply"
-grep -q 'ARM B: EQUALITY, not subset' "$APP" || fail "ARM B: the injection is not in $APP"
+grep -q 'ARM B: EQUALITY for a non-admin minter' "$APP" || fail "ARM B: the injection is not in $APP"
 AFTER_B="$(hash_of "$APP")"
 say "=== ARM B — the check demands EQUALITY (a legal SUBSET is refused) ==="
 say "  file:   $APP"
@@ -161,6 +165,11 @@ say "  sha256: $AFTER_B  (after injection)"
 [ "$AFTER_A" != "$AFTER_B" ] || fail "arms A and B produced the SAME hash — VOID probe"
 run_tiers "ARM B" "$LOGS/arm-b" || true
 assert_arm "arm B" "$LOGS/arm-b" "$PIN_K3"
+# Arm B is SURGICAL: only the non-admin equality defect is injected, so only K3 may
+# fall. A second failing K-pin would mean the arm is broader than the rule it proves.
+if grep -E "× PIN K(1|2|4|5)" "$LOGS/arm-b/full.log" >/dev/null; then
+  fail "arm B reddened more K-pins than K3 — the injection is not surgical"
+fi
 restore
 [ "$(hash_of "$APP")" = "$BEFORE_B" ] || fail "arm B restore failed — the file hash did not come back"
 

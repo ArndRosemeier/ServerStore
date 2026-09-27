@@ -202,19 +202,21 @@ subset predicate's refusal list) in `src/server/app.ts`.
 | Arm | Injected defect | sha256 before → after | Went RED on |
 | --- | --- | --- | --- |
 | A | the subset check is **DELETED** (`lacks` pinned to `[]`) — the pre-fix behaviour | `f4db030f…cb18` → `dc8ab008…5471` | `PIN K1` — `expected 201 to be 403` (a `read`-only key minted a `write` key), and `PIN K2` — `expected 201 to be 403` |
-| B | the check is **STRICTER than correct**: the requested perms must EQUAL the minter's grantable set, so a legal SUBSET is refused | `f4db030f…cb18` → `8f69f28e…60c3` | `PIN K3` — `expected 403 to be 201` (`key cannot grant 'read', 'write': it does not hold those permissions`), the bare-`read` subset mint; **K4 and K5 also fell** (see below) |
+| B | the check is **STRICTER than correct** — for a non-`admin` minter the requested perms must EQUAL its grantable set, so a legal SUBSET is refused | `f4db030f…cb18` → `5eebf6fa…95d8` | `PIN K3` — `expected 403 to be 201` (`key cannot grant 'read': it does not hold that permission`), the bare-`read` subset mint; **K1/K2/K4/K5 stayed GREEN** |
 | control | none — the committed tree, same lock held | — | **GREEN**: 11 files · 80 tests |
 | control | none — the restored tree, `app.ts` back at `f4db030f…cb18` | — | **GREEN**: 11 files · 80 tests |
 
 - The two arms are the two directions the rule can be wrong: **absent** (A) and
   **over-strict** (B). Arm A proves K1/K2 are not vacuous; arm B proves K3 is not,
   because a check that simply refused everything would have satisfied A's pins.
-- **Arm B's blast radius is reported, not hidden:** its equality test also breaks the
-  master-admin bootstrap path (a master holds `admin`, which can never EQUAL a
-  non-admin request), so K4 and K5 fell with K3. That is the injected defect behaving
-  as injected — the arm's named pin (K3) is the subset/equality boundary it exists to
-  prove, and the extra reds are the same defect seen from the other side (the only key
-  that may grant more than it holds must still work, and under arm B it does not).
+- **Arm B is SURGICAL, and the harness enforces it.** Its first draft demanded
+  equality for *every* minter; because a master admin holds `admin`, which can never
+  EQUAL a non-admin request, that draft also broke the bootstrap path and reddened
+  every fixture that mints through HTTP (K4, K5, PIN 2, PIN 5 and two registry tests) —
+  proving "arm B breaks many things" rather than "K3 catches over-strictness". The arm
+  now leaves the `admin` branch carrying the correct subset behaviour on purpose, and
+  the harness asserts that ONLY K3 may fall (`× PIN K(1|2|4|5)` in the arm log is a
+  HARNESS FAILURE). Observed: exactly one failing K-pin, K3, and both controls GREEN.
 - No hash was unchanged (a VOID probe would have been refused by the harness), the two
   arms produced DIFFERENT hashes, and both controls are GREEN — so the injection, and
   nothing else, was the difference.

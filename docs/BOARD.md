@@ -85,10 +85,11 @@ LANDED | row=36 | sha=e1bd3cf (the VERIFIED CODE tip on the rebased tree: `src/s
   |   A the subset check DELETED (`lacks` pinned to `[]`), src/server/app.ts f4db030f…cb18 →
   |     dc8ab008…5471, RED on `PIN K1: a READ-ONLY key cannot mint a permission it does not hold`
   |     (`expected 201 to be 403`) AND `PIN K2: a key lacking 'delete' cannot mint 'delete'`
-  |   B the check STRICTER than correct — EQUALITY instead of subset, f4db030f…cb18 → 8f69f28e…60c3,
-  |     RED on `PIN K3: a key passes on exactly what it holds, and no more` (`expected 403 to be 201`
-  |     on the legal bare-`read` subset mint); K4/K5 fell too, and that blast radius is REPORTED in
-  |     docs/TESTING.md, not hidden — the equality mutation also breaks the master-admin bootstrap
+  |   B the check STRICTER than correct — for a non-admin minter, EQUALITY instead of subset,
+  |     f4db030f…cb18 → 5eebf6fa…95d8, RED on `PIN K3: a key passes on exactly what it holds, and
+  |     no more` (`expected 403 to be 201` on the legal bare-`read` subset mint) and on K3 ALONE
+  |     (the harness fails the run if any other K-pin reddens; the arm leaves the admin branch
+  |     correct on purpose, and its first broader draft is recorded in docs/TESTING.md)
   |   both controls GREEN (11 files · 80 tests), app.ts back at f4db030f…cb18. The two arms carry
   |     DIFFERENT hashes. No VOID probe.
   | what it is=the SECOND half of the `POST /keys` authorization decision, in the SAME branch as the
