@@ -171,14 +171,9 @@ QUEUE-CLOSED | row=none | HTTP framework (Hono vs Fastify) — SETTLED by slice 
   Express (no Web-standard Request/Response, so no in-process tests). Ledger row 19.
 QUEUE-CLOSED | row=none | FIRST FEATURE SLICE — the multi-store core LANDED as row 19 and was
   independently verified and retired by the dispatcher (ledger row 22).
-QUEUE | row=none | RECONCILER PARSER DEBT (found by the slice-3 writer). `retired=` is parsed as a
-  CLAIM, so board prose like "retired=NOT yet — … branch X" reports a false BOARD STALE while X
-  still exists. That writer worked around it with wording; the parser is unchanged HERE and is
-  BYTE-IDENTICAL UPSTREAM at `~/projects/Toolbox/scaffold/scripts/board.sh:110`, so every
-  downstream copy inherits it. Dispatcher recommendation: an explicit machine-readable claim key
-  (e.g. `retired_branch=<name>`) plus a pin. Rejected: prose-sniffing for "NOT yet", which is the
-  same fragility one level down. Needs the owner's word — it changes the board vocabulary that
-  Toolbox's template hands to new projects.
+QUEUE-CLOSED | row=26 | RESOLVED 2026-09-27: a claim is now the explicit key `retired_branch=<name>`,
+  landed here (bec97e1) and upstream in Toolbox (a709f78), each pinned in BOTH directions. The
+  vocabulary table carries the rule and this board lists its own claims explicitly.
 QUEUE | row=27 | DEPLOYMENT SLICE LANDED (see the LANDED row above): the unit, the runbook, the
   probe and the spawned-entrypoint pins are on the branch. STILL OWED, and none of it is the
   writer's: (a) the dispatcher's OWN verification of the landing; (b) INSTALLING the unit
@@ -190,6 +185,19 @@ QUEUE | row=27 | DEPLOYMENT SLICE LANDED (see the LANDED row above): the unit, t
   the master key with `pnpm run admin:key` and his key-bearing round-trip — the dispatcher must
   never hold it (ledger row 7); (e) the live probe
   `bash scripts/probe-live.sh https://store.futuremagic.de`. Order and rollback: docs/DEPLOYMENT.md.
+QUEUE | row=28 | API DOC: `docs/API.md` — the CLIENT contract (base URL, the auth header, the eight
+  routes that actually exist, the `{error:{code,message}}` envelope with its codes, and the caps),
+  PINNED to the code by a test that derives the route list from the app. Next landing after the
+  deployment, because the doc should name the deployed base URL. NO such doc exists today: every
+  existing doc is internal-facing.
+QUEUE | row=28 | MULTIPLAYER GAPS, in dependency order: (1) per-object version + `ETag`/`If-Match`
+  (412) and a `since=` filter on the list route — without it two players writing one object
+  silently lose state; (2) CORS, without which a browser game on another origin cannot call the
+  API at all; (3) rate limiting, which a public multiplayer endpoint needs; (4) per-player keys
+  minted by the game's own backend (possible TODAY via `POST /keys` — the row-8 `user` substrate
+  only if the owner wants identity inside the store). BLOCKED ON THE OWNER: the sync model (async
+  vs realtime) and the client shape (browser vs native), which together decide whether a push
+  channel is needed at all.
 
 TRAP | t1 | Adding a hostname to /etc/cloudflared/config.yml REQUIRES RESTARTING the tunnel — a few
   | seconds in which dsh.futuremagic.de (the owner's own GUI), opencode.futuremagic.de and
