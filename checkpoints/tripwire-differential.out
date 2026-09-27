@@ -1,0 +1,131 @@
+ARM S — plant an obviously fake GitHub token in a TRACKED file
+  file:   AGENTS.md
+  sha256: 2af90514d3fc3e0f0be4790cc155ff0cecb6b5a2872a6c109769923dcfde409e  (before)
+  sha256: d0034621e1d68f8e2c19c45fc35f79d053d475bad31258717e3a87ed84577f0e  (after injection)
+repo:  /home/administrator/projects/ServerStore
+tier:  full (GATE_TESTS=1)
+cheap: pnpm run typecheck
+full:  pnpm test
+log:   /home/administrator/projects/ServerStore/worktrees/tripwire/.diff-harness/arm/gate.log
+lock:  acquired /home/administrator/projects/ServerStore/.gate-lock
+
+=== cheap tier (blocks a push) ===
+$ pnpm run typecheck
+$ tsc --noEmit
+
+=== full tier (this is what makes it VERIFIED) ===
+$ pnpm test
+$ vitest run
+
+ RUN  v5.0.2 /home/administrator/projects/ServerStore/worktrees/tripwire
+
+ ✓ tests/gate.test.ts (5 tests) 49ms
+ ❯ tests/secrets.test.ts (8 tests | 1 failed) 32ms
+   ❯ the secret tripwire on the tracked tree (ledger row 23) (8)
+     ✓ the scan actually looked (a broken listing cannot pass vacuously) 2ms
+     × PIN S1: the tracked tree carries no GitHub token shape 11ms
+     ✓ PIN S2: the tracked tree carries no PEM private key 0ms
+     ✓ PIN S3: the host credential's value appears in no tracked file 0ms
+     ✓ PIN S4: the scanner DETECTS a planted fake token 15ms
+     ✓ PIN S5: a legal key-shaped fixture is NOT flagged 0ms
+     ✓ PIN S6: no tracked database or blob artifact 0ms
+     ✓ the ignore list carries the database patterns (the preventive half of S6) 0ms
+ ✓ tests/runtime.test.ts (3 tests) 154ms
+ ✓ tests/core.test.ts (6 tests) 80ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-tIVX9o/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+
+ ✓ tests/auth.test.ts (16 tests) 109ms
+ ✓ tests/objects.test.ts (16 tests) 289ms
+ ✓ tests/admin-key.test.ts (6 tests) 1630ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+     ✓ PIN 9: pnpm run admin:key mints a key the HTTP API accepts as admin 663ms
+     ✓ PIN 9: the CLI prints the key once and the database holds only its hash 637ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/secrets.test.ts > the secret tripwire on the tracked tree (ledger row 23) > PIN S1: the tracked tree carries no GitHub token shape
+AssertionError: a GitHub token shape is TRACKED — it is already published: remove it and rotate it: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "AGENTS.md: GitHub token shape at byte offset 7671",
++ ]
+
+ ❯ tests/secrets.test.ts:50:7
+     48|       filesWith("github-token"),
+     49|       "a GitHub token shape is TRACKED — it is already published: remo…
+     50|     ).toEqual([]);
+       |       ^
+     51|   });
+     52|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 6 passed (7)
+      Tests  1 failed | 59 passed (60)
+   Start at  19:19:44
+   Duration  1.98s (tests 68%, transform 22%, import 9%, worker 1%)
+
+[ELIFECYCLE] Test failed. See above for more details.
+
+RED — the full tier failed. Raw log: /home/administrator/projects/ServerStore/worktrees/tripwire/.diff-harness/arm/gate.log
+Fix the cause; never re-run until green, and never re-run to get a different answer.
+  gate exit: 1 (1 = RED)
+  named pin RED: 2 line(s) in the log
+ FAIL  tests/secrets.test.ts > the secret tripwire on the tracked tree (ledger row 23) > PIN S1: the tracked tree carries no GitHub token shape
+AssertionError: a GitHub token shape is TRACKED — it is already published: remove it and rotate it: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
+RESTORED: AGENTS.md back at e5f5093
+
+CONTROL — the restored tree
+repo:  /home/administrator/projects/ServerStore
+tier:  full (GATE_TESTS=1)
+cheap: pnpm run typecheck
+full:  pnpm test
+log:   /home/administrator/projects/ServerStore/worktrees/tripwire/.diff-harness/control/gate.log
+lock:  acquired /home/administrator/projects/ServerStore/.gate-lock
+
+=== cheap tier (blocks a push) ===
+$ pnpm run typecheck
+$ tsc --noEmit
+
+=== full tier (this is what makes it VERIFIED) ===
+$ pnpm test
+$ vitest run
+
+ RUN  v5.0.2 /home/administrator/projects/ServerStore/worktrees/tripwire
+
+ ✓ tests/secrets.test.ts (8 tests) 31ms
+ ✓ tests/gate.test.ts (5 tests) 50ms
+ ✓ tests/runtime.test.ts (3 tests) 146ms
+ ✓ tests/core.test.ts (6 tests) 77ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-Mde3Z2/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+
+ ✓ tests/auth.test.ts (16 tests) 123ms
+ ✓ tests/objects.test.ts (16 tests) 266ms
+ ✓ tests/admin-key.test.ts (6 tests) 1644ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+     ✓ PIN 9: pnpm run admin:key mints a key the HTTP API accepts as admin 664ms
+     ✓ PIN 9: the CLI prints the key once and the database holds only its hash 636ms
+
+ Test Files  7 passed (7)
+      Tests  60 passed (60)
+   Start at  19:19:48
+   Duration  1.98s (tests 70%, transform 18%, import 10%, worker 1%)
+
+
+GATE GREEN — both tiers passed. Raw log: /home/administrator/projects/ServerStore/worktrees/tripwire/.diff-harness/control/gate.log
+  gate exit: 0 (0 = GREEN)
+
+DIFFERENTIAL COMPLETE: arm RED on PIN S1, control GREEN.
+logs: /home/administrator/projects/ServerStore/worktrees/tripwire/.diff-harness/arm/gate.log /home/administrator/projects/ServerStore/worktrees/tripwire/.diff-harness/control/gate.log

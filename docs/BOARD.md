@@ -153,6 +153,35 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=23 | sha=550e020 (the CODE tip on the rebased tree; the evidence commit carrying this
+  | line rides with the same push)
+  | THE SECRET TRIPWIRE, writer session ebb420aa-fa06-400d-a250-84a28af0f55c (subagent of dispatcher
+  | session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa), worktree worktrees/tripwire, branch feat/tripwire,
+  | base 023e098 (rebased onto origin/main before push).
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 7 test files · 60 tests ·
+  | ~2.0s · raw log .gate-logs/gate.log · peak 1m load 0.92 (0.65 before); no memory ceiling needed
+  | (GUARD g3 still open and still honest).
+  | arm=an obviously fake `ghp_`+36×`A` appended to the tracked AGENTS.md → sha256
+  | 2af90514d3fc…409e → d0034621e1d6…7f0e, the ONE gate exit 1 RED on
+  | `PIN S1: the tracked tree carries no GitHub token shape` (`AGENTS.md: GitHub token shape at byte
+  | offset 7671`), restored from HEAD in an EXIT/INT/TERM trap (hash back to 2af90514d3fc…409e),
+  | control gate on the restored tree GREEN · 7 files · 60 tests. No VOID probe.
+  | Harness: checkpoints/tripwire-differential.sh, raw output checkpoints/tripwire-differential.out.
+  | what it is=ONE pure, dependency-free scanner tests/helpers/secrets.ts `scanTrackedTree()`, called by
+  | ONE test file tests/secrets.test.ts, pins S1–S6; deliberately NOT a step in scripts/gate.sh (the
+  | gate is the ONE way the suite runs). Tracked = what a push would PUBLISH (git ls-files -z). Scans
+  | GitHub token shapes, PEM private-key armor, the literal ~/.git-credentials value (compared in
+  | memory, never printed/echoed/logged), tracked .db/.sqlite/.sqlite3; *.db/*.sqlite/*.sqlite3 added
+  | to .gitignore. An absent credential file makes PIN S3 FAIL with "cannot check" — never a silent
+  | pass (AGENTS.md rule 1). No bare `ssk_` rule: our own fixtures are necessarily key-shaped.
+  | docs=ledger row 23 (appended) · docs/SEAM-INDEX.md (one row) · docs/TESTING.md (pins S1–S6 + the
+  | arm) · this board | COPIES: 1 — checked, no duplication (grepped: "ghp_", "github_pat_",
+  | "PRIVATE KEY", "git ls-files", ".gitignore" — the scan lives once in tests/helpers/secrets.ts and
+  | has exactly one caller, tests/secrets.test.ts; scripts/gate.sh was deliberately NOT given a
+  | second check path).
+  | retired=NOT yet — worktree worktrees/tripwire and branch feat/tripwire are the dispatcher's to
+  | retire after ITS OWN verification. This writer does not retire itself.
+
 LANDED | row=24 | external=830a224 — TOOLBOX, a DIFFERENT repo (~/projects/Toolbox, its main branch)
   | NOTE the key is `external`, NOT the LANDED sha key: the reconciler requires every LANDED sha
   | to be an ancestor of OUR origin/main, and a foreign commit correctly trips it. It did exactly
