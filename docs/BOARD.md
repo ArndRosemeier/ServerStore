@@ -58,10 +58,11 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (C1, row 49: the ADMIN UI the owner asked for). LIVE at
-  |   https://store.futuremagic.de running main@5217cec with B2 (key listing + revoke); live probe
-  |   PASS; EXACTLY ONE live admin key (the owner's). After C1: a headless-browser test (owed) and
-  |   rate limiting.
+  | state=LIVE and CURRENT: main@262df1b, service restarted with C1 and re-probed — the ADMIN UI is
+  |   served publicly at https://store.futuremagic.de/ (200 HTML 4824 bytes; /app.js and /app.css
+  |   too). The page is public by design; the key gates every store and key operation behind it.
+  |   EXACTLY ONE live admin key (the owner's). NO writer in flight; NEXT = C2 (edit + rename +
+  |   audit stamp).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -723,6 +724,7 @@ retired_branch=feat/keys-subset
 retired_branch=feat/mint-admin
 retired_branch=feat/key-stores
 retired_branch=feat/key-lifecycle
+retired_branch=feat/admin-ui
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -730,12 +732,11 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-50 (19, 23, 27, 33, 36, 39, 42 and 46 appended by
+  | decisions=docs/DECISION-LEDGER.md rows 1-54 (19, 23, 27, 33, 36, 39, 42, 46 and 49 appended by
   |   writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
-  |   running-service-is-not-the-repo discovery (GUARD g5), 44 = B1 verified with the live migration
-  |   inspected, 45 = the stray master keys revoked, 47/48 = the owner wants the admin UI (forks
-  |   settled), 50 = B2 verified with the shared predicate's three call sites; row 49 is C1's,
-  |   reserved)
+  |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
+  |   the admin UI requirement and its forks, 50 = B2 verified, 51/52 = named + editable keys,
+  |   54 = C1 verified with the console LIVE)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -749,6 +750,20 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=54 | sha=262df1b (the record commit; the C1 tip verified is 7e92967 — pulled,
+  | restarted and re-probed BEFORE my own gate, per GUARD g5)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 12 files · 96 tests ·
+  | 2.11s. Arms, neither of them the writer's and both on the asset it did not touch: Z an
+  | `ssk_`-shaped string in `web/index.html` → RED on U1 AND U4 (U4 also forbids an inline key);
+  | W a remote `<script src="https://…">` → RED on U4 alone. Both restored byte-identical, and the
+  | FAIL-line metric fixed in row 50 named exactly the pins that fell.
+  | LIVE=https://store.futuremagic.de/ serves the console WITHOUT a key (200 HTML 4824 bytes;
+  | /app.js 200 11683; /app.css 200 3478); probe PASS exit 0. docs/API.md's "unknown path is 404"
+  | is corrected in this commit: without a valid key EVERY path answers 401, which is the better
+  | behaviour — the API never reveals which routes exist.
+  | retired=worktree worktrees/admin-ui · branch feat/admin-ui · session 529a0ac5…
+  | docs=ledger row 54 · this board.
+
 LANDED | row=50 | sha=5217cec (the B2 tip; pulled, restarted and re-probed BEFORE my own gate, per
   | GUARD g5)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 11 files · 92 tests ·
