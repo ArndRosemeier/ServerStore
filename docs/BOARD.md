@@ -45,33 +45,78 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: bec97e1 · 2026-09-27T22:05Z — the gated tree tip of the row-26 landing (the explicit
-  retirement key), verified by the DISPATCHER's own gate: exit 0 GREEN · 7 files · 65 tests ·
-  2.01s, with the two new pins falsifiable in BOTH directions. `bash scripts/board.sh` must
-  report this marker as an ancestor of origin/main. (An earlier line here read
-  "20c132d · 2026-09-27T17:45Z" — LOCAL time mislabelled as Z, the dispatcher's error, corrected
-  rather than quietly.)
+reconciled: e1e363f · 2026-09-27T20:12Z — the tip of the row-27 landing (the deployment slice),
+  verified by THE WRITER'S OWN in-turn gate: exit 0 GREEN · 9 files · 72 tests · 2.04s, with
+  pins D2 and D6 each falsifiable on its OWN arm. `bash scripts/board.sh` must report this
+  marker as an ancestor of origin/main — it does so only AFTER the dispatcher pushes the
+  rebased branch, and the dispatcher's own independent gate is still OWED. (An earlier line
+  here read "bec97e1 · 2026-09-27T22:05Z" — the row-26 tip, LOCAL time mislabelled as Z at
+  the time, the dispatcher's error, corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (slice 4, row 27: the deployment); slices 1-3 verified and retired
+  | state=NO writer in flight; slice 4 (row 27, the deployment) LANDED and awaiting the
+  |   dispatcher's own verification; slices 1-3 verified and retired
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
-  | host=12 cores · 23Gi RAM · / has 506GB free · process audit after the slice-3 landing: lock
-  |   free, 0 suite processes, 0 browser processes (the ~30 orphaned Imager Chrome trees seen
-  |   earlier are gone from the box).
+  | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
+  |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
-IN-FLIGHT | row=27 | writer=session-726acea8-2fbf-4187-9d0d-a2d9298c6f18 | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/deploy | branch=feat/deploy
-  | base=fd87cbd | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 2026-09-27T20:05:01Z, no commit yet | brief=docs/briefs/slice-4-deployment.md
-  | note=the PROCESS contract: the real entrypoint spawned as a test (bounded wait ≤5s,
-  |   trap-killed, loopback-only bind asserted from /proc/net/tcp or ss, no silent skip), a
-  |   systemd --user unit with absolute paths and NO configurable bind host, scripts/probe-live.sh
-  |   (healthz 200 + unauthenticated 401, never a key), and docs/DEPLOYMENT.md carrying the ONE
-  |   ingress line, the RESTART WARNING (TRAP t1), the owner's master-key step and the rollback.
-  |   The writer installs NOTHING: host changes are the dispatcher's, and the tunnel restart needs
-  |   the owner at that moment.
+LANDED | row=27 | sha=e1e363f (the docs tip; the CODE tip 1439f61 is its parent) | THE DEPLOYMENT
+  | SLICE, writer session 726acea8-2fbf-4187-9d0d-a2d9298c6f18 (subagent of dispatcher session
+  | dcd6176e…), worktree worktrees/deploy, branch feat/deploy, base fd87cbd (rebased onto
+  | origin/main 3a5ae41 before push). verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` →
+  | exit 0 (GREEN) · 9 test files · 72 tests · 2.04s · raw log .gate-logs/gate.log · load 1.66
+  | before the run; no memory ceiling needed (GUARD g3 still open and still honest). The
+  | DISPATCHER's independent gate and its own arm are OWED.
+  | arms=checkpoints/deploy-differential.sh, the gate lock held across all of them, hash printed
+  | before and after, restore from HEAD in an EXIT/INT/TERM trap, a control BEFORE and AFTER:
+  |   D2 src/server/config.ts DEFAULT_HOST 127.0.0.1→0.0.0.0, sha256 cce5fb08…ef02 → ff7d1551…743e,
+  |      RED on `PIN D2: the entrypoint listens on 127.0.0.1 and NOT on 0.0.0.0` —
+  |      `expected '0.0.0.0' to be '127.0.0.1'`, /proc/net/tcp `[{"ipv4":"0.0.0.0","raw":"00000000","state":"0A"}, …]`
+  |   D6 deploy/serverstore.service, the comment naming DEFAULT_HOST deleted, sha256
+  |      27e9c0f9…5d86 → efa686be…3d3f, RED on `PIN D6: the unit file does not make the bind host
+  |      configurable` — `expected '…' to match /DEFAULT_HOST/`
+  |   both controls GREEN (9 files · 72 tests), both files back at their before hashes. No VOID probe.
+  |   TWO harness bugs found by running it and both recorded in its comment: `restore` knew only
+  |   the first file it mutated, and an "already restored" flag made the second explicit restore
+  |   a no-op — a cleanup an error path can skip is not cleanup.
+  | what it is=the service's PROCESS contract, pinned where it was previously a review:
+  |   tests/entrypoint.test.ts spawns the repo's OWN entrypoint (`node --experimental-strip-types
+  |   src/server/main.ts`, exactly what `pnpm run serve` and the unit run) with SERVERSTORE_PORT /
+  |   SERVERSTORE_DATA_ROOT and speaks HTTP to it over loopback — D1 healthz 200 from a BOUNDED 5s
+  |   poll, D2 the LISTEN sockets from /proc/net/tcp AND /proc/net/tcp6 are exactly one at
+  |   127.0.0.1, never 0.0.0.0/[::], D3 unauthenticated GET /stores is 401, D4 SIGTERM stops it on
+  |   that signal and leaves no 0A socket; every child is SIGKILLed in afterEach. tests/deploy.test.ts
+  |   reads the unit: D5 systemd-analyze verify, D6 no bind-host DIRECTIVE (comments stripped first —
+  |   the header NAMES SERVERSTORE_HOST in the sentence forbidding it, and the raw-text version of
+  |   this check red on its own warning). deploy/serverstore.service is the systemd USER unit:
+  |   absolute paths, WorkingDirectory the `main` checkout (never a worktree),
+  |   SERVERSTORE_DATA_ROOT=/home/administrator/serverstore-data OUTSIDE the repo (row 13),
+  |   SERVERSTORE_PORT=8477, Restart=on-failure, RestartSec=3, WantedBy=default.target, and NO host.
+  |   scripts/probe-live.sh <base-url> is the live check (healthz 200, unauthenticated 401, exit
+  |   0/1/2, one line per check) and CANNOT receive/print/log a key. docs/DEPLOYMENT.md is the
+  |   ordered runbook: install, verify loopback, the ONE ingress line, `cloudflared tunnel route
+  |   dns`, the RESTART WARNING (TRAP t1 — dsh/opencode/openclaw all drop; ask first), the OWNER
+  |   minting the master key, the probe command, and the rollback.
+  | what was NOT done, deliberately=NOTHING was installed, enabled or started, and no ingress
+  |   line was added: that is a HOST change and the tunnel restart needs the owner's go-ahead at
+  |   that moment. The unit has never run as a service, so Restart=on-failure, the ingress and the
+  |   live hostname round-trip remain UNTESTED by anything automated — probe-live.sh is the command
+  |   that will check the last of them.
+  | retired=none yet. The worktree worktrees/deploy and its ref are the dispatcher's to retire
+  | after ITS OWN verification; this writer does not retire itself.
+  | docs=ledger row 27 (appended) · docs/SEAM-INDEX.md (the process seam: the unit + the probe +
+  | the spawned-entrypoint test, plus gotchas 9-10) · docs/TESTING.md (pins D1-D6, the two arms
+  | with their hashes, and the "no test binds a port" unknown RETIRED) · this board.
+  | COPIES: 1 — checked, no duplication (grepped: "experimental-strip-types", "healthz", "/stores",
+  | "0.0.0.0", "systemd-analyze", "admin:key" — the server is started from src/server/main.ts only,
+  | the process contract lives once in tests/entrypoint.test.ts, the unit contract once in
+  | tests/deploy.test.ts, and scripts/probe-live.sh re-implements no part of the server: it is the
+  | same two checks D1/D3 pin, against a live URL).
+  | .gitignore=NOT amended. The brief offered `/deploy-logs/` or nothing; nothing was chosen because
+  | this slice creates no such directory (the probe writes to stdout; the differential's logs are
+  | `*.log`, already ignored). Adding a rule for a path that never exists blesses an imaginary file.
 
 (The slice-3 writer is RETIRED: slice 3 LANDED, was verified by the dispatcher, and its worktree
 worktrees/tripwire, branch feat/tripwire (fully merged) and session ebb420aa… are gone. No writer
@@ -134,10 +179,17 @@ QUEUE | row=none | RECONCILER PARSER DEBT (found by the slice-3 writer). `retire
   (e.g. `retired_branch=<name>`) plus a pin. Rejected: prose-sniffing for "NOT yet", which is the
   same fragility one level down. Needs the owner's word — it changes the board vocabulary that
   Toolbox's template hands to new projects.
-QUEUE | row=none | DEPLOYMENT: systemd --user unit + cloudflared ingress for
-  store.futuremagic.de + the first end-to-end probe through the tunnel. The owner picked this
-  ("Deploy it"); the tunnel restart needs his go-ahead at that moment (TRAP t1), and the master
-  key is HIS to mint — the dispatcher must never hold it.
+QUEUE | row=27 | DEPLOYMENT SLICE LANDED (see the LANDED row above): the unit, the runbook, the
+  probe and the spawned-entrypoint pins are on the branch. STILL OWED, and none of it is the
+  writer's: (a) the dispatcher's OWN verification of the landing; (b) INSTALLING the unit
+  (`cp deploy/serverstore.service ~/.config/systemd/user/ && systemctl --user daemon-reload &&
+  systemctl --user enable --now serverstore`) and VERIFYING loopback with `ss -ltn 'sport = :8477'`;
+  (c) the ONE ingress line for store.futuremagic.de in /etc/cloudflared/config.yml +
+  `cloudflared tunnel route dns f4dec46d-fd5e-4870-894b-a5c8635c2b82 store.futuremagic.de` + the
+  tunnel restart, which needs the owner's go-ahead AT THAT MOMENT (TRAP t1); (d) the owner minting
+  the master key with `pnpm run admin:key` and his key-bearing round-trip — the dispatcher must
+  never hold it (ledger row 7); (e) the live probe
+  `bash scripts/probe-live.sh https://store.futuremagic.de`. Order and rollback: docs/DEPLOYMENT.md.
 
 TRAP | t1 | Adding a hostname to /etc/cloudflared/config.yml REQUIRES RESTARTING the tunnel — a few
   | seconds in which dsh.futuremagic.de (the owner's own GUI), opencode.futuremagic.de and
@@ -162,12 +214,17 @@ retired_branch=feat/core
 retired_branch=feat/tripwire
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
-  | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main now carries the
-  |   row-19 landing, whose sha is the LANDED row below)
+  | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
+  |   plus the row-27 deployment landing once the dispatcher pushes; each LANDED row below names
+  |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-25 (19 and 23 appended by writers, out of numeric
-  |   order by design; 24 is the Toolbox upstream fix, 25 the S2/S3 pin-hardening)
+  | decisions=docs/DECISION-LEDGER.md rows 1-27 (19, 23 and 27 appended by writers, out of numeric
+  |   order by design; 24 is the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the explicit
+  |   retirement key)
+  | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
+  |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
+  |   probe=scripts/probe-live.sh
   | briefs=docs/BRIEF.md + docs/briefs/ | seams=docs/SEAM-INDEX.md | tests=docs/TESTING.md
   | sessions=~/.dsh/sessions/--home-administrator-projects-ServerStore--
 ```
