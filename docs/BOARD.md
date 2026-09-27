@@ -51,15 +51,28 @@ reconciled: c0731fe · 2026-09-27T16:33:53Z — the gated tree tip of slice 2, v
   corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=slice 2 VERIFIED and RETIRED; no writer in flight; queue below is next
+  | state=ONE writer in flight (slice 3, row 23); slice 2 verified and retired
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
-  | host=12 cores · 23Gi RAM · load 0.6 · / has 506GB free
+  | host=12 cores · 23Gi RAM · / has 506GB free · a FOREIGN gate (BlasterMaster) was mid-run at
+  |   16:35Z, and ~30 orphaned headless Chrome processes from Imager/.gate-logs are ~32h old —
+  |   neither is ours to reap; both are why the load is not zero.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
-  |   origin/main carries the row-19 landing (c0731fe); two LANDED records sit below.
+  |   origin/main carries the row-19 landing (c0731fe) and the reconcile (023e098).
 
-(no IN-FLIGHT writers — slice 2 LANDED and is RETIRED: worktree worktrees/core removed, branch
-feat/core deleted as fully merged, writer session b0fbcc08-9760-4545-bad0-1e5acd46d524 deleted.
-The dispatcher's own independent verification is the second LANDED record below.)
+IN-FLIGHT | row=23 | writer=session-ebb420aa-fa06-400d-a250-84a28af0f55c | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/tripwire | branch=feat/tripwire
+  | base=023e098 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 2026-09-27T17:15:21Z, no commit yet | brief=docs/briefs/slice-3-tripwire.md
+  | note=the SECRET TRIPWIRE — the mechanism behind ledger row 21. A pure scanner in
+  |   tests/helpers/secrets.ts over the TRACKED tree (what would be published): GitHub token
+  |   shapes, PEM private-key headers, and the host credential's exact value compared in memory
+  |   and never printed ("cannot check" reported LOUDLY when the file is absent, never a silent
+  |   pass), plus no tracked *.db/*.sqlite. It must be ABLE to go red (PIN S4 plants a fake
+  |   token) and must NOT cry wolf on our own key-shaped fixtures (PIN S5) — which is why the
+  |   obvious bare-`ssk_` rule was rejected in the brief.
+
+(Slice 2 is retired: worktree worktrees/core removed, branch feat/core deleted as fully merged,
+writer session b0fbcc08… deleted; the dispatcher's independent verification is a LANDED record.)
 
 NOTE | tsconfig now covers src/** and tests/**; src/ exists. docs/SEAM-INDEX.md and
   docs/TESTING.md exist as of slice 2 — they were deliberately absent until there was a seam
