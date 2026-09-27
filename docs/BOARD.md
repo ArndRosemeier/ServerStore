@@ -45,11 +45,12 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: c0731fe · 2026-09-27T16:33:53Z — the gated tree tip of slice 2, verified by the DISPATCHER's own
-  gate (exit 0 GREEN · 6 files · 52 tests · 1.90s) and by its own arms E and H (ledger row 22).
-  `bash scripts/board.sh` must report this marker as an ancestor of origin/main. (An earlier line
-  here read "20c132d · 2026-09-27T17:45Z" — LOCAL time mislabelled as Z, the dispatcher's error,
-  corrected rather than quietly.)
+reconciled: bec97e1 · 2026-09-27T22:05Z — the gated tree tip of the row-26 landing (the explicit
+  retirement key), verified by the DISPATCHER's own gate: exit 0 GREEN · 7 files · 65 tests ·
+  2.01s, with the two new pins falsifiable in BOTH directions. `bash scripts/board.sh` must
+  report this marker as an ancestor of origin/main. (An earlier line here read
+  "20c132d · 2026-09-27T17:45Z" — LOCAL time mislabelled as Z, the dispatcher's error, corrected
+  rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
   | state=NO writer in flight; slices 1-3 verified and retired; DEPLOYMENT is next
@@ -162,6 +163,18 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=26 | sha=bec97e1 | verify=MY OWN: gate exit 0 GREEN · 7 files · 65 tests · 2.01s
+  | (`tests/gate.test.ts` went 5 → 7), and the new pins are falsifiable in BOTH directions on a
+  | fixture repo with a resolvable origin/main and a LIVE branch feat/owed: prose about a
+  | retirement OWED → BOARD RECONCILED (exit 0); `retired_branch=feat/owed` with the branch
+  | alive → BOARD STALE (exit 1, "claimed retired but still exists").
+  | upstream=Toolbox `a709f78`, rebased onto a tip that had MOVED under this work (another
+  | session landed socket-peers + the host-hygiene rule): its integrated `npm test` → 43 tests,
+  | 43 pass, 0 fail, exit 0; and the same suite against the previous board.sh → 41 pass, 2 fail
+  | on exactly the two new pins.
+  | retired=nothing — no writer; a dispatcher landing. | docs=ledger row 26 · this board
+  | (vocabulary row + the explicit claims block).
+
 LANDED | row=25 | sha=8bc9b02 | verify=MY OWN: gate on the FIXED tree exit 0 GREEN · 7 files ·
   | 63 tests · 1.99s; and the SAME arms that exposed the gap now CLOSE it — arm J (the
   | host-credential comparison broken) went from GREEN to RED with 4 pin lines, arm K (the PEM
