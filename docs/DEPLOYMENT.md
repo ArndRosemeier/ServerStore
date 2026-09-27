@@ -1,0 +1,199 @@
+# Deployment — the ordered runbook
+
+ServerStore runs as a **`systemctl --user` service bound to loopback**, behind the
+existing cloudflared tunnel at **`store.futuremagic.de`**. There is no second way to
+start it: the unit runs the repo's own entrypoint, `src/server/main.ts`, which is what
+`pnpm run serve` runs too.
+
+Why it is shaped this way (the decisions, not the steps):
+
+- **`systemctl --user`, loopback, behind the tunnel** — ledger row 3; every service on
+  this box is exposed this way (`apps-web.service`, `dsh-web.service` are the
+  precedents).
+- **The bind host is a CONSTANT, not configuration** — `src/server/config.ts` holds
+  `DEFAULT_HOST = "127.0.0.1"` and `resolveConfig()` has no branch that could read a
+  host from the environment. That is deliberate (GUARD g1), pinned by **PIN D6**, and
+  the unit carries the comment that says so. Do not add `SERVERSTORE_HOST`, a
+  `--host` flag, or `Environment=HOST=…`: turning the host into configuration is how a
+  service ends up on `0.0.0.0`.
+- **The data root is OUTSIDE the repo** — `~/serverstore-data`, i.e.
+  `/home/administrator/serverstore-data` (ledger row 13). The repo stays clonable and
+  disposable; the bytes are neither.
+- **The unit runs from the repo checkout on `main`** —
+  `WorkingDirectory=/home/administrator/projects/ServerStore`. Never point it at a
+  worktree: `main` is what deploys, and a worktree can be retired at any time.
+- **The master key is the OWNER's.** Nothing in this runbook takes, prints or stores
+  it. The key-bearing round-trip is his acceptance step.
+
+Pins this runbook is verified by: **D1–D4** (`tests/entrypoint.test.ts`, the real
+entrypoint spawned over a real loopback socket), **D5–D6** (`tests/deploy.test.ts`, the
+unit file). The one command for all of it is `bash scripts/gate.sh`.
+
+---
+
+## 0. Preconditions (check, do not assume)
+
+```bash
+node --version                 # v24.x — the unit pins /usr/bin/node
+ls -l /usr/bin/node            # must exist: the unit names it absolutely
+systemctl --user is-active apps-web.service   # the precedent: this box's pattern
+ss -ltn 'sport = :8477'        # MUST be empty before you start
+```
+
+`ss -ltn 'sport = :8477'` must print nothing. If something already holds 8477, STOP:
+the unit will crash-loop and `Restart=on-failure` will keep doing it every 3 seconds.
+
+## 1. Install and start the unit
+
+```bash
+cp /home/administrator/projects/ServerStore/deploy/serverstore.service \
+   /home/administrator/.config/systemd/user/serverstore.service
+systemctl --user daemon-reload
+systemctl --user enable --now serverstore
+systemctl --user status serverstore --no-pager
+```
+
+`enable --now` starts it as well as arming it at login. The status must say `active
+(running)`. If it says `activating (auto-restart)`, read `journalctl --user -u
+serverstore -n 50` — the unit is crashing and restarting, and a clean status is the
+only evidence that it is up.
+
+## 2. Verify loopback — and only loopback
+
+```bash
+ss -ltn 'sport = :8477'
+bash /home/administrator/projects/ServerStore/scripts/probe-live.sh http://127.0.0.1:8477
+```
+
+`ss` must show exactly `127.0.0.1:8477`. If it shows `0.0.0.0:8477` or `[::]:8477`,
+STOP and roll back (step 7): the service is on every interface of this box and the
+tunnel is no longer the only way in.
+
+The probe must end `RESULT: PASS ... (exit 0)`. It checks the two things the ingress is
+about to expose — `GET /healthz` is `200`, an unauthenticated `GET /stores` is `401` —
+and it holds no key, so it is safe to run anywhere.
+
+## 3. Add the ONE ingress line
+
+`/etc/cloudflared/config.yml` (root-owned; passwordless sudo works on this box):
+
+```yaml
+ingress:
+  - hostname: openclaw.futuremagic.de
+    service: http://127.0.0.1:18789
+  # … the existing hostnames, unchanged …
+  - hostname: store.futuremagic.de          # <-- THE ONE NEW LINE (plus its service line)
+    service: http://127.0.0.1:8477
+  - service: http_status:404                # the catch-all MUST stay last
+```
+
+Two properties matter:
+
+- **Insert before the catch-all.** cloudflared evaluates `ingress` top to bottom; a
+  rule below `http_status:404` is dead configuration that looks correct.
+- **Add nothing else.** One hostname is the decision (ledger row 7: one subdomain, one
+  master key). A second hostname is a second perimeter nobody has been asked to accept.
+
+## 4. Point DNS at the tunnel
+
+```bash
+cloudflared tunnel route dns f4dec46d-fd5e-4870-894b-a5c8635c2b82 store.futuremagic.de
+dig +short store.futuremagic.de       # must now answer Cloudflare's anycast addresses
+```
+
+The tunnel id is the one already in `/etc/cloudflared/config.yml`. Until this step the
+hostname does not resolve at all, and the ingress line above is untestable.
+
+## 5. Restart the tunnel — ASK THE OWNER FIRST
+
+> **`TRAP t1`.** This restart takes **`dsh.futuremagic.de` (the owner's own GUI),
+> `opencode.futuremagic.de` and `openclaw.futuremagic.de` all down for a few seconds.**
+> Passwordless sudo works, so this warning is the only guard. Do not run it on your own
+> initiative; ask at the moment you are about to, and say what will drop.
+
+```bash
+sudo systemctl restart cloudflared
+systemctl is-active cloudflared        # must be "active" again
+```
+
+Then verify the hostnames came back, including the owner's own:
+
+```bash
+bash /home/administrator/projects/ServerStore/scripts/probe-live.sh https://store.futuremagic.de
+curl -s -o /dev/null -w '%{http_code}\n' https://dsh.futuremagic.de    # 200/302/401 = up
+```
+
+A `502` from the probe means the tunnel is up but the service is not — go back to step
+1. A DNS failure means step 4 did not land.
+
+## 6. The owner mints the master key
+
+**His step, with his shell.** The key is printed exactly once and nothing can read it
+back (SEAM-INDEX gotcha 2):
+
+```bash
+cd /home/administrator/projects/ServerStore && pnpm run admin:key
+```
+
+Then his acceptance round-trip against the LIVE hostname — the part this runbook
+deliberately cannot do, because it holds no key:
+
+```bash
+KEY=ssk_…                                  # his key, his shell
+curl -sS -H "Authorization: Bearer $KEY" https://store.futuremagic.de/stores
+```
+
+If a key ever leaks into a transcript, a shell history or a file, treat it as burned:
+mint a replacement and revoke the old one. Nothing here does that for him.
+
+## 7. Rollback
+
+```bash
+systemctl --user disable --now serverstore
+rm /home/administrator/.config/systemd/user/serverstore.service
+systemctl --user daemon-reload
+```
+
+then remove the two `store.futuremagic.de` lines from `/etc/cloudflared/config.yml` and
+**restart the tunnel again** (step 5's warning applies, so ask again). Optionally delete
+the DNS record Cloudflare created in step 4 — leaving it is harmless, but it points a
+public name at a now-dead ingress.
+
+```bash
+sudo systemctl restart cloudflared
+ss -ltn 'sport = :8477'        # must print nothing again
+```
+
+The data root is **NOT** part of the rollback: `~/serverstore-data` is user data and
+survives every step above. Deleting it destroys every store and every key.
+
+---
+
+## Where things are
+
+| What | Where |
+| --- | --- |
+| The unit (in the repo, versioned) | `deploy/serverstore.service` |
+| The installed unit | `~/.config/systemd/user/serverstore.service` |
+| The entrypoint it runs | `/home/administrator/projects/ServerStore/src/server/main.ts` |
+| The working directory | `/home/administrator/projects/ServerStore` (the `main` checkout) |
+| The data root | `/home/administrator/serverstore-data` (OUTSIDE the repo) |
+| The database | `<data root>/serverstore.db` |
+| The blob floor | `<data root>/stores/<store>/blobs/<sha[0:2]>/<sha>` |
+| The probe | `scripts/probe-live.sh <base-url>` |
+| The tunnel config | `/etc/cloudflared/config.yml` (root-owned) |
+| The service logs | `journalctl --user -u serverstore -f` |
+| The port | `8477` (`SERVERSTORE_PORT` in the unit) |
+
+## Exit codes are the vocabulary
+
+`scripts/probe-live.sh` — quote them exactly, never inflate them:
+
+| Code | Means |
+| ---: | --- |
+| `0` | PASS — every check answered exactly what the pin requires |
+| `1` | FAIL — at least one check did not; the failing line names it |
+| `2` | UNKNOWN — the probe could not run (bad usage, no curl): **not** a pass |
+
+`bash scripts/gate.sh` — the ONE way the suite runs: `0` GREEN · `1` RED · `2` cheap
+tier only (not a pass) · `9` refused, VOID.

@@ -1,0 +1,35 @@
+# ServerStore — the service's PROCESS contract (slice 4, ledger row 27).
+#
+# A systemd USER unit. It runs the repo's OWN entrypoint (`pnpm run serve` runs the
+# same file), from the repo checkout on `main`, and it is bound to loopback behind
+# the existing cloudflared tunnel.
+#
+# The data root is OUTSIDE the repo (ledger row 13): the repo must stay clonable and
+# disposable, and the bytes are neither.
+#
+# Install (a HOST change — the dispatcher's, not a test's; see docs/DEPLOYMENT.md):
+#   cp deploy/serverstore.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now serverstore
+#
+# DELIBERATELY ABSENT: a bind-host setting (GUARD g1, pinned by PIN D6).
+# `src/server/config.ts` holds `DEFAULT_HOST = "127.0.0.1"` as a CONSTANT, and
+# `resolveConfig()` has no branch that could read a host from the environment.
+# Turning the host into configuration is how a service ends up on `0.0.0.0`, and the
+# whole deployment design is "loopback + tunnel". Do not add `SERVERSTORE_HOST`, a
+# `--host` flag, or `Environment=HOST=…` here: exposure is the tunnel's job.
+
+[Unit]
+Description=ServerStore — self-hosted multi-store data service (loopback, behind the Cloudflare tunnel)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/administrator/projects/ServerStore
+Environment=SERVERSTORE_DATA_ROOT=/home/administrator/serverstore-data
+Environment=SERVERSTORE_PORT=8477
+ExecStart=/usr/bin/node --experimental-strip-types /home/administrator/projects/ServerStore/src/server/main.ts
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
