@@ -497,8 +497,9 @@ a process TREE whose kill belongs in a `trap` makes it a slice of its own.
 Machinery: `checkpoints/admin-ui-differential.sh`. Raw transcript:
 `checkpoints/admin-ui-differential.out` (per-arm raw logs are `*.log`, so gitignored).
 
-Same shape as the earlier differentials — the slice is committed FIRST (code tip
-`20e2f75`, which the CONTROL line in the raw transcript names), the same lock
+Same shape as the earlier differentials — the slice is committed FIRST (the transcript's
+CONTROL line names the pre-rebase code tip `20e2f75`, which the pre-push rebase replayed
+as `0570fc2` with an EMPTY content delta), the same lock
 `scripts/gate.sh` takes is held across every arm, `web/app.js`'s sha256 is printed
 before and after each arm, restore is `git checkout HEAD --` inside an `EXIT INT TERM`
 trap, and a control runs BEFORE **and** AFTER. Both arms inject into `web/app.js` — the

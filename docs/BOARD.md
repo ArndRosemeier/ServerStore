@@ -443,20 +443,22 @@ the peer-admin rule), its worktree worktrees/key-lifecycle, branch feat/key-life
 a5bcf77c… are RETIRED, and the LIVE service was restarted to it and re-probed under GUARD g5. The key
 lifecycle — list and revoke — is now available over HTTP.)
 
-LANDED | row=49 | sha=20e2f75 (the VERIFIED CODE tip: `src/server/assets.ts`, `src/server/app.ts`,
-  | `web/index.html`, `web/app.js`, `web/app.css`, `tests/admin-ui.test.ts`,
-  | `tests/helpers/server.ts`, `tests/api-doc.test.ts`, `checkpoints/admin-ui-differential.sh`,
-  | plus `docs/API.md` and `docs/SEAM-INDEX.md`; the docs commit carrying THIS line, the ledger
-  | row 49, `docs/TESTING.md` and the differential transcript is its child — a commit cannot
-  | name its own sha) | THE ADMIN UI (C1): the owner's console, served by THIS service at the
-  | same origin as three fixed no-build routes. Writer session 529a0ac5-a705-41f0-a268-c22ba265da5c
-  | (a subagent of dispatcher session dcd6176e…), worktree worktrees/admin-ui, branch feat/admin-ui,
-  | base origin/main 45346fb — FAST-FORWARDED to the dispatcher's IN-FLIGHT commit c909da3 before
-  | any edit (the row-40 lesson: the brief's base had already moved) — then REBASED onto origin/main
-  | before push. The transcript's CONTROL line names the pre-rebase code tip `20e2f75`; the rebase
-  | replayed it with an EMPTY content delta (`git diff --stat 20e2f75 <post-rebase tip> -- src tests
-  | web docs/API.md docs/SEAM-INDEX.md` is empty), so the gate and the arms ran on exactly the code
-  | that lands.
+LANDED | row=49 | sha=0570fc2 (the VERIFIED CODE tip ON THE REBASED TREE, which is what is on
+  | origin/main: `src/server/assets.ts`, `src/server/app.ts`, `web/index.html`, `web/app.js`,
+  | `web/app.css`, `tests/admin-ui.test.ts`, `tests/helpers/server.ts`, `tests/api-doc.test.ts`,
+  | `checkpoints/admin-ui-differential.sh`, plus `docs/API.md` and `docs/SEAM-INDEX.md`; the docs
+  | commit carrying THIS line, the ledger row 49, `docs/TESTING.md` and the differential transcript
+  | is its child — a commit cannot name its own sha) | THE ADMIN UI (C1): the owner's console,
+  | served by THIS service at the same origin as three fixed no-build routes. Writer session
+  | 529a0ac5-a705-41f0-a268-c22ba265da5c (a subagent of dispatcher session dcd6176e…), worktree
+  | worktrees/admin-ui, branch feat/admin-ui, base origin/main 45346fb — FAST-FORWARDED to the
+  | dispatcher's IN-FLIGHT commit c909da3 before any edit (the row-40 lesson: the brief's base had
+  | already moved) — then REBASED onto origin/main 3263a1e before push. The pre-rebase code tip was
+  | `20e2f75`, and that is the sha the differential transcript's CONTROL line names; the rebase
+  | replayed it as `0570fc2` with an EMPTY content delta (`git diff --stat 20e2f75 0570fc2 -- src
+  | tests web docs/API.md docs/SEAM-INDEX.md` is empty), so the gate and the arms ran on exactly the
+  | code that lands. The first docs commit named the pre-rebase sha; THAT was corrected forward in a
+  | follow-up docs commit rather than rewritten, because main is not force-pushed.
   | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 12 test files ·
   | 96 tests · 2.11s · raw log `.gate-logs/gate.log`; no memory ceiling needed (GUARD g3 still open
   | and still honest). The DISPATCHER's independent gate and its own arms are OWED.
