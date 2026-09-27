@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 #
-# The writer's OWN differential — scratch machinery, lives in this worktree.
+# The writer's OWN differential for SLICE 2 — kept in the repo as reproducible
+# evidence for this landing, and as a worked example for the next slice's arms.
+# It is NOT a general harness: the arms below are this slice's pins and file names.
+# (Its first header line claimed it "lives in this worktree"; it is committed to main,
+# so the claim was corrected when the slice was verified.)
 #
 # Three arms. Each one edits ONE line of committed source, proves the file hash
 # CHANGED, and shows the named pin going RED. Two arms that produced identical

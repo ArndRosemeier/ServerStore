@@ -44,28 +44,29 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: 2e44eaf · 2026-09-27T16:10Z — the gated landing commit, and now MACHINE-VERIFIED:
-  `bash scripts/board.sh` → BOARD RECONCILED (exit 0), reporting "2e44eaf is on origin/main" and
-  "2e44eaf is an ancestor of the remote". (An earlier line here read "20c132d · 2026-09-27T17:45Z",
-  which was LOCAL time mislabelled as Z — the dispatcher's error, corrected rather than quietly.)
+reconciled: c0731fe · 2026-09-27T16:33:53Z — the gated tree tip of slice 2, verified by the DISPATCHER's own
+  gate (exit 0 GREEN · 6 files · 52 tests · 1.90s) and by its own arms E and H (ledger row 22).
+  `bash scripts/board.sh` must report this marker as an ancestor of origin/main. (An earlier line
+  here read "20c132d · 2026-09-27T17:45Z" — LOCAL time mislabelled as Z, the dispatcher's error,
+  corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=writer LANDED row 19; dispatcher verification of the pushed landing is OWED
+  | state=slice 2 VERIFIED and RETIRED; no writer in flight; queue below is next
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · load 0.6 · / has 506GB free
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
-  |   The row-19 landing is pushed to origin/main; the LANDED row below names its sha.
+  |   origin/main carries the row-19 landing (c0731fe); two LANDED records sit below.
 
-(no IN-FLIGHT writers — the slice-2 writer LANDED its work on branch `feat/core` and
-pushed it; the LANDED row below is the record, and the dispatcher re-verifies before
-retiring the worktree and branch.)
+(no IN-FLIGHT writers — slice 2 LANDED and is RETIRED: worktree worktrees/core removed, branch
+feat/core deleted as fully merged, writer session b0fbcc08-9760-4545-bad0-1e5acd46d524 deleted.
+The dispatcher's own independent verification is the second LANDED record below.)
 
-NOTE | tsconfig includes tests/ only. src/ arrives with the first FEATURE slice (the multi-store
-  core); inventing a dead module now would be vanity, and the ledger records it as unproven.
+NOTE | tsconfig now covers src/** and tests/**; src/ exists. docs/SEAM-INDEX.md and
+  docs/TESTING.md exist as of slice 2 — they were deliberately absent until there was a seam
+  and a behaviour to record.
 NOTE | Toolbox's machinery MOVED (now docs/README.md, WAY-OF-WORKING.md, BOARD, DECISION-LEDGER,
-  SEAM-INDEX, TESTING, GATE, BRIEF + a 4-file scaffold). We have the minimum it names — board,
-  ledger, brief, ONE gate, a lock — and deliberately have NO SEAM-INDEX and NO TESTING doc yet:
-  there is no seam and no behaviour to record. Both land with the first feature slice.
+  SEAM-INDEX, TESTING, GATE, BRIEF + a 4-file scaffold). Slice 2 supplied our SEAM-INDEX and
+  TESTING doc, so we now hold the full set the current rules name.
 
 QUEUE | row=7 | exposure DECIDED (one subdomain + one master key). Ingress NOT added yet: it needs
   the tunnel restart (TRAP t1) and the owner's go-ahead at that moment.
@@ -154,6 +155,25 @@ LANDED | row=19 | sha=9ddf8f8 (the verified CODE tip; this docs commit is its ow
   | src/storage/fs.ts; the data root is joined to a path in exactly one module).
   | note=the failed test-helper parse `raw.split("_")[1]` is recorded in the seam index gotchas:
   | base64url ids can start with `_`, so the correct helper is keyIdFromRaw().
+
+LANDED | row=19 | sha=c0731fe (the gated tree tip; the dispatcher's doc fixes ride in the reconcile
+  | commit that carries this line) | verify=THE DISPATCHER'S OWN, independent of the writer:
+  | full gate exit 0 GREEN · 6 test files · 52 tests · 1.90s · raw .gate-logs/gate.log.
+  | My own arms, NONE of them the writer's four:
+  |   E  cross-store scope check removed          -> RED on PIN 2 (expected 200 to be 403)
+  |   F  the app.use("*") traversal layer removed -> GREEN }
+  |   G  rawPathname returns the collapsed path   -> GREEN } three REDUNDANT layers refuse a
+  |   H  traversalRefusal itself -> null          -> RED on PIN 8 (expected 404 to be 400) }
+  | Three layers, so a one-line mutation of ONE of them proves NOTHING: F and G are redundancy,
+  | not missing pins, and only H settles it. Measured mechanism: the layer that fires is
+  | `wrapped.request` on the RAW STRING (400 "path may not contain a '.' or '..' segment"); the
+  | other three pin attempts answer 401 first and are refused later by parseName — which is why
+  | the pin's shared `invalid_name` code cannot attribute them. PIN 8 IS falsifiable (arm H), so
+  | the raw-target claim is sound. Rule recorded in ledger row 22: mutate the SHARED PREDICATE.
+  | docs=spot-checked; three prose defects found and fixed (the 49-vs-52 test count DELETED rather
+  | than updated, the "3 arms" heading corrected, the harness header corrected).
+  | retired=worktree worktrees/core · branch feat/core (fully merged, safe delete) · writer session
+  | b0fbcc08-9760-4545-bad0-1e5acd46d524 (deleted).
 
 LANDED | row=14 | sha=2e44eaf | verify=MY OWN: cheap tier exit 2 (which is NOT a pass) + full gate
   | GREEN exit 0 · 1 test file · 4 tests · 205ms · raw log .gate-logs/gate.log

@@ -83,9 +83,11 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
 ## Known debt (and where it is recorded)
 
 - **No garbage collection** for orphaned blobs — ledger row 19, brief §4.
-- **Memory ceiling (GUARD g3) not implemented.** The suite is now 49 tests / ~2s, so
-  there is still nothing to bound; the debt is board `g3` and this line changes when
-  the suite stops being trivial.
+- **Memory ceiling (GUARD g3) not implemented.** The suite still runs in seconds, so
+  there is nothing to bound; the debt is board `g3` and this line changes when the
+  suite stops being trivial. (This line used to carry a test COUNT, which went stale
+  within the same landing — 49 written, 52 landed. A volatile number restated in prose
+  is exactly what the ledger warns about; point at the suite, not at its tally.)
 - **`POST /keys` exists** (admin keys mint scoped keys); it is not in the brief's
   minimum route list and is pinned in the direction that matters — it cannot mint an
   admin key without a master admin key, and a scoped key cannot escape its store.

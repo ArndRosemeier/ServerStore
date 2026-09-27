@@ -35,7 +35,7 @@ never empty bytes); a store row whose kind has no handler is a named 500, never 
 fallback to `bytes`; `x-api-key` behaves exactly like `Authorization: Bearer`; an
 illegal name that only *looks* like a traversal (`a..b`) is still a legal name.
 
-## The writer's differential (3 arms + control)
+## The writer's differential (4 arms + control)
 
 Machinery: `checkpoints/differential.sh`. Raw output: `checkpoints/differential.out`
 (per-arm raw logs are kept locally but are `*.log`, so gitignored).
