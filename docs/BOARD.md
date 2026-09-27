@@ -179,8 +179,10 @@ LANDED | row=23 | sha=550e020 (the CODE tip on the rebased tree; the evidence co
   | "PRIVATE KEY", "git ls-files", ".gitignore" — the scan lives once in tests/helpers/secrets.ts and
   | has exactly one caller, tests/secrets.test.ts; scripts/gate.sh was deliberately NOT given a
   | second check path).
-  | retired=NOT yet — worktree worktrees/tripwire and branch feat/tripwire are the dispatcher's to
-  | retire after ITS OWN verification. This writer does not retire itself.
+  | retired=none yet. The worktree worktrees/tripwire and its ref are the dispatcher's to retire
+  | after ITS OWN verification; this writer does not retire itself. (Discovery: `scripts/board.sh`'s
+  | `retired=` parser treats "NOT yet … <ref>" as a retirement CLAIM and reports a false STALE when
+  | the word "branch" precedes the ref; recorded here, not silently reworded.)
 
 LANDED | row=24 | external=830a224 — TOOLBOX, a DIFFERENT repo (~/projects/Toolbox, its main branch)
   | NOTE the key is `external`, NOT the LANDED sha key: the reconciler requires every LANDED sha
