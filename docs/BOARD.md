@@ -443,17 +443,81 @@ the peer-admin rule), its worktree worktrees/key-lifecycle, branch feat/key-life
 a5bcf77c… are RETIRED, and the LIVE service was restarted to it and re-probed under GUARD g5. The key
 lifecycle — list and revoke — is now available over HTTP.)
 
-IN-FLIGHT | row=49 | writer=session-529a0ac5-a705-41f0-a268-c22ba265da5c | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/admin-ui | branch=feat/admin-ui
-  | base=45346fb | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 21:19Z, no commit yet | brief=docs/briefs/slice-10-admin-ui.md (committed)
-  | note=STEP C1, the owner's requirement (row 47: "a web UI ... I do not want to use the terminal"),
-  |   with both forks settled by him in row 48 — SAME ORIGIN, served by the service, NO-BUILD static
-  |   assets at three fixed routes (/ , /app.js , /app.css). The key is memory-only by construction
-  |   and that is a PIN (U2 scans the served bytes for every persistence API), the served bytes carry
-  |   no secret (U1), and every path the UI calls must be a route the API registers (U3).
-  |   Honest price: plain JS is not typechecked and no automated check exercises it in a browser —
-  |   a headless test is owed, not v1.
+LANDED | row=49 | sha=20e2f75 (the VERIFIED CODE tip: `src/server/assets.ts`, `src/server/app.ts`,
+  | `web/index.html`, `web/app.js`, `web/app.css`, `tests/admin-ui.test.ts`,
+  | `tests/helpers/server.ts`, `tests/api-doc.test.ts`, `checkpoints/admin-ui-differential.sh`,
+  | plus `docs/API.md` and `docs/SEAM-INDEX.md`; the docs commit carrying THIS line, the ledger
+  | row 49, `docs/TESTING.md` and the differential transcript is its child — a commit cannot
+  | name its own sha) | THE ADMIN UI (C1): the owner's console, served by THIS service at the
+  | same origin as three fixed no-build routes. Writer session 529a0ac5-a705-41f0-a268-c22ba265da5c
+  | (a subagent of dispatcher session dcd6176e…), worktree worktrees/admin-ui, branch feat/admin-ui,
+  | base origin/main 45346fb — FAST-FORWARDED to the dispatcher's IN-FLIGHT commit c909da3 before
+  | any edit (the row-40 lesson: the brief's base had already moved) — then REBASED onto origin/main
+  | before push. The transcript's CONTROL line names the pre-rebase code tip `20e2f75`; the rebase
+  | replayed it with an EMPTY content delta (`git diff --stat 20e2f75 <post-rebase tip> -- src tests
+  | web docs/API.md docs/SEAM-INDEX.md` is empty), so the gate and the arms ran on exactly the code
+  | that lands.
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 12 test files ·
+  | 96 tests · 2.11s · raw log `.gate-logs/gate.log`; no memory ceiling needed (GUARD g3 still open
+  | and still honest). The DISPATCHER's independent gate and its own arms are OWED.
+  | arms=checkpoints/admin-ui-differential.sh, the gate lock held across BOTH arms, web/app.js's
+  | sha256 printed before and after, restore from HEAD in an EXIT/INT/TERM trap, a control BEFORE
+  | and AFTER, raw transcript checkpoints/admin-ui-differential.out (key-shaped strings scrubbed —
+  | ledger row 21):
+  |   A the key is WRITTEN TO A BROWSER STORE (`localStorage.setItem` beside the module's ONE
+  |     assignment to `key`), web/app.js 6e1b862b…d128 → 1619558c…d247, RED on `PIN U2: the served
+  |     app.js references no key-persistence API` — `expected [ 'localStorage' ] to deeply equal []`;
+  |     U1/U3/U4 stayed GREEN.
+  |   B the console CALLS A PATH NO ROUTE REGISTERS (`fetch("/no-such-route")` appended),
+  |     6e1b862b…d128 → 3c977fbd…88f8, RED on `PIN U3: every path the UI calls is a route the API
+  |     registers` — `expected [ '/no-such-route' ] to deeply equal []`; U1/U2/U4 stayed GREEN.
+  |   both controls GREEN (12 files · 96 tests), web/app.js back at 6e1b862b…d128. The two arms
+  |     carry DIFFERENT hashes from the SAME before-hash. No VOID probe.
+  | what it is=`src/server/assets.ts` `UI_ASSETS` is the WHOLE static surface: THREE literal GET
+  |   routes (`/`, `/app.js`, `/app.css`), each naming its file under `web/` LITERALLY — no directory
+  |   walking, no static-file middleware, no client-supplied string in a path, so no traversal
+  |   surface is added. The files resolve from `assets.ts` via `import.meta.url`, never from cwd; a
+  |   missing asset is a LOUD 500 (`internal`), never a blank page; every response carries
+  |   `cache-control: no-store`. The routes register BESIDE `/healthz` and BEFORE
+  |   `app.use("*", guard)` — the console must load WITHOUT a key (the operator types it INTO the
+  |   page) and `GET /whoami` is what proves it. `GET /` is a literal route, not a catch-all:
+  |   `/stores` is still 401 and an unknown path is still the API's JSON 404 (both pinned by U1).
+  |   Behaviour: password-field key entry proven with `GET /whoami` (nothing else is fetched until
+  |   it succeeds), stores list/create, keys list, mint with `read`+`write` ON and `delete`/`admin`
+  |   OFF by default, `admin` unavailable unless the scope is the every-store `["*"]` (the API
+  |   refuses it otherwise and the note says so), the returned key shown ONCE with a copy button and
+  |   a blunt warning, revoke, and API errors rendered from the `{error:{code,message}}` envelope.
+  |   Phone-usable CSS. docs/API.md gained the three routes plus an "admin UI" section, so pins
+  |   A1–A3 stay green (12 files · 96 tests, tests/api-doc.test.ts 3/3).
+  | what it does NOT add=a bundler, a build step, a second entrypoint, a static-file subsystem, or a
+  |   secret in the tracked tree. The key lives in ONE module variable in `web/app.js` and is
+  |   cleared by "Forget key"; U2 scans the SERVED bytes for every persistence API, U3 pins every
+  |   path it calls to `createApp().routes`, and U4 pins the HTML to same-origin with no inline
+  |   script.
+  | wire format=unchanged: `{error:{code,message}}`; THREE new routes (`GET /`, `GET /app.js`,
+  |   `GET /app.css`) and no new error code.
+  | docs=docs/DECISION-LEDGER.md row 49 · docs/SEAM-INDEX.md (the UI seam + gotcha 11: the asset
+  |   routes must stay above the key guard) · docs/TESTING.md (U1–U4, both arms with their hashes,
+  |   and the honest unknown: nothing executes the page in a browser) · docs/API.md (the three
+  |   routes + the admin-UI section) · this board.
+  | COPIES: 2→1 — the route-set derivation was defined TWICE (tests/api-doc.test.ts's local
+  |   `registeredRoutes()` and the new PIN U3's copy) and now lives ONCE in
+  |   `tests/helpers/server.ts` `registeredRoutes()`, read by PIN A1 and PIN U3; and
+  |   `src/server/assets.ts` `UI_ASSETS` is the ONE place the three asset routes are named (the app
+  |   registers them FROM that table, so the route list cannot be retyped). Grepped:
+  |   "registeredRoutes", "UI_ASSETS", "readUiAsset", "createTestServer", "localStorage",
+  |   "sessionStorage", "history.pushState".
+  | HONEST UNKNOWN (the brief's price, ledger row 48): nothing executes the console in a browser.
+  |   U1–U4 are static scans of the SERVED bytes plus served status/content-type checks, and plain
+  |   JS is not typechecked by the cheap tier. A HEADLESS-BROWSER test is OWED and is explicitly
+  |   not v1 (the host rule: a browser is a process TREE, its kill belongs in a trap).
+  | GUARD g5 APPLIES: this landing touches `src/`, so the LIVE service still serves the pre-C1
+  |   code. The DISPATCHER must pull, restart the unit (its WorkingDirectory is the main checkout,
+  |   which only now contains `web/`), and re-run `scripts/probe-live.sh
+  |   https://store.futuremagic.de` — and then `GET /` on the live hostname answers the console —
+  |   before the owner relies on it.
+  | retired=none yet. The worktree worktrees/admin-ui and branch feat/admin-ui are the dispatcher's
+  | to retire after ITS OWN verification; this writer does not retire itself.
 
 (The row=39 landing (B0.1: only an admin key may mint) is recorded in the LANDED row=39
 block above; its worktree worktrees/mint-admin and branch feat/mint-admin are the

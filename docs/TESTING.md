@@ -459,6 +459,67 @@ proves nothing about a pin.
   arms produced DIFFERENT hashes from the same before-hash, and both controls are GREEN
   — so the injection, and nothing else, was the difference.
 
+## The admin-UI pins (slice 10, U1–U4)
+
+Slice 10 (ledger row 49) serves the owner's admin console from the **same origin** as
+the API, as **no-build** assets: `GET /` (HTML), `GET /app.js` (one ES module, plain
+JavaScript) and `GET /app.css`. `src/server/assets.ts` `UI_ASSETS` is the WHOLE static
+surface — three literal routes, each naming its file under `web/` literally, with no
+directory walking and no client-supplied string in a path. The routes are registered
+beside `/healthz`, **before** the key guard, because the console itself must load
+without a key (it is the page that asks for one) and `GET /whoami` is what proves the
+key; `GET /` is a literal path, so it is not a catch-all and shadows no API route.
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| U1 | the three UI routes are SERVED — `GET /` is 200 HTML, `/app.js` and `/app.css` carry sane content types — and the served bytes carry no key-shaped string; `GET /stores` is still `401` and an unknown path is still the API's envelope, so `GET /` shadows nothing | `tests/admin-ui.test.ts` (`PIN U1`) |
+| U2 | a scan of the SERVED `app.js` references none of `localStorage`, `sessionStorage`, `document.cookie`, `location.search`, `location.hash`, `history.pushState` — the key is memory-only | `tests/admin-ui.test.ts` (`PIN U2`) |
+| U3 | every path literal the SERVED `app.js` calls matches a route from `createApp(...).routes` (a template's `${…}` normalised to `:id`), so a renamed route breaks the pin instead of the operator's click | `tests/admin-ui.test.ts` (`PIN U3`) |
+| U4 | the HTML loads no remote script or asset, carries no inline `<script>` body, and no key-shaped string | `tests/admin-ui.test.ts` (`PIN U4`) |
+
+`registeredRoutes()` now lives in the ONE fixture set (`tests/helpers/server.ts`) and is
+read by BOTH `tests/api-doc.test.ts` (PIN A1, doc vs code) and `tests/admin-ui.test.ts`
+(PIN U3, UI paths vs code): the route-set derivation exists ONCE, so the doc, the UI and
+the code cannot drift on three different copies of it. The path scan reads comments too
+— a path named in prose is still a claim about routes.
+
+**HONEST UNKNOWN, named in the brief and repeated here: none of these pins executes the
+console.** Plain JavaScript is not typechecked by the cheap tier at all (tsconfig covers
+`src/**` and `tests/**`), and U1–U4 are static scans of the served bytes plus the served
+status/content-type checks. The UI's behaviour IN a browser — that a click really mints,
+that `whoami` really gates the rest, that the copy button works, that the layout is
+usable on a phone — is **NOT exercised by any automated check**. A **headless-browser
+test is OWED** and is explicitly not v1 (ledger row 48): the host rule that a browser is
+a process TREE whose kill belongs in a `trap` makes it a slice of its own.
+
+## The admin-UI differential (2 arms + two controls)
+
+Machinery: `checkpoints/admin-ui-differential.sh`. Raw transcript:
+`checkpoints/admin-ui-differential.out` (per-arm raw logs are `*.log`, so gitignored).
+
+Same shape as the earlier differentials — the slice is committed FIRST (code tip
+`20e2f75`, which the CONTROL line in the raw transcript names), the same lock
+`scripts/gate.sh` takes is held across every arm, `web/app.js`'s sha256 is printed
+before and after each arm, restore is `git checkout HEAD --` inside an `EXIT INT TERM`
+trap, and a control runs BEFORE **and** AFTER. Both arms inject into `web/app.js` — the
+one file the console IS — in opposite directions: PERSISTENCE (A) and ROUTES (B).
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| A | the key is written to a browser store (`localStorage.setItem` beside the ONE assignment to `key`) | `web/app.js` | `6e1b862b…d128` → `1619558c…d247` | `PIN U2: the served app.js references no key-persistence API` — `expected [ 'localStorage' ] to deeply equal []`; U1/U3/U4 stayed GREEN |
+| B | the console calls a path no route registers (`fetch("/no-such-route")` appended) | `web/app.js` | `6e1b862b…d128` → `3c977fbd…88f8` | `PIN U3: every path the UI calls is a route the API registers` — `expected [ '/no-such-route' ] to deeply equal []`; U1/U2/U4 stayed GREEN |
+| control | none — the committed tree, same lock held | — | — | **GREEN**: 12 files · 96 tests |
+| control | none — the restored tree, `app.js` back at its before hash | — | `6e1b862b…d128` | **GREEN**: 12 files · 96 tests |
+
+- The two arms are the two claims U2 and U3 make about the SAME served file, and they
+  are independent: A leaves every path literal alone, B leaves the key handling alone,
+  so each pin reddens on its own arm and neither is vacuous.
+- No hash was unchanged (a VOID probe would have been refused by the harness), the two
+  arms produced DIFFERENT hashes from the SAME before-hash, and both controls are GREEN
+  — so the injection, and nothing else, was the difference.
+- **What these arms do NOT prove** is the honest unknown above: an arm here shows the
+  STATIC scan catches a class of defect; no arm runs the page.
+
 ## The full gate
 
 `bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.
@@ -469,6 +530,13 @@ for the specific landing it verified.
 
 ## What is NOT tested yet (honest unknowns)
 
+- **The admin UI's in-browser behaviour.** U1–U4 scan the SERVED bytes and the served
+  status/content types; NOTHING executes `web/app.js` in a browser, and plain JS is not
+  typechecked (ledger row 48 accepted this price knowingly). The pins catch a persisted
+  key, a secret in the served bytes and a path that is not a registered route; they
+  cannot catch a logic error inside a handler a click reaches. **A headless-browser test
+  is OWED and is not v1** — and it must kill its process TREE in a `trap`, because one
+  headless Chrome run leaves dozens of processes behind.
 - **No concurrency test.** Two writers racing the same object name are handled by an
   upsert, but nothing exercises it. Unproven rather than claimed.
 - **RETIRED: "no test binds a port or exercises `main.ts`".** D1–D4 now spawn the real

@@ -1,0 +1,55 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (20e2f75) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/admin-ui/.diff-harness/control)
+  control GREEN:  Test Files  12 passed (12)       Tests  96 passed (96) 
+=== ARM A — the key is written to a browser store (the memory-only rule is broken) ===
+  file:   web/app.js
+  sha256: 6e1b862baa7da3f2782c2fe79ba8fef9e83378d6efb1ef55b0ec521aa675d128  (before)
+  sha256: 1619558cab6f37fa678cc9cc1148c43cf6d61b4a344c2f42ff4602ae4ad4d247  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/admin-ui/.diff-harness/arm-a)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/admin-ui/.diff-harness/arm-a/full.log
+     × PIN U2: the served app.js references no key-persistence API 13ms
+     ✓ PIN U3: every path the UI calls is a route the API registers 5ms
+     ✓ PIN U4: the HTML carries no inline key and no remote script 4ms
+ ✓ tests/core.test.ts (6 tests) 81ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-DbYaZM/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+
+--
+ FAIL  tests/admin-ui.test.ts > the admin UI (pins U1-U4) > PIN U2: the served app.js references no key-persistence API
+AssertionError: PIN U2: the served app.js references a key-persistence API — the key is not memory-only: expected [ 'localStorage' ] to deeply equal []
+
+- Expected
++ Received
+
+RESTORED: web/app.js back at HEAD; lock released
+=== ARM B — the console calls a path no route registers ===
+  file:   web/app.js
+  sha256: 6e1b862baa7da3f2782c2fe79ba8fef9e83378d6efb1ef55b0ec521aa675d128  (before)
+  sha256: 3c977fbdc64f6f65990432b98c5f8074a89244a7f0d0f85dbd98a7d2310888f8  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/admin-ui/.diff-harness/arm-b)
+  named pin RED: 2 line(s) in /home/administrator/projects/ServerStore/worktrees/admin-ui/.diff-harness/arm-b/full.log
+     × PIN U3: every path the UI calls is a route the API registers 19ms
+     ✓ PIN U4: the HTML carries no inline key and no remote script 11ms
+ ✓ tests/core.test.ts (6 tests) 91ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-rMIniU/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+
+ ✓ tests/auth.test.ts (16 tests) 120ms
+--
+ FAIL  tests/admin-ui.test.ts > the admin UI (pins U1-U4) > PIN U3: every path the UI calls is a route the API registers
+AssertionError: PIN U3: the UI calls paths the API does not register — the console would 404 on a click: expected [ '/no-such-route' ] to deeply equal []
+
+- Expected
++ Received
+
+RESTORED: web/app.js back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/admin-ui/.diff-harness/control2)
+  control GREEN:  Test Files  12 passed (12)       Tests  96 passed (96) 
+  sha256: 6e1b862baa7da3f2782c2fe79ba8fef9e83378d6efb1ef55b0ec521aa675d128  (back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN U2 (the key was persisted); arm B RED on PIN U3 (a path no route registers); both controls GREEN. No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/admin-ui/.diff-harness/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/admin-ui/checkpoints/admin-ui-differential.out
+RESTORED: web/app.js back at HEAD; lock released
