@@ -58,15 +58,27 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=LIVE and CURRENT: main@81341ff, service restarted with C2 and re-probed — the console at
-  |   https://store.futuremagic.de/ now EDITS keys (rename, stores, perms) and stamps every change
-  |   with when and by which key; the live database carries the two audit columns and every existing
-  |   key says "never changed". EXACTLY ONE live admin key (the owner's). NO writer in flight.
-  |   NEXT, both owed by design: a headless-browser test (nothing clicks Edit) and RATE LIMITING on
-  |   a public endpoint.
+  | state=ONE writer in flight (D1, row 57: CORS). LIVE at https://store.futuremagic.de/ with the
+  |   console and key editing (C2); service on main@7798ff6; EXACTLY ONE live admin key. A game is
+  |   being built against the store from another origin and is blocked on CORS — that is the only
+  |   thing in flight. NEXT after it: rate limiting, then a headless-browser test.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
+
+IN-FLIGHT | row=57 | writer=session-ef1b5440-a82c-47f7-b16d-987f278a138a | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/cors | branch=feat/cors
+  | base=7798ff6 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 22:01Z, no commit yet | brief=docs/briefs/slice-12-cors.md (committed)
+  | note=STEP D1, the blocker the owner's OTHER agent flagged (row 56) and it is correct: a browser
+  |   on another origin cannot call this API at all, and the trap is that the key guard matches EVERY
+  |   path before routing, so an OPTIONS preflight would answer 401 and the browser would block the
+  |   real request — no edge rule can fix that, because a preflight needs a 2xx the origin owns.
+  |   The CORS step must therefore precede the guard; `authorization` is named EXPLICITLY in
+  |   Allow-Headers (the wildcard does not cover it); credentials are NEVER allowed; and an unset
+  |   `SERVERSTORE_CORS_ORIGINS` means `*`, safe because there are no cookies or ambient credentials.
+  |   Pins O1-O5; arms in opposite directions (CORS after the guard -> O1 red; Allow-Credentials
+  |   sent -> O4 red).
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
