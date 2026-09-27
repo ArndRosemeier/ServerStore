@@ -1,0 +1,59 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (5273c89) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/key-edit/.diff-harness/control)
+  control GREEN:  Test Files  12 passed (12)       Tests  104 passed (104) 
+=== ARM A — PATCH re-mints the key's VALUE (the credential stops working) ===
+  file:   src/core/keys.ts
+  sha256: e85264accd6e324cf07d0d9f957bd72a16ac3304abf78ff9713ee7b18bf5e669  (before)
+  sha256: 68e4edbc98818aa1e8cfce6b7ed6be49568a19d0f26f78a4032e05eb8ba39b01  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/key-edit/.diff-harness/arm-a)
+     × PIN E6: an edit does NOT change the key's value 7ms
+     ✓ PIN E7: a body with no recognised field is refused and nothing changes 11ms
+     ✓ PIN E8: a database that predates the audit columns is migrated add-if-absent 8ms
+ ✓ tests/entrypoint.test.ts (4 tests) 849ms
+ ✓ tests/admin-key.test.ts (6 tests) 1720ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+     ✓ PIN 9: pnpm run admin:key mints a key the HTTP API accepts as admin 693ms
+     ✓ PIN 9: the CLI prints the key once and the database holds only its hash 629ms
+
+--
+ FAIL  tests/keys.test.ts > keys: EDITING a key in place (pin E1-E7) > PIN E6: an edit does NOT change the key's value
+AssertionError: {"error":{"code":"unauthorized","message":"access key is unknown, revoked or expired"}}: expected 401 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: src/core/keys.ts, src/server/app.ts and web/ back at HEAD; lock released
+=== ARM B — a REVOKED key is EDITABLE (revocation stops being terminal) ===
+  file:   src/server/app.ts
+  sha256: 87eabf30915c7df9d35b2f36f3333d9ba50f5c7599929b3dbc556befd6513478  (before)
+  sha256: 1bd4c3d2b35addcce34f005f15609f44a4d39f9a8fbf03c44bfc0f52733d417d  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/key-edit/.diff-harness/arm-b)
+     × PIN E3: a REVOKED key cannot be edited back to life 15ms
+     ✓ PIN E4: an edit is stamped and visible 8ms
+     ✓ PIN E5: a non-admin key cannot edit anything 7ms
+     ✓ PIN E6: an edit does NOT change the key's value 10ms
+     ✓ PIN E7: a body with no recognised field is refused and nothing changes 11ms
+     ✓ PIN E8: a database that predates the audit columns is migrated add-if-absent 7ms
+ ✓ tests/entrypoint.test.ts (4 tests) 874ms
+ ✓ tests/admin-key.test.ts (6 tests) 1702ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+--
+ FAIL  tests/keys.test.ts > keys: EDITING a key in place (pin E1-E7) > PIN E3: a REVOKED key cannot be edited back to life
+AssertionError: {"label":"alive again"}: expected 200 to be 403 // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: src/core/keys.ts, src/server/app.ts and web/ back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/key-edit/.diff-harness/control2)
+  control GREEN:  Test Files  12 passed (12)       Tests  104 passed (104) 
+  sha256: e85264accd6e324cf07d0d9f957bd72a16ac3304abf78ff9713ee7b18bf5e669  (back to its before hash)
+  sha256: 87eabf30915c7df9d35b2f36f3333d9ba50f5c7599929b3dbc556befd6513478  (back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN E6 (the edit re-minted the key's value); arm B RED on PIN E3 (a revoked key was editable); both controls GREEN. No VOID probe.
+NOTE arm A's expected collateral: every pin that authenticates with the SAME raw key after an edit (E1, E2) falls with E6, because that IS the defect; E3/E4/E5/E7/E8 survive, which is the anti-vacuity direction.
+logs: /home/administrator/projects/ServerStore/worktrees/key-edit/.diff-harness/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/key-edit/checkpoints/key-edit-differential.out
+RESTORED: src/core/keys.ts, src/server/app.ts and web/ back at HEAD; lock released

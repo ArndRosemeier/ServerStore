@@ -521,6 +521,86 @@ one file the console IS — in opposite directions: PERSISTENCE (A) and ROUTES (
 - **What these arms do NOT prove** is the honest unknown above: an arm here shows the
   STATIC scan catches a class of defect; no arm runs the page.
 
+## The key-edit pins (slice 11, E1–E8, `PATCH /keys/:id`)
+
+Slice 11 (ledger rows 51, 52) adds the **second granting door**: `PATCH /keys/:id`
+rewrites what a key **holds** (`label`, `stores`, `perms`) and never what it **is**. It
+reuses the SAME boundary as minting — `Auth.requireAdmin` for WHO may grant,
+`Auth.holdsStores` for the store boundary, `parseStores`/`parsePermissions`/the label
+rule for validation — and the write itself is ONE transaction in
+`src/core/keys.ts editKey()`. Two schema columns (`updated_at`, `updated_by`) carry the
+audit stamp, added by an idempotent add-if-absent migration.
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| E1 | an edit changes **exactly** the fields given, and nothing else: a rename leaves stores and perms untouched, a perms-only edit leaves the label and stores untouched, a stores-only edit leaves label and perms untouched and REPLACES (does not merge) the scope — and `id`/`key_hash`/`prefix`/`created_at` are byte-identical throughout | `tests/keys.test.ts` (`PIN E1`) |
+| E2 | an editor may grant only what it could have minted — a store-scoped admin CAN edit inside its set (the positive control), but is refused **403** for: widening into a store it does not hold, escaping to `["*"]`, granting `admin`, a key outside its set, and a PEER ADMIN key inside its set (rename and demotion both) — with the target's whole stored state unchanged after every refusal, and the master half: adding `admin` without `["*"]` is 403, adding it with `["*"]` works | `tests/keys.test.ts` (`PIN E2`) |
+| E3 | a **REVOKED** key cannot be edited back to life — every kind of edit (rename, perms, stores, all three) is **403** naming the revocation, `revoked_at` does not move, the row is otherwise untouched, and the key is still `401` on its next request | `tests/keys.test.ts` (`PIN E3`) |
+| E4 | an edit is **stamped and visible** — a never-edited key reports `updatedAt`/`updatedBy` as `null` in `GET /keys`, and after an edit both hold the edit instant and the **caller's** key id (a distinct editor key proves it is neither the target's nor the master's); a second edit MOVES the timestamp (the clock is advanced, so the claim is not vacuous); the row really holds the stamp; the response carries no raw key and no hash | `tests/keys.test.ts` (`PIN E4`) |
+| E5 | a non-admin key cannot edit anything — `401` without a key, `403` for a verified non-admin whatever field it sends (the message says only an admin key may edit keys), not even its own row, and nothing changes | `tests/keys.test.ts` (`PIN E5`) |
+| E6 | an edit does **NOT** change the key's value — the SAME raw key still authenticates afterwards and reports the NEW grant (writes and deletes in the new store, refused in the old one), `id`/`key_hash`/`prefix`/`created_at` are byte-identical, and the response carries no key material | `tests/keys.test.ts` (`PIN E6`) |
+| E7 | a body with no recognised field is refused (`400`) and **nothing changes** — an empty object, the old `store` field, an unknown field BESIDE a valid one (the whole request is refused, so the valid field is not applied), a non-object body, no body, and the mint-identical validation refusals (empty/mixed `stores`, empty/unknown `perms`, a store that does not exist) | `tests/keys.test.ts` (`PIN E7`) |
+| E8 | a database that predates the audit columns is migrated **add-if-absent** — the columns are DROPPED from a real database, the next boot adds them back, a third boot changes nothing, and the migrated column is usable through the route (a pre-C2 key is "never changed", then stamped by an edit) | `tests/keys.test.ts` (`PIN E8`) |
+
+**E8 is added beyond the brief's E1–E7, deliberately.** The audit columns are a schema
+change on the LIVE database, and this project's rule for a migration is that it is
+**real rather than asserted** (B1's G6, ledger row 22's lesson). A pin that read the
+`CREATE TABLE` would prove nothing for the file the service actually opens.
+
+**PIN L1's exact-field list changed in the same commit**: the `GET /keys` entry gained
+`updatedAt` and `updatedBy`, so the list-of-exactly-nine-fields assertion is now
+eleven. That is the only edit-pin interaction with the existing suite, and it is stated
+rather than left for a reader to discover.
+
+**The judgement call E2 records.** The brief's E2 names the widen/grant cases. The
+implementation reads the ONE containment predicate **four** times for a store-scoped
+admin — target scope, target `admin`, result scope, result `admin` — because "an editor
+may grant only what it could have minted" also has to stop a scoped admin **demoting a
+peer admin key**, which a result-only rule would allow. It is the revoke boundary's own
+"only keys it could have minted" shape (row 46), so it is still ONE seam. PIN E2 pins
+both the rename and the demotion refusal.
+
+## The key-edit differential (2 arms + two controls)
+
+Machinery: `checkpoints/key-edit-differential.sh`. Raw transcript:
+`checkpoints/key-edit-differential.out` (per-arm raw logs are `*.log`, so gitignored).
+
+Same shape as the earlier differentials — the slice is committed FIRST (the transcript's
+CONTROL line names the pre-rebase code tip `5273c89`, which the pre-push rebase replayed
+as `3f0a866` with an EMPTY content delta — `git diff --stat 5273c89 3f0a866 -- src tests
+web docs/API.md docs/SEAM-INDEX.md checkpoints/key-edit-differential.sh` is empty — so the
+gate and the arms ran on exactly the code that lands), the same lock `scripts/gate.sh`
+takes is held across every arm, each mutated file's sha256 is printed before and after,
+restore is `git checkout HEAD --` inside an `EXIT INT TERM` trap, and a control runs
+BEFORE **and** AFTER. The restore names **every** file an arm touches **and `web/`** —
+the console is part of this slice and exists now, and a restore that knows only today's
+two source files is exactly the bug `deploy-differential.sh` already paid for. Both arms
+mutate a DIFFERENT file, so the harness can refuse a VOID probe.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| A | the edit **RE-MINTS the key's value** — `editKey` rotates the row's `key_hash` to the hash of a brand-new raw key, so "edit" behaves like re-mint and the holder's credential stops working | `src/core/keys.ts` | `e85264ac…e669` → `68e4edbc…9b01` | `PIN E6: an edit does NOT change the key's value` — `expected 401 to be 200` (the same raw key no longer authenticates). **E1 and E2 fall with it, recorded rather than hidden**: every pin that authenticates with the same raw key after an edit MUST fall when the value changes — that is the defect, not a second one. **E3/E4/E5/E7/E8 stayed GREEN** |
+| B | the **REVOKED-key refusal is removed** (`if ((false as boolean)) {`), so a revoked key can be edited — and therefore revived | `src/server/app.ts` | `87eabf30…3478` → `1bd4c3d2…417d` | `PIN E3: a REVOKED key cannot be edited back to life` — `expected 200 to be 403`; **E4/E5/E6/E7/E8 stayed GREEN** |
+| control | none — the committed tree `5273c89`, same lock held | — | — | **GREEN**: 12 files · 104 tests |
+| control | none — the restored tree, both files back at their before hashes | — | `e85264ac…e669` / `87eabf30…3478` | **GREEN**: 12 files · 104 tests |
+
+- The two arms are the two facts that give "edit in place" its meaning, in opposite
+  directions: the VALUE must survive (A) and REVOCATION must stay terminal (B). Neither
+  arm leaves its own half red by accident: A keeps E3 green, B keeps E6 green.
+- **Arm A's collateral is the honest part.** It reddens THREE pins (E1, E2, E6) and the
+  FAIL lines are exactly those three; the harness's anti-vacuity assertion is the set
+  that SURVIVES (E3, E4, E5, E7, E8 and the whole earlier suite), not "only E6 fell". The
+  named pin the brief required — E6 — is among them.
+- **The harness's red-metric reads BOTH forms of a failure** (`× <pin>` in the suite tree
+  and `FAIL … > <pin>` in the failure block) via `pin_red()`. The earlier harnesses
+  matched only the `×` form; row 50 fixed the dispatcher's metric for the same reason, and
+  this harness starts corrected. A pin that cannot be SEEN to fail is a pin that cannot be
+  relied on (row 25).
+- No hash was unchanged (a VOID probe would have been refused by the harness), the two
+  arms produced DIFFERENT hashes in DIFFERENT files, both files were restored
+  byte-identical, and both controls are GREEN — so the injection, and nothing else, was
+  the difference.
+
 ## The full gate
 
 `bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.
@@ -535,9 +615,15 @@ for the specific landing it verified.
   status/content types; NOTHING executes `web/app.js` in a browser, and plain JS is not
   typechecked (ledger row 48 accepted this price knowingly). The pins catch a persisted
   key, a secret in the served bytes and a path that is not a registered route; they
-  cannot catch a logic error inside a handler a click reaches. **A headless-browser test
-  is OWED and is not v1** — and it must kill its process TREE in a `trap`, because one
-  headless Chrome run leaves dozens of processes behind.
+  cannot catch a logic error inside a handler a click reaches. **This now includes slice
+  11's EDIT flow**: the Edit button, the per-row editor (rename / store checkboxes /
+  permission toggles / Save / Cancel), the disabled-for-revoked state, the "this is the
+  key you are using" warning and the "changed … by …" audit line are all in the served
+  module, and the only automated claims about them are PIN U3's (the `PATCH` path the
+  console calls is a route the API registers) and the static scans. **Nothing clicks
+  Edit.** A **headless-browser test is OWED** and is not v1 — and it must kill its
+  process TREE in a `trap`, because one headless Chrome run leaves dozens of processes
+  behind.
 - **No concurrency test.** Two writers racing the same object name are handled by an
   upsert, but nothing exercises it. Unproven rather than claimed.
 - **RETIRED: "no test binds a port or exercises `main.ts`".** D1–D4 now spawn the real
@@ -582,3 +668,12 @@ for the specific landing it verified.
   row 7). Recorded as a known consequence, not a defect.
 - **A revoked key's `lastUsedAt` is frozen at its last successful request.** Nothing
   clears it and nothing tests it; it is the honest reading of the column.
+- **An edit keeps no HISTORY, and `expiresAt` cannot be edited.** `PATCH /keys/{id}`
+  records only the LAST change (`updatedAt`/`updatedBy`); what a key used to hold is not
+  recoverable through the API, and an expiry set at mint time stays. Both are deferred
+  and named (ledger row 52), so nothing here tests them — there is nothing to test.
+- **`PATCH /keys/{id}`'s `404`-vs-`403` oracle is the SAME shape as the lifecycle's**:
+  the route is admin-only, a valid-bodied request for an unknown id is `404` and a key
+  outside a scoped admin's set is `403`, so a scoped admin can tell "no such key" from
+  "not yours". Recorded, not claimed leak-free (the same note as the lifecycle's, for the
+  same reason).

@@ -66,20 +66,6 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
-
-IN-FLIGHT | row=53 | writer=session-10c1ec41-c7cb-4c40-908c-13bc3fe856d0 | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/key-edit | branch=feat/key-edit
-  | base=a556854 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 21:28Z, no commit yet | brief=docs/briefs/slice-11-key-edit.md (committed)
-  | note=STEP C2, the owner's requirement (row 51): name a key ("key for tom"), then grant or remove
-  |   things later, and see the current permissions. `PATCH /keys/:id` takes any subset of
-  |   {label, stores, perms}; editing is a SECOND WAY TO GRANT PERMISSIONS, so it reuses the SAME
-  |   boundary as minting (the one containment predicate plus requireAdmin). Two new nullable columns
-  |   stamp the change (updated_at + updated_by = the editing key's id), returned by GET /keys.
-  |   Pins E1-E7; the two ARMS are the invariants that must not be assumed — E6 the key's VALUE is
-  |   unchanged (the same raw key still authenticates: no silent re-mint) and E3 a REVOKED key is not
-  |   editable back to life. The UI gains an Edit affordance, disabled for revoked keys, with a
-  |   warning when editing the key currently in use.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
@@ -770,6 +756,68 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=53 | sha=3f0a866 (the VERIFIED CODE tip ON THE REBASED TREE: `src/core/db.ts`,
+  | `src/core/keys.ts`, `src/core/types.ts`, `src/core/validate.ts`, `src/server/app.ts`,
+  | `web/index.html`, `web/app.js`, `web/app.css`, `tests/keys.test.ts`,
+  | `tests/helpers/server.ts`, `checkpoints/key-edit-differential.sh`, plus `docs/API.md` and
+  | `docs/SEAM-INDEX.md`; the docs commit carrying THIS line, ledger row 53, `docs/TESTING.md`
+  | and the differential transcript is its child — a commit cannot name its own sha. The
+  | pre-push rebase replayed the pre-rebase tip `5273c89` as `3f0a866` with an EMPTY content
+  | delta (`git diff --stat 5273c89 3f0a866 -- src tests web docs/API.md docs/SEAM-INDEX.md
+  | checkpoints/key-edit-differential.sh` is empty), so the transcript's CONTROL line naming
+  | `5273c89` describes exactly the code that lands) | C2: NAMED, EDITABLE KEYS
+  | WITH AN AUDIT STAMP. Writer session `10c1ec41-c7cb-4c40-908c-13bc3fe856d0` (a subagent of
+  | dispatcher session dcd6176e…), branch feat/key-edit, worktree
+  | worktrees/key-edit, base origin/main a556854, REBASED onto origin/main 08405de before push.
+  | The dispatcher's `IN-FLIGHT | row=53` block is FOLDED by this record (it sat inside the
+  | SESSION block and was removed as a mechanical union — `docs/BOARD.md` is the only file the
+  | fold touched, and no other landing's record was altered). `PATCH /keys/:id` takes any subset of
+  | `{label, stores, perms}`, reuses the SAME boundary as minting (requireAdmin +
+  | `holdsStores` + the same parsers), refuses a revoked key, and never writes the key's
+  | VALUE — the credential a holder already has keeps working with its new grant.
+  | `updated_at`/`updated_by` are added by an idempotent add-if-absent migration and served
+  | by `GET /keys`; a never-edited key says "never changed". The console gains an Edit
+  | affordance per row (disabled for a revoked key, with an in-use warning and a
+  | "changed <when> by <label>" line).
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 12 test
+  | files · 104 tests · 2.12s · raw log `.gate-logs/gate.log`; RE-GATED on the REBASED tree
+  | after the conflict resolution — exit 0 GREEN · 12 files · 104 tests · 2.15s; no memory
+  | ceiling needed (GUARD g3 still open and still honest). The DISPATCHER's independent gate,
+  | its own arms, the GUARD g5 restart and the live re-probe are OWED.
+  | arms=checkpoints/key-edit-differential.sh, the gate lock held across BOTH arms, each
+  | mutated file's sha256 printed before and after, restore from HEAD in an EXIT/INT/TERM
+  | trap INCLUDING web/, a control BEFORE and AFTER, raw transcript
+  | checkpoints/key-edit-differential.out (key-shaped strings scrubbed — ledger row 21):
+  |   A `editKey` RE-MINTS the key's value (the row's key_hash rotates to a fresh raw key),
+  |     src/core/keys.ts e85264ac…e669 → 68e4edbc…9b01, RED on `PIN E6: an edit does NOT
+  |     change the key's value` — `expected 401 to be 200` (the holder's key stopped
+  |     authenticating); E1/E2 fell as EXPECTED collateral (that IS what a changed value
+  |     means) and E3/E4/E5/E7/E8 stayed GREEN.
+  |   B the revoked-key refusal removed (`if ((false as boolean)) {`), src/server/app.ts
+  |     87eabf30…3478 → 1bd4c3d2…417d, RED on `PIN E3: a REVOKED key cannot be edited back
+  |     to life` — `expected 200 to be 403`; E4/E5/E6/E7/E8 stayed GREEN.
+  |   both controls GREEN (12 files · 104 tests), both files back at their before hashes.
+  |     The two arms carry DIFFERENT hashes in DIFFERENT files. No VOID probe.
+  | pins=PIN E1-E8 (E8 added beyond the brief: the audit-column migration is REAL — the
+  |   columns are dropped from a live database and the next boot adds them back). PIN L1's
+  |   exact-field list gained updatedAt/updatedBy in the same commit.
+  | judgement calls (all in ledger row 53): the containment predicate is read FOUR times
+  |   for a scoped admin so it cannot DEMOTE a peer admin key, with no self-edit exception;
+  |   the admin-grant rule reads the CHANGE, not the resulting set (a master may rename or
+  |   narrow an existing admin key, and may narrow a master admin to a named store); a
+  |   blank label on PATCH means "unlabelled", identical to mint; and a STALE claim in
+  |   `docs/API.md` (Access 302) was corrected, re-measured by probe-live → PASS exit 0.
+  | COPIES: 3->1 — three copies folded: the label rule is now ONE rule
+  |   (`src/core/validate.ts` parseLabel/DEFAULT_LABEL + `src/core/keys.ts` assertLabel)
+  |   serving mint and edit; the key-entry projection is now ONE function
+  |   (`src/server/app.ts` keyEntry) serving `GET /keys` and the `PATCH` response; the
+  |   audit-column DDL is ONE add-if-absent migration (`src/core/db.ts`
+  |   migrateKeyAuditColumns) rather than a `CREATE TABLE` edit alone.
+  | retired=nothing yet — the worktree, branch and writer session are the dispatcher's to
+  |   retire after its own verification.
+  | docs=ledger row 53 · `docs/TESTING.md` (E1-E8 + both arms) · `docs/API.md` ·
+  |   `docs/SEAM-INDEX.md` · this board.
+
 LANDED | row=54 | sha=262df1b (the record commit; the C1 tip verified is 7e92967 — pulled,
   | restarted and re-probed BEFORE my own gate, per GUARD g5)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 12 files · 96 tests ·
