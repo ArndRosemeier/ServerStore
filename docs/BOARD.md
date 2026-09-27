@@ -45,13 +45,17 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: e1e363f · 2026-09-27T20:12Z — the tip of the row-27 landing (the deployment slice),
-  verified by THE WRITER'S OWN in-turn gate: exit 0 GREEN · 9 files · 72 tests · 2.04s, with
-  pins D2 and D6 each falsifiable on its OWN arm. `bash scripts/board.sh` must report this
-  marker as an ancestor of origin/main — it does so only AFTER the dispatcher pushes the
-  rebased branch, and the dispatcher's own independent gate is still OWED. (An earlier line
-  here read "bec97e1 · 2026-09-27T22:05Z" — the row-26 tip, LOCAL time mislabelled as Z at
-  the time, the dispatcher's error, corrected rather than quietly.)
+reconciled: e1bd3cf · 2026-09-27T22:36Z — the row-36 landing's CODE tip (the permission boundary
+  of `POST /keys`; the docs commit carrying THIS marker is its child, so the marker is the code
+  tip and not itself — a commit cannot name its own sha). `bash scripts/board.sh` must report this
+  marker as an ancestor of origin/main, which is true from the moment the dispatcher pushes the
+  rebased branch. verify=THE WRITER'S OWN in-turn gate on the rebased tree: exit 0 GREEN · 11 files
+  · 80 tests · 2.17s, with BOTH directions of the rule falsifiable on their own arms (A: the check
+  deleted → K1/K2 RED; B: the check made stricter than correct → K3 RED); the dispatcher's own
+  independent gate and arm are still OWED. (An earlier line here read
+  "e1e363f · 2026-09-27T20:12Z" — the row-27 tip; and before that "bec97e1 · 2026-09-27T22:05Z",
+  the row-26 tip with LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
+  quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
   | state=ONE writer in flight (B0, row 36: the key-subset fix); slices 1-5 verified and retired.
@@ -64,11 +68,14 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
-LANDED | row=36 | sha=PENDING (this landing's code tip: `9f1a467` carries `src/server/app.ts` +
-  | `tests/keys.test.ts`; the docs commit that carries THIS line and the ledger row is its child)
+LANDED | row=36 | sha=e1bd3cf (the VERIFIED CODE tip on the rebased tree: `src/server/app.ts` +
+  | `tests/keys.test.ts`; the docs commit carrying THIS line and the ledger row is its child, and
+  | `docs/BOARD.md`'s `reconciled:` marker is updated to that child as the last act of the landing)
   | THE PERMISSION BOUNDARY OF `POST /keys`, writer session (a subagent of dispatcher
   | session dcd6176e-b4b9-4759-b64d-4c90d3495dfa), worktree worktrees/keys-subset, branch
-  | feat/keys-subset, base origin/main 267fe50.
+  | feat/keys-subset, base origin/main 267fe50, REBASED onto origin/main 256ae32 before push (the
+  | ledger union kept the dispatcher's rows 34 AND 35 alongside this slice's row 36, and the
+  | board union kept the row=34 LANDED record — nothing of the other landing was touched).
   | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 11 test files ·
   | 80 tests · 2.04s · raw log `.gate-logs/gate.log` · load 0.87 before / 0.88 after; no memory
   | ceiling needed (GUARD g3 still open and still honest). The DISPATCHER's independent gate is OWED.
