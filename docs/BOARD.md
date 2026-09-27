@@ -51,25 +51,19 @@ reconciled: c0731fe · 2026-09-27T16:33:53Z — the gated tree tip of slice 2, v
   corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (slice 3, row 23); slice 2 verified and retired
+  | state=NO writer in flight; slices 1-3 verified and retired; DEPLOYMENT is next
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
-  | host=12 cores · 23Gi RAM · / has 506GB free · a FOREIGN gate (BlasterMaster) was mid-run at
-  |   16:35Z, and ~30 orphaned headless Chrome processes from Imager/.gate-logs are ~32h old —
-  |   neither is ours to reap; both are why the load is not zero.
+  | host=12 cores · 23Gi RAM · / has 506GB free · process audit after the slice-3 landing: lock
+  |   free, 0 suite processes, 0 browser processes (the ~30 orphaned Imager Chrome trees seen
+  |   earlier are gone from the box).
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
-  |   origin/main carries the row-19 landing (c0731fe) and the reconcile (023e098).
+  |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
-IN-FLIGHT | row=23 | writer=session-ebb420aa-fa06-400d-a250-84a28af0f55c | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/tripwire | branch=feat/tripwire
-  | base=023e098 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 2026-09-27T17:15:21Z, no commit yet | brief=docs/briefs/slice-3-tripwire.md
-  | note=the SECRET TRIPWIRE — the mechanism behind ledger row 21. A pure scanner in
-  |   tests/helpers/secrets.ts over the TRACKED tree (what would be published): GitHub token
-  |   shapes, PEM private-key headers, and the host credential's exact value compared in memory
-  |   and never printed ("cannot check" reported LOUDLY when the file is absent, never a silent
-  |   pass), plus no tracked *.db/*.sqlite. It must be ABLE to go red (PIN S4 plants a fake
-  |   token) and must NOT cry wolf on our own key-shaped fixtures (PIN S5) — which is why the
-  |   obvious bare-`ssk_` rule was rejected in the brief.
+(The slice-3 writer is RETIRED: slice 3 LANDED, was verified by the dispatcher, and its worktree
+worktrees/tripwire, branch feat/tripwire (fully merged) and session ebb420aa… are gone. No writer
+is in flight. The dispatcher then fixed forward the two pins that could not fail — ledger row 25,
+LANDED below. "Nothing outlives the writer": audit after the landing showed lock free, 0 suite
+processes, 0 browser processes.)
 
 (Slice 2 is retired: worktree worktrees/core removed, branch feat/core deleted as fully merged,
 writer session b0fbcc08… deleted; the dispatcher's independent verification is a LANDED record.)
@@ -118,6 +112,14 @@ QUEUE-CLOSED | row=none | HTTP framework (Hono vs Fastify) — SETTLED by slice 
   Express (no Web-standard Request/Response, so no in-process tests). Ledger row 19.
 QUEUE-CLOSED | row=none | FIRST FEATURE SLICE — the multi-store core LANDED as row 19 and was
   independently verified and retired by the dispatcher (ledger row 22).
+QUEUE | row=none | RECONCILER PARSER DEBT (found by the slice-3 writer). `retired=` is parsed as a
+  CLAIM, so board prose like "retired=NOT yet — … branch X" reports a false BOARD STALE while X
+  still exists. That writer worked around it with wording; the parser is unchanged HERE and is
+  BYTE-IDENTICAL UPSTREAM at `~/projects/Toolbox/scaffold/scripts/board.sh:110`, so every
+  downstream copy inherits it. Dispatcher recommendation: an explicit machine-readable claim key
+  (e.g. `retired_branch=<name>`) plus a pin. Rejected: prose-sniffing for "NOT yet", which is the
+  same fragility one level down. Needs the owner's word — it changes the board vocabulary that
+  Toolbox's template hands to new projects.
 QUEUE | row=none | DEPLOYMENT: systemd --user unit + cloudflared ingress for
   store.futuremagic.de + the first end-to-end probe through the tunnel. The owner picked this
   ("Deploy it"); the tunnel restart needs his go-ahead at that moment (TRAP t1), and the master
@@ -144,8 +146,8 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   row-19 landing, whose sha is the LANDED row below)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-24 (row 19 appended by the writer out of numeric
-  |   order; row 23 is the tripwire landing, row 24 the Toolbox upstream fix)
+  | decisions=docs/DECISION-LEDGER.md rows 1-25 (19 and 23 appended by writers, out of numeric
+  |   order by design; 24 is the Toolbox upstream fix, 25 the S2/S3 pin-hardening)
   | briefs=docs/BRIEF.md + docs/briefs/ | seams=docs/SEAM-INDEX.md | tests=docs/TESTING.md
   | sessions=~/.dsh/sessions/--home-administrator-projects-ServerStore--
 ```
@@ -153,6 +155,16 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=25 | sha=8bc9b02 | verify=MY OWN: gate on the FIXED tree exit 0 GREEN · 7 files ·
+  | 63 tests · 1.99s; and the SAME arms that exposed the gap now CLOSE it — arm J (the
+  | host-credential comparison broken) went from GREEN to RED with 4 pin lines, arm K (the PEM
+  | regex broken) from GREEN to RED with 3, arm I still RED on PIN S4.
+  | what landed=the positive controls PIN S2 and PIN S3 never had, plus a "cannot-check"
+  | direction pin. Found by arms run against the as-landed slice (ledger row 25): breaking the
+  | credential comparison left the whole suite GREEN, and S3 guards the only real secret here.
+  | retired=nothing — no writer; a dispatcher fix to verification machinery.
+  | docs=ledger row 25 · this board.
+
 LANDED | row=23 | sha=550e020 (the CODE tip on the rebased tree; the evidence commit carrying this
   | line rides with the same push)
   | THE SECRET TRIPWIRE, writer session ebb420aa-fa06-400d-a250-84a28af0f55c (subagent of dispatcher
