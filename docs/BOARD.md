@@ -637,6 +637,16 @@ QUEUE | row=48 | STEP C1 (the admin UI) is QUEUED BEHIND B2 and its brief is alr
   cookie/URL/history), the served bytes carry no secret, and every path the UI calls must be a route
   the API registers. Honest price: no-build JS is not typechecked and no automated check exercises it
   in a browser — a headless test is owed and is NOT v1.
+QUEUE | row=56 | CORS DISPATCHED (it blocks a turn-based game being built against this store from
+  another origin). Design: an allowlist via `SERVERSTORE_CORS_ORIGINS` (unset = `*`, safe because
+  there are no cookies or ambient credentials), `authorization` named EXPLICITLY in Allow-Headers
+  (the wildcard does not cover it), Allow-Methods GET/POST/PUT/PATCH/DELETE/OPTIONS, Max-Age,
+  `x-serverstore-sha256` exposed, NEVER Allow-Credentials, and the PREFLIGHT ANSWERED BEFORE THE KEY
+  GUARD — the trap that would otherwise answer OPTIONS with 401. FORK 2 (trust model): a key scoped
+  to a store can read/write ANY object in it, so the store does not enforce per-player isolation;
+  the no-new-feature design for turn-based play is per-player OBJECTS whose room state each client
+  derives, and real enforcement would need one store per player (already enforced) or per-store
+  permissions (row 41's deferred extension).
 QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
   the two the live store needs NOW, because the live database holds THREE master admin keys (two
   unused, created before the service existed) and revocation is currently operator-only. Then C
