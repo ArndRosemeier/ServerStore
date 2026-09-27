@@ -38,10 +38,24 @@ AssertionError: expected 401 to be 200 // Object.is equality
 - Expected
 + Received
 
-RESTORED: working tree back at 5cab3bd, lock released
+
+ARM D — break the RUNTIME contract (a parameter property, which strip-only Node refuses)
+  file:   src/server/app.ts
+  sha256: 993678795e000405864f75b071befa45c534101cbb4db1ec2b1ba375758122e4  (before)
+  sha256: 55bf1568b69a9b1fb16734d2b7b98e077feb17567a0ccf991b81cc72b924c527  (after injection)
+  tiers exit: 1 (1 = RED)
+  named pin RED: 1 line(s) in the log
+     74|       `a module failed to import under strip-only Node:\n${result.stdo…
+     75|     ).toBe(0);
+     76|     expect(result.stdout).toContain("ALL IMPORTS OK");
+       |                           ^
+     77|   });
+     78|
+
+RESTORED: working tree back at 434bc83, lock released
 
 CONTROL — the restored tree, same lock still held
   tiers exit: 0 (0 = GREEN)
 
-DIFFERENTIAL COMPLETE: 3 arms RED on their named pins, control GREEN.
-logs: /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-a.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-b.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-c.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/control.log
+DIFFERENTIAL COMPLETE: 4 arms RED on their named pins, control GREEN.
+logs: /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-a.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-b.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-c.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/arm-d.log /home/administrator/projects/ServerStore/worktrees/core/.diff-harness/control.log
