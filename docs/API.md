@@ -66,8 +66,10 @@ static-file subsystem, no directory walking, and no other path is served.
   written to `localStorage`, `sessionStorage`, a cookie, the URL, `history` or the
   console, and a reload forgets it — "Forget key" clears it immediately. The page
   itself carries no secret.
-- **Same origin is the whole point** (ledger row 48): the browser calls this API with
-  `fetch` on its own origin, so there is no CORS and the key never crosses an origin.
+- **Same origin is the whole point for the CONSOLE** (ledger row 48): the browser calls
+  this API with `fetch` on its own origin, so the console needs no CORS at all and the
+  key never crosses an origin. Other origins are served by the CORS policy above; the
+  console deliberately does not depend on it.
 - **Nothing is fetched until the key is proven.** The console calls `GET /whoami`
   first and shows what the key is (label, scope, permissions) or the refusal; every
   later call presents the key in the `Authorization` header.
@@ -77,6 +79,60 @@ static-file subsystem, no directory walking, and no other path is served.
   the routes below (pin U3), and its behaviour inside a real browser is **not**
   exercised by any automated check yet — a headless-browser test is owed
   (`docs/TESTING.md`, honest unknowns).
+
+## CORS (a browser on another origin)
+
+A page served from a **different origin** can call this API directly with `fetch`. The
+service answers the browser's CORS preflight itself, before the key guard — which
+matters, because the key guard matches *every* path: without a step ahead of it a
+preflight would be answered `401` and the browser would block the real request.
+
+- **The allowlist is `SERVERSTORE_CORS_ORIGINS`**, a comma-separated list of origins:
+  `SERVERSTORE_CORS_ORIGINS=https://game.example.com,http://localhost:5173`. Each entry
+  must be a **bare origin** — scheme, host and optional port, no path, no trailing
+  slash. **When the variable is unset the policy is `*`** (any origin), which is safe
+  **here and only here**: this API sends no cookies and reads no ambient credentials —
+  the key is an explicit header — so a wildcard grants a browser nothing that a key
+  does not already. A bad value (a bare hostname, a URL with a path, `*` mixed with
+  names, or set-but-empty) **fails the boot loudly** rather than becoming a policy that
+  silently matches nothing.
+- **A preflight is answered without a key.** `OPTIONS` with
+  `Access-Control-Request-Method` gets a `204` carrying:
+  `Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS`,
+  `Access-Control-Allow-Headers: authorization, x-api-key, content-type`, and
+  `Access-Control-Max-Age` (600 s). `authorization` is named **explicitly** because the
+  `Access-Control-Allow-Headers: *` wildcard does **not** cover it — the classic silent
+  failure — so send your key in `Authorization` or `x-api-key`, never a custom header
+  you did not declare.
+- **An allowed `Origin` gets `Access-Control-Allow-Origin`**: the concrete origin when
+  an allowlist is in use, `*` when the policy is the wildcard. `Vary: Origin` is sent
+  whenever the answer depends on the origin (i.e. under an allowlist), so a cache
+  cannot serve one origin's answer to another.
+- **`Access-Control-Expose-Headers: x-serverstore-sha256`** is on responses, so a
+  browser can read an object's hash from a `GET …/objects/{name}`.
+- **`Access-Control-Allow-Credentials` is NEVER sent, on any response.** There are no
+  cookies in this API and there must never appear to be. Do not send `credentials:
+  "include"` in `fetch` — there is nothing to authenticate with but your key.
+- **A disallowed origin is not refused.** It simply gets no
+  `Access-Control-Allow-Origin`, and the browser blocks the read. CORS is a
+  **browser-read control, not the API perimeter** (ledger row 21): `curl` ignores all
+  of this, and the key is what refuses a caller. So a disallowed origin sees whatever
+  the API would otherwise answer — `401` without a key, `403` for a key without the
+  permission — never a special CORS refusal.
+
+A browser needs nothing else:
+
+```js
+// From a page on an allowed origin. The key is a bearer credential — keep it in memory.
+const response = await fetch("https://store.futuremagic.de/stores/game/objects/room-1", {
+  headers: { Authorization: `Bearer ${playerKey}` },
+});
+const bytes = await response.arrayBuffer();
+const sha256 = response.headers.get("x-serverstore-sha256"); // readable: it is exposed
+```
+
+No route was added for CORS: it is middleware in front of the router, so the route
+table below and the error vocabulary are unchanged (pins **A1–A3**).
 
 ## Authentication
 
@@ -366,6 +422,7 @@ what a client should do about it:
 | Knob | Default | Meaning |
 | --- | --- | --- |
 | `SERVERSTORE_MAX_BYTES` | `67108864` bytes (64 MiB) | The maximum request body, enforced per request. It is an operator setting on the host, not a per-request field. |
+| `SERVERSTORE_CORS_ORIGINS` | unset → `*` | The comma-separated allowlist of browser origins whose cross-origin calls are answered. A bare origin per entry (`https://game.example.com`); unset means every origin, which is safe because the API carries no cookies (see CORS above). |
 
 - A body over the cap is refused with **`413 payload_too_large`**; it is **never
   truncated** and **never partially stored**.
@@ -472,31 +529,27 @@ These are **not** implemented today. A client that assumes them will break:
    `If-Match`, version number or compare-and-swap. If two players must not clobber
    each other, serialise on one writer (or one key per object) in your client
    (ledger row 28).
-3. **No CORS.** The service sends no `Access-Control-Allow-*` headers and has no
-   preflight handling, so a browser page served from a **different origin** cannot
-   call it directly with `fetch`. A same-origin page, a server-side proxy, or a
-   non-browser client can.
-4. **No rate limiting** and no per-key quota. Nothing throttles a determined client.
-5. **No identity beyond keys.** No registration, login, sessions, cookies, OAuth or
+3. **No rate limiting** and no per-key quota. Nothing throttles a determined client.
+4. **No identity beyond keys.** No registration, login, sessions, cookies, OAuth or
    users. A key pasted into a browser belongs to whoever reads it, and the server
    cannot tell two holders of the same key apart.
-6. **No bulk, range or streaming APIs.** One object per request; `GET` always returns
+5. **No bulk, range or streaming APIs.** One object per request; `GET` always returns
    the whole body (no `Range`); lists are unpaginated and have no `since=` filter;
    there are no multi-object transactions.
-7. **No server-side format.** Objects are opaque bytes; the service never parses or
+6. **No server-side format.** Objects are opaque bytes; the service never parses or
    validates their contents.
-8. **No ROTATION route.** There **is** a revoke route (`POST /keys/{id}/revoke`,
+7. **No ROTATION route.** There **is** a revoke route (`POST /keys/{id}/revoke`,
    admin only), but rotation is a client-side convention: mint a new key, move the
    client, then revoke the old one. Nothing revokes the old key for you when a new one
    is minted, and nothing warns you that a key is about to expire.
-9. **No per-store permissions.** A key's `perms` apply to every store in its scope:
+8. **No per-store permissions.** A key's `perms` apply to every store in its scope:
    "read on `a`, write on `b`" is not expressible yet (ledger row 41 records it as
    unproven). Mint a separate key per permission shape if you need that today.
-10. **No key listing for a CALLER, and no pagination on the inventory.** `GET /keys`
-    is the **operator's** inventory and is admin-only; a caller cannot enumerate keys,
-    it asks `GET /whoami` about the one it holds. The inventory has no pagination,
-    filter, sort or search parameter, and it does not page.
-11. **No edit HISTORY, and no editing of `expiresAt`.** `PATCH /keys/{id}` records only
+9. **No key listing for a CALLER, and no pagination on the inventory.** `GET /keys`
+   is the **operator's** inventory and is admin-only; a caller cannot enumerate keys,
+   it asks `GET /whoami` about the one it holds. The inventory has no pagination,
+   filter, sort or search parameter, and it does not page.
+10. **No edit HISTORY, and no editing of `expiresAt`.** `PATCH /keys/{id}` records only
     the LAST change (`updatedAt` + `updatedBy`); there is no event log, so what a key
     used to hold is not recoverable through the API. `expiresAt` is set at mint time and
     cannot be changed by an edit (ledger row 52 records both as deferred).

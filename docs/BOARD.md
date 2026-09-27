@@ -65,20 +65,6 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
-
-IN-FLIGHT | row=57 | writer=session-ef1b5440-a82c-47f7-b16d-987f278a138a | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/cors | branch=feat/cors
-  | base=7798ff6 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 22:01Z, no commit yet | brief=docs/briefs/slice-12-cors.md (committed)
-  | note=STEP D1, the blocker the owner's OTHER agent flagged (row 56) and it is correct: a browser
-  |   on another origin cannot call this API at all, and the trap is that the key guard matches EVERY
-  |   path before routing, so an OPTIONS preflight would answer 401 and the browser would block the
-  |   real request — no edge rule can fix that, because a preflight needs a 2xx the origin owns.
-  |   The CORS step must therefore precede the guard; `authorization` is named EXPLICITLY in
-  |   Allow-Headers (the wildcard does not cover it); credentials are NEVER allowed; and an unset
-  |   `SERVERSTORE_CORS_ORIGINS` means `*`, safe because there are no cookies or ambient credentials.
-  |   Pins O1-O5; arms in opposite directions (CORS after the guard -> O1 red; Allow-Credentials
-  |   sent -> O4 red).
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
@@ -649,7 +635,9 @@ QUEUE | row=48 | STEP C1 (the admin UI) is QUEUED BEHIND B2 and its brief is alr
   cookie/URL/history), the served bytes carry no secret, and every path the UI calls must be a route
   the API registers. Honest price: no-build JS is not typechecked and no automated check exercises it
   in a browser — a headless test is owed and is NOT v1.
-QUEUE | row=56 | CORS DISPATCHED (it blocks a turn-based game being built against this store from
+QUEUE-CLOSED | row=56 | LANDED as row 57 (writer's own gate GREEN · 13 files · 119 tests; arms A/B
+  RED on PIN O1/PIN O4 — see the LANDED record below). The dispatch note is the design it was built
+  to. CORS DISPATCHED (it blocks a turn-based game being built against this store from
   another origin). Design: an allowlist via `SERVERSTORE_CORS_ORIGINS` (unset = `*`, safe because
   there are no cookies or ambient credentials), `authorization` named EXPLICITLY in Allow-Headers
   (the wildcard does not cover it), Allow-Methods GET/POST/PUT/PATCH/DELETE/OPTIONS, Max-Age,
@@ -762,11 +750,13 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-55 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-57 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
-  |   54 = C1 verified with the console LIVE, 55 = C2 verified with the audit stamp LIVE)
+  |   54 = C1 verified with the console LIVE, 55 = C2 verified with the audit stamp LIVE,
+  |   56 = CORS is the blocker for the turn-based game, 57 = CORS LANDED — the step precedes the
+  |   key guard, so a preflight is answered 2xx without a key)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -780,6 +770,74 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=57 | sha=bd55b7e (the VERIFIED CODE tip ON THE REBASED TREE: `src/server/config.ts`,
+  | `src/server/app.ts`, `src/server/main.ts`, `tests/cors.test.ts`, `tests/entrypoint.test.ts`,
+  | `tests/helpers/server.ts`, `checkpoints/cors-differential.sh`; the docs commit carrying THIS
+  | line, ledger row 57, docs/TESTING.md, docs/API.md and docs/SEAM-INDEX.md is its child — a
+  | commit cannot name its own sha. The pre-push rebase replayed the pre-rebase tip `2d0e2ae` as
+  | `bd55b7e` with an EMPTY content delta (`git diff --stat 2d0e2ae bd55b7e -- src tests
+  | checkpoints` is empty), so the differential transcript's CONTROL line naming `2d0e2ae`
+  | describes exactly the code that lands) | D1: CORS — A BROWSER ON ANOTHER ORIGIN CAN CALL THIS
+  | API. Writer session `session-ef1b5440-a82c-47f7-b16d-987f278a138a` (a subagent of dispatcher
+  | session dcd6176e-b4b9-4759-b64d-4c90d3495dfa), worktree worktrees/cors, branch feat/cors, base
+  | origin/main 7798ff6, REBASED onto origin/main 264cdc1 before push. The dispatcher's
+  | `IN-FLIGHT | row=57` block is FOLDED by this record (a mechanical union; docs/BOARD.md is the
+  | only file the fold touched, and no other landing's record was altered).
+  | what it is=THE ORDER IS THE FIX. A CORS `app.use("*", …)` step in `src/server/app.ts`,
+  |   registered ABOVE `app.use("*", guard)`: a preflight (`OPTIONS` + `Access-Control-Request-Method`)
+  |   is answered 204 THERE, with no key, and never reaches the guard — which matches EVERY path
+  |   before routing and would otherwise answer 401, making the browser block the real request (no
+  |   edge rule can fix that; a preflight needs a 2xx the origin owns). Every other request walks the
+  |   pipeline unchanged. It is MIDDLEWARE, not a route, so the registered route table is unchanged
+  |   and PIN A1-A3 stay green. `SERVERSTORE_CORS_ORIGINS` (comma-separated, trimmed) is parsed AND
+  |   validated in `src/server/config.ts` and reaches the app as an explicit `corsOrigins`
+  |   dependency; UNSET means `*`, safe because the API has no cookies and no ambient credentials.
+  |   `Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS`; `Allow-Headers: authorization,
+  |   x-api-key, content-type` (authorization named EXPLICITLY — the wildcard does not cover it);
+  |   `Max-Age: 600`; `Expose-Headers: x-serverstore-sha256`; `Allow-Credentials` NEVER sent. A
+  |   disallowed origin gets no allow-origin header and is NOT 403d — CORS is a browser-READ
+  |   control, not the perimeter (row 21), so it sees the guard's own 401/403 and the BROWSER blocks.
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 13 test files · 119
+  |   tests · 2.18s · raw log `.gate-logs/gate.log`; no memory ceiling needed (GUARD g3 still open
+  |   and still honest). The DISPATCHER's independent gate and its own arms are OWED.
+  | arms=checkpoints/cors-differential.sh, the gate lock held across BOTH arms, `src/server/app.ts`
+  |   sha256 printed before and after, restore from HEAD in an EXIT/INT/TERM trap INCLUDING web/, a
+  |   control BEFORE and AFTER, raw transcript checkpoints/cors-differential.out:
+  |   A the CORS step MOVED AFTER the key guard (the brief's named defect), app.ts
+  |     9f32ff66…a7569 → 519ee2ba…27002, RED on `PIN O1: an unkeyed preflight is 2xx, allows PATCH,
+  |     and names authorization as a whole word` — `expected 401 to be less than 300`; O3's
+  |     PREFLIGHT half falls as ASSERTED collateral (`expected 401 to be 204`), while O2, O3's header
+  |     half, O4, O5 and O6 stay GREEN (so the arm proves the ORDER, not "CORS is gone").
+  |   B every response sends `Access-Control-Allow-Credentials: true`, app.ts 9f32ff66…a7569 →
+  |     7a0db3e2…44c50, RED on `PIN O4` — `expected 'true' to be null`; O1/O2/O3/O5/O6 stay GREEN.
+  |   both controls GREEN (13 files · 119 tests), app.ts back at 9f32ff66…a7569. Same file, different
+  |   anchors → different hashes. No VOID probe.
+  | HARNESS BUG, found by running it and recorded rather than quietly fixed: arm A's first end
+  |   anchor was `app.get("/healthz")`, which swept the `const guard` declaration into the moved
+  |   block and failed the TYPECHECK (`error TS2448`) instead of reddening PIN O1; the block is now
+  |   delimited by its own first and last lines and both arms refuse attribution when the cheap tier
+  |   fails.
+  | pins=PIN O1-O6 (`tests/cors.test.ts`; O6 = the boundary validation, added beyond the brief) and
+  |   PIN D7 (`tests/entrypoint.test.ts`; the spawned service proves `main.ts` WIRES the config, not
+  |   just that `resolveConfig` parses it). PIN A1-A3 stayed GREEN.
+  | judgement calls (all in ledger row 57): CORS headers are GATED ON THE `Origin` HEADER, so a
+  |   no-Origin request is literally unchanged; SET-but-EMPTY `SERVERSTORE_CORS_ORIGINS` fails the
+  |   BOOT instead of silently becoming `*`; each entry must be a BARE origin (a bare hostname or a
+  |   URL with a path fails the boot loudly); a disallowed origin is never 403d; and the unit ships
+  |   no `SERVERSTORE_CORS_ORIGINS`, so the LIVE service answers every origin today (safe: no
+  |   cookies) — narrowing it is an operator setting, not a requirement for the game.
+  | COPIES: 1 — checked, no duplication (grepped: "access-control", "cors", "origin" across src/
+  |   tests/ web/ — the policy is parsed once in `src/server/config.ts parseCorsOrigins()`, the four
+  |   header values and the step live once in `src/server/app.ts`, and the allowlist reaches the app
+  |   as an explicit `corsOrigins` dependency rather than a second `process.env` read).
+  | retired=nothing yet — the worktree worktrees/cors, branch feat/cors and writer session
+  |   session-ef1b5440… are the dispatcher's to retire after ITS OWN verification; this writer does
+  |   not retire itself.
+  | docs=ledger row 57 · docs/TESTING.md (O1-O6 + D7, both arms with hashes, the harness bug, and
+  |   the honest unknowns) · docs/API.md (a CORS section, the Limits row, the stale "no CORS"
+  |   non-goal removed) · docs/SEAM-INDEX.md (the CORS seam, the pipeline map, gotchas 14-15) · this
+  |   board.
+
 LANDED | row=55 | sha=81341ff (the C2 tip; pulled, restarted and re-probed BEFORE my own gate, per
   | GUARD g5 — this landing changes the SCHEMA)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 12 files · 104 tests.

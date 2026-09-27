@@ -601,6 +601,77 @@ mutate a DIFFERENT file, so the harness can refuse a VOID probe.
   byte-identical, and both controls are GREEN — so the injection, and nothing else, was
   the difference.
 
+## The CORS pins (slice 12, O1–O6 + D7)
+
+Slice 12 (ledger row 57) makes this API answer a browser on **another origin**. The trap
+is the ORDER: the key guard matches EVERY path before routing, so a preflight that
+reached it would be `401` and the browser would block the real request. The CORS step is
+therefore registered BEFORE `app.use("*", guard)` and answers a preflight itself. It is
+**middleware, not a route**, so the registered route table — and PIN A1's comparison
+against `docs/API.md` — is unchanged.
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| O1 | a preflight is answered **2xx WITHOUT a key** — `OPTIONS` + `Access-Control-Request-Method` gets `204` with `Allow-Methods` naming GET/POST/PUT/PATCH/DELETE/OPTIONS, `Allow-Headers` naming **`authorization` as a whole word** (never `*`) plus `x-api-key`/`content-type`, and a positive `Max-Age`; it is answered before ROUTING (a route with no `OPTIONS` method still gets it); an `OPTIONS` **without** `Access-Control-Request-Method` is not a preflight and still `401`s | `tests/cors.test.ts` (`PIN O1`) |
+| O2 | a cross-origin request with a valid key is **readable** — `GET /stores` with `Origin` + a key returns `200` and the REAL body plus `Access-Control-Allow-Origin`; a cross-origin object `GET` carries `x-serverstore-sha256` **and** the `Expose-Headers` that lets a browser read it | `tests/cors.test.ts` (`PIN O2`) |
+| O3 | an allowlist is honoured — a listed origin is echoed (the CONCRETE origin) with `Vary: Origin`; an unlisted origin gets **no** allow-origin header and is **not** `403` (the API answers normally and the BROWSER blocks); a preflight from the listed origin is `204` echoing it, an unlisted one is not authorised | `tests/cors.test.ts` (`PIN O3`) |
+| O4 | credentials are never allowed — no response of any kind carries `Access-Control-Allow-Credentials` and none sets a cookie, across BOTH policies and across preflights, keyed responses, `401`s, a `404`, `/healthz` and the UI | `tests/cors.test.ts` (`PIN O4`) |
+| O5 | nothing else changed — a request with no `Origin` is unchanged (`200` and the real body, no allow-origin header; unkeyed still `401 unauthorized`), the three UI routes still serve, and the CORS step adds **no route** (no `OPTIONS` entry in `registeredRoutes()`) | `tests/cors.test.ts` (`PIN O5`) |
+| O6 | the allowlist is **validated at the boundary** — unset is the `*` policy and entries are trimmed and kept in order, while set-but-empty, `*` mixed with names, a bare hostname, a URL with a path or trailing slash, a non-http scheme and a duplicate each fail LOUDLY in `parseCorsOrigins()` (so `resolveConfig()` throws and the BOOT fails, rather than a policy that silently matches nothing) | `tests/cors.test.ts` (`PIN O6`) |
+| D7 | **the RUNNING service's policy comes from the environment** — a spawned entrypoint with `SERVERSTORE_CORS_ORIGINS` set answers a listed-origin preflight `204` echoing that origin with `Vary: Origin`, and does not authorise an unlisted one (`401`, no allow-origin header) | `tests/entrypoint.test.ts` (`PIN D7`) |
+
+**O6 and D7 are added beyond the brief's O1–O5, deliberately** (the same choice slice 11
+made with E8), and both are reported rather than silent. O6 exists because the brief
+requires the setting be "validated at the boundary like the other settings", and the
+failure mode of NOT validating it is invisible: `SERVERSTORE_CORS_ORIGINS=game.example.com`
+(a bare hostname, no scheme) looks like a locked-down allowlist and can never equal an
+`Origin` header. D7 exists because a parser pin plus a typecheck does not prove the
+WIRING: ledger row 29's lesson is that a pin must see the value reach the process, so the
+spawned entrypoint carries the variable through `resolveConfig()` → `main.ts` →
+`createApp()`.
+
+**One fixture set.** `tests/cors.test.ts` builds every server through
+`createTestServer()`; the helper gained ONE option (`corsOrigins`) which it passes
+straight to `createApp`, and `reboot()` carries it too.
+
+## The CORS differential (2 arms + two controls)
+
+Machinery: `checkpoints/cors-differential.sh`. Raw transcript:
+`checkpoints/cors-differential.out` (per-arm raw logs are `*.log`, so gitignored).
+
+Same shape as the earlier differentials — the slice is committed FIRST (the transcript's
+CONTROL line names the pre-rebase code tip `2d0e2ae`, which the pre-push rebase replayed
+as `bd55b7e` with an EMPTY content delta — `git diff --stat 2d0e2ae bd55b7e -- src tests
+checkpoints` is empty — so the gate and the arms ran on exactly the code that lands), the
+lock `scripts/gate.sh` takes is held across every arm, each mutated file's sha256 is
+printed before and after, restore is `git checkout HEAD --` inside an `EXIT INT TERM`
+trap over the mutated file **and `web/`**, and a control runs BEFORE **and** AFTER. Both
+arms mutate the SAME file (`src/server/app.ts`) at DIFFERENT anchors, so an unchanged or
+identical hash would be refused as a VOID probe.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| A | the CORS step is **MOVED AFTER the key guard** — the brief's named defect, verbatim: the preflight then reaches the guard, which matches every path | `src/server/app.ts` | `9f32ff66…a7569` → `519ee2ba…27002` | `PIN O1: an unkeyed preflight is 2xx, allows PATCH, and names \`authorization\` as a whole word` — `expected 401 to be less than 300`. **Expected collateral, ASSERTED rather than hidden:** `PIN O3: a preflight from a listed origin is 204 …` falls with it (`expected 401 to be 204`) — any arm that breaks preflights reddens every pin about one. **O2 and O3's header half stayed GREEN**, which is the anti-vacuity direction: the headers are still emitted for normal requests, so the arm proves the ORDER, not "CORS is gone" |
+| B | **every response sends `Access-Control-Allow-Credentials: true`**, injected on the way OUT | `src/server/app.ts` | `9f32ff66…a7569` → `7a0db3e2…44c50` | `PIN O4: no response of any kind carries Allow-Credentials or a Set-Cookie` — `expected 'true' to be null`; **O1/O2/O3/O5/O6 stayed GREEN** (the line is after the preflight's early return) |
+| control | none — the committed tree `2d0e2ae`, same lock held | — | — | **GREEN**: 13 files · 119 tests |
+| control | none — the restored tree, file back at its before hash | — | `9f32ff66…a7569` | **GREEN**: 13 files · 119 tests |
+
+- **A HARNESS BUG WAS FOUND BY RUNNING IT, and is recorded rather than quietly fixed.**
+  Arm A's first version delimited "the CORS block" as everything up to
+  `app.get("/healthz")` — but `const guard` is declared BETWEEN the CORS step and that
+  route, so the move swept the declaration into the relocated block and the arm failed
+  the **typecheck** (`error TS2448: Block-scoped variable 'guard' used before its
+  declaration`) instead of reddening PIN O1. The harness now delimit the block by its OWN
+  first and last lines, and both arms refuse to be attributed if the cheap tier fails
+  (`error TS` in `cheap.log` is a HARNESS FAILURE). The transcript in
+  `checkpoints/cors-differential.out` is from the fixed harness.
+- **Arm A's collateral is the honest part**, exactly as in the key-edit differential: the
+  named pin the brief required (O1) is red, and the harness additionally ASSERTS that
+  O3's preflight half falls with it, so "the preflight is not answered" is not confused
+  with "a second rule broke". No hash was unchanged, the two arms produced DIFFERENT
+  hashes in the same file, the file was restored byte-identical, and both controls are
+  GREEN — so the injection, and nothing else, was the difference.
+
 ## The full gate
 
 `bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.
@@ -677,3 +748,21 @@ for the specific landing it verified.
   outside a scoped admin's set is `403`, so a scoped admin can tell "no such key" from
   "not yours". Recorded, not claimed leak-free (the same note as the lifecycle's, for the
   same reason).
+- **No real browser makes the cross-origin call.** O1–O6 drive `app.request()` in-process
+  and D7 talks to a spawned entrypoint over loopback; both assert the HEADERS a browser
+  needs, and neither executes a page. **CORS is enforced by the browser, so the half that
+  blocks a disallowed origin is the browser's and is unexercised here** — the same gap as
+  the admin UI's, and it is closed by the same OWED headless-browser test (which must
+  kill its process TREE in a `trap`).
+- **The wildcard default means the DEPLOYED service answers every origin today.** That is
+  the brief's decision (ledger rows 56/57) and is safe because there are no cookies, but
+  it is a policy an operator can narrow with `SERVERSTORE_CORS_ORIGINS` and nothing
+  asserts what the live host's environment holds. The game needs no narrowing to work.
+- **A preflight to a path the app does not register is answered `204`.** The CORS step
+  runs before ROUTING (that is what makes it work for `/stores`), so it cannot know
+  whether the path exists; the REAL request is still `401`/`404`. Pinned by O1's
+  before-routing test, and recorded here so it is not mistaken for a route-shaped probe
+  of the API surface.
+- **CORS is not authentication and is not the perimeter.** Nothing in these pins claims
+  an origin allowlist keeps a non-browser client out; `curl` ignores every header here,
+  and the key guard behind the step remains the only perimeter (ledger row 21).

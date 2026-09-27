@@ -11,11 +11,21 @@ restated here — the test **is** the statement, and `docs/TESTING.md` names the
 ```
 request
   └─ path guard            src/server/app.ts          (raw target, before routing)
-       └─ resolve key      src/core/keys.ts           resolveKey() — loads the key AND its scope once
-            └─ authorize   src/server/app.ts          Auth.authorize() / requireAdmin() / requireMasterAdmin()
-                 └─ dispatch to the store kind       src/storage/kinds.ts   handlerFor(kind)
-                      └─ storage                     src/storage/fs.ts    bytes on disk
+       └─ CORS step        src/server/app.ts          (BEFORE the key guard: a preflight needs a keyless 2xx)
+            └─ resolve key src/core/keys.ts           resolveKey() — loads the key AND its scope once
+                 └─ authorize   src/server/app.ts     Auth.authorize() / requireAdmin() / requireMasterAdmin()
+                      └─ dispatch to the store kind  src/storage/kinds.ts   handlerFor(kind)
+                           └─ storage                src/storage/fs.ts    bytes on disk
 ```
+
+**The CORS step is the ONE place a browser on another origin is answered, and it sits
+BEFORE the key guard on purpose** (ledger row 57). The guard matches EVERY path before
+routing, so a preflight (`OPTIONS` + `Access-Control-Request-Method`) that reached it
+would be answered `401` and the browser would block the real request — and no edge rule
+can fix that, because a preflight needs a 2xx the ORIGIN owns. The step is middleware,
+not a route: it adds no entry to `createApp().routes`, so PIN A1's route table is
+unchanged. A disallowed origin is NOT refused there — CORS is a browser-READ control,
+and the key guard behind it remains the perimeter (ledger row 21).
 
 Everything the project will ever do is either **core** (a step above `dispatch`) or a
 **store kind** (a handler at `dispatch`). There is no third mechanism.
@@ -52,8 +62,9 @@ checked against the minter's at all (the minter holds `admin`, which implies the
 
 | Concern | The one place | Notes |
 | --- | --- | --- |
-| HTTP app, built from injected deps | `src/server/app.ts` `createApp({dataRoot, dbPath, now, maxBytes})` | Tests drive it with `app.request()`; no port is bound outside `main.ts` |
-| The only env read | `src/server/config.ts` `resolveConfig()` | Called by `main.ts` and the admin CLI, never at module import time |
+| HTTP app, built from injected deps | `src/server/app.ts` `createApp({dataRoot, dbPath, now, maxBytes, corsOrigins})` | Tests drive it with `app.request()`; no port is bound outside `main.ts` |
+| The only env read | `src/server/config.ts` `resolveConfig()` | Called by `main.ts` and the admin CLI, never at module import time. It parses AND validates `SERVERSTORE_CORS_ORIGINS` (`parseCorsOrigins()`): a bare origin per entry, unset = `*`, and a value that could never match a request fails the BOOT loudly rather than silently matching nothing |
+| **The CORS policy** (which browser origins may read this API) | `src/server/config.ts` `parseCorsOrigins()` for the allowlist; the step itself is the `app.use("*", …)` registered in `src/server/app.ts` **before** `app.use("*", guard)` | ONE step, and the ORDER is its whole reason to exist (ledger rows 56, 57): a preflight is answered `204` there with NO key, while every other request walks the pipeline unchanged and gets its headers on the way out. The values a browser sees — `Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS`, `Allow-Headers: authorization, x-api-key, content-type` (`authorization` named EXPLICITLY, because the `*` wildcard does not cover it), `Expose-Headers: x-serverstore-sha256`, `Max-Age: 600` — are the four constants at the top of `app.ts`. `Access-Control-Allow-Credentials` is NEVER sent. The allowlist reaches the app as a DEPENDENCY (`corsOrigins`), never through `process.env`, so which origins a given app answers is always an explicit argument. Pinned O1–O6 (`tests/cors.test.ts`) and D7 (`tests/entrypoint.test.ts` — the spawned service proves `main.ts` WIRES the config). |
 | Binding a socket | `src/server/main.ts` | `127.0.0.1` only; the host is NOT configurable |
 | Metadata schema | `src/core/db.ts` `openDatabase()` | One file `<dataRoot>/serverstore.db`; idempotent `CREATE TABLE IF NOT EXISTS` |
 | What a key IS | `src/core/keys.ts` | mint, hash, resolve, touch, revoke; `ssk_<id>_<secret>` |
@@ -157,6 +168,24 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
     and the console says "never changed" — nothing is ever back-filled from `created_at`.
     Pinned E8, which DROPS the columns from a real database and proves the next boot adds
     them back and that the migrated column is usable through the route.
+14. **The CORS step MUST stay registered before the key guard.** `app.use("*", guard)`
+    applies only to routes registered AFTER it, and the guard matches EVERY path — so if
+    the CORS `app.use` moves below it, a preflight is answered `401` and a browser on
+    another origin can never send the real request. That is the defect
+    `checkpoints/cors-differential.sh` arm A injects on purpose to redden PIN O1. Two
+    consequences worth knowing: an `OPTIONS` carrying no `Access-Control-Request-Method`
+    is NOT a preflight and still walks to the guard (`401` without a key), and because
+    the step runs before ROUTING, a preflight to a path that does not exist is answered
+    `204` too — harmless, since the real request is still `401`/`404`, but it is the
+    reason a preflight is not a route-shaped probe of the API surface.
+15. **`Access-Control-Allow-Headers` must name `authorization` EXPLICITLY.** The `*`
+    wildcard is defined NOT to cover `Authorization`, so `Allow-Headers: *` would let a
+    preflight succeed while the browser then refused to send the very header this API
+    authenticates with — a silent failure only a real browser would reveal. The pinned
+    list is `authorization, x-api-key, content-type`; a new auth header must be added
+    there in the SAME commit (PIN O1 checks `authorization` as a whole word). Related, and
+    deliberate: `Access-Control-Allow-Credentials` is NEVER sent, because this API has no
+    cookies and there must never appear to be.
 
 ## Known debt (and where it is recorded)
 

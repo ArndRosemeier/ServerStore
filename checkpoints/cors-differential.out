@@ -1,0 +1,75 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (2d0e2ae) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/cors/.diff-harness/control)
+  control GREEN:  Test Files  13 passed (13)       Tests  119 passed (119) 
+=== ARM A — the CORS step is registered AFTER the key guard (the preflight 401s) ===
+  file:   src/server/app.ts
+  sha256: 9f32ff663e6f9144db54b9e24a6d7739d41af4e5fbb4a42565bf0a34e17a7569  (before)
+  sha256: 519ee2ba87153f75ba4181493c42ae16c633bcc002988eb03e2833b7ac227002  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/cors/.diff-harness/arm-a)
+     × PIN O1: an unkeyed preflight is 2xx, allows PATCH, and names `authorization` as a whole word 41ms
+     ✓ PIN O1: an OPTIONS that carries no Access-Control-Request-Method is NOT a preflight — the guard still answers 401 3ms
+     × PIN O1: the preflight is answered for a route the app does not register with an OPTIONS method (it precedes routing) 7ms
+   ✓ pin O2: a cross-origin request with a valid key is readable (2)
+     ✓ PIN O2: a cross-origin GET /stores with a valid key returns the real body plus Allow-Origin 7ms
+     ✓ PIN O2: an object's `x-serverstore-sha256` is exposed to the cross-origin reader 9ms
+   ❯ pin O3: an allowlist is honoured (2)
+     ✓ PIN O3: a listed origin is echoed with Vary: Origin; an unlisted one gets no allow-origin header 4ms
+     × PIN O3: a preflight from a listed origin is 204 echoing that origin; from an unlisted origin it is never authorised 3ms
+--
+ FAIL  tests/cors.test.ts > pin O1: a preflight is answered 2xx WITHOUT a key > PIN O1: an unkeyed preflight is 2xx, allows PATCH, and names `authorization` as a whole word
+AssertionError: expected 401 to be less than 300
+ ❯ tests/cors.test.ts:74:29
+     72|
+     73|     expect(response.status).toBeGreaterThanOrEqual(200);
+     74|     expect(response.status).toBeLessThan(300);
+     × PIN O3: a preflight from a listed origin is 204 echoing that origin; from an unlisted origin it is never authorised 3ms
+   ✓ pin O4: credentials are never allowed (1)
+     ✓ PIN O4: no response of any kind carries Allow-Credentials or a Set-Cookie 26ms
+   ✓ pin O5: nothing else changed (3)
+     ✓ PIN O5: a request with no Origin is unchanged and adds no allow-origin header 4ms
+     ✓ PIN O5: the three UI routes still serve with and without an Origin 5ms
+     ✓ PIN O5: the CORS step adds NO route — the registered route table has no OPTIONS entry 2ms
+   ✓ pin O6: the allowlist is validated at the boundary (3)
+     ✓ PIN O6: an unset variable is the `*` policy, and named origins are trimmed and kept in order 1ms
+--
+ FAIL  tests/cors.test.ts > pin O3: an allowlist is honoured > PIN O3: a preflight from a listed origin is 204 echoing that origin; from an unlisted origin it is never authorised
+AssertionError: expected 401 to be 204 // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: src/server/app.ts and web/ back at HEAD; lock released
+=== ARM B — EVERY response sends Access-Control-Allow-Credentials: true ===
+  file:   src/server/app.ts
+  sha256: 9f32ff663e6f9144db54b9e24a6d7739d41af4e5fbb4a42565bf0a34e17a7569  (before)
+  sha256: 7a0db3e2664e66d1557f9d6a0bc164772729dfb691c6430dc6ed6cf158044c50  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/cors/.diff-harness/arm-b)
+     × PIN O4: no response of any kind carries Allow-Credentials or a Set-Cookie 25ms
+   ✓ pin O5: nothing else changed (3)
+     ✓ PIN O5: a request with no Origin is unchanged and adds no allow-origin header 10ms
+     ✓ PIN O5: the three UI routes still serve with and without an Origin 21ms
+     ✓ PIN O5: the CORS step adds NO route — the registered route table has no OPTIONS entry 2ms
+   ✓ pin O6: the allowlist is validated at the boundary (3)
+     ✓ PIN O6: an unset variable is the `*` policy, and named origins are trimmed and kept in order 1ms
+     ✓ PIN O6: a policy that could never match — or that is ambiguous — FAILS LOUDLY instead of silently doing nothing 2ms
+     ✓ PIN O6: a rejected allowlist fails the BOOT, not a request — resolveConfig throws 0ms
+--
+ FAIL  tests/cors.test.ts > pin O4: credentials are never allowed > PIN O4: no response of any kind carries Allow-Credentials or a Set-Cookie
+AssertionError: expected 'true' to be null
+
+- Expected:
+null
+
+RESTORED: src/server/app.ts and web/ back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/cors/.diff-harness/control2)
+  control GREEN:  Test Files  13 passed (13)       Tests  119 passed (119) 
+  sha256: 9f32ff663e6f9144db54b9e24a6d7739d41af4e5fbb4a42565bf0a34e17a7569  (back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN O1 (the CORS step sat AFTER the key guard, so the preflight 401d); arm B RED on PIN O4 (a response sent Allow-Credentials: true); both controls GREEN. No VOID probe.
+NOTE arm A's expected collateral, asserted above: O3's PREFLIGHT half falls with O1 (any arm that breaks preflights reddens every pin about one); O2 and O3's header half SURVIVE, which is what shows CORS itself is intact.
+NOTE both arms mutate the SAME file (src/server/app.ts) at DIFFERENT anchors, so their after-hashes differ.
+logs: /home/administrator/projects/ServerStore/worktrees/cors/.diff-harness/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/cors/checkpoints/cors-differential.out
+RESTORED: src/server/app.ts and web/ back at HEAD; lock released
