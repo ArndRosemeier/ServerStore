@@ -40,24 +40,27 @@ curl -s -o /dev/null -w '%{http_code}\n' "$BASE/healthz"                 # expec
 curl -s -o /dev/null -w '%{http_code}\n' "$BASE/stores"                  # expect 401
 ```
 
-**Honest current status of the public name (measured 2026-09-27, ledger row 31):** the
-deployed hostname resolves and the tunnel routes it, but a **zone-wide Cloudflare
-Access policy** currently sits in front of it, so `https://store.futuremagic.de/healthz`
-answers `302` to a Cloudflare Access login instead of `200`. That is a configuration
-gap on the host, not an API behaviour: a client developer should expect a **302 to
-`*.cloudflareaccess.com`** there until the owner's dashboard change lands, and can
-always reach the service on loopback in the meantime. `probe-live.sh` distinguishes
-this (exit 1) from a broken service.
+**Current status of the public name (re-measured 2026-09-27):** the deployed hostname
+resolves, the tunnel routes it, and it answers the service **directly** —
+`bash scripts/probe-live.sh https://store.futuremagic.de` → `PASS, exit 0` (`GET
+/healthz` `200 {"ok":true}`, unauthenticated `GET /stores` `401` with the service's own
+`unauthorized` envelope). The zone-wide Cloudflare Access policy that used to answer
+`302` to a `*.cloudflareaccess.com` login was removed for this hostname by the owner
+(ledger rows 31 → 43), so **the access key is the only perimeter here**: nothing in
+front of the service authenticates a caller. `probe-live.sh` distinguishes a broken
+service (exit 1) from a probe that could not run (exit 2).
 
 ## The admin UI (no build, same origin)
 
 The service also serves a small **admin console** at the root of the same origin
 (`https://store.futuremagic.de/`, or `http://127.0.0.1:8477/` on the box): enter a
 master key, see what that key is, list and create stores, list keys, mint one (shown
-once) and revoke one. It is plain HTML, one ES module and one stylesheet — **no build
-step, no bundler, no framework** — served from `web/` at three **literal** routes
-(`/`, `/app.js`, `/app.css`); there is no static-file subsystem, no directory walking,
-and no other path is served.
+once), **edit one in place** (rename, stores, permissions — the key's value is never
+shown again and never changes), and revoke one. Each row also shows **when it was last
+changed and by which key** ("never changed" until an edit happens). It is plain HTML,
+one ES module and one stylesheet — **no build step, no bundler, no framework** — served
+from `web/` at three **literal** routes (`/`, `/app.js`, `/app.css`); there is no
+static-file subsystem, no directory walking, and no other path is served.
 
 - **The key lives in a JavaScript variable for the life of the page.** It is never
   written to `localStorage`, `sessionStorage`, a cookie, the URL, `history` or the
@@ -111,7 +114,7 @@ or a log line — it would end up in access logs and browser history.
   | `PUT …/objects/{name}` | `write` or `admin` |
   | `DELETE …/objects/{name}` | `delete` or `admin` |
   | `GET /stores`, `POST /stores` | a **master admin** key: scope `["*"]` **and** `admin` |
-  | `GET /keys`, `POST /keys/{id}/revoke` | an **`admin`** key — see "Who may list and revoke" |
+  | `GET /keys`, `POST /keys/{id}/revoke`, `PATCH /keys/{id}` | an **`admin`** key — see "Who may list and revoke" and "Who may edit" |
 
 - **A key's scope is a SET of stores.** At mint time you name the stores the key may
   touch (`"stores": ["game", "notes"]`), or `["*"]` for **every store** — the master
@@ -145,6 +148,16 @@ or a log line — it would end up in access logs and browser history.
   store it does not hold — and may revoke only keys **it could have minted**: scope
   inside its own set and never a key holding `admin`. **A key may always revoke
   itself**, which is the one deliberate exception, and it takes effect immediately.
+- **Who may EDIT: the same rule, through a second door.** `PATCH /keys/{id}` rewrites
+  what a key **holds** — its `label`, its `stores`, its `perms` — and **never its
+  value**: the same raw key keeps working, so a widening takes effect on whoever already
+  holds it and a narrowing is how you take something back short of revoke-and-mint. It
+  needs a key that holds `admin`, and a **store-scoped admin** may edit only a key it
+  could have minted — scope inside its own set, target not holding `admin`, result not
+  holding `admin` and not reaching a store it does not hold. A **master admin** may
+  narrow or widen anything; only a master may **grant** `admin`, and only with scope
+  `["*"]`. **A revoked key cannot be edited** (`403`): revocation is terminal. An edit
+  that succeeds stamps `updatedAt`/`updatedBy` (see `GET /keys`).
 
 ## Routes
 
@@ -161,7 +174,8 @@ response bodies are JSON unless the row says otherwise.
 | `GET` | `/stores` | master admin key | — | `{"stores":[{"name","kind","createdAt"}]}` | `200`, `401`, `403` |
 | `POST` | `/stores` | master admin key | `{"name":"game","kind":"bytes"?}` | `{"store":{"name","kind","createdAt"}}` | `201`, `400`, `401`, `403`, `409` |
 | `POST` | `/keys` | an **`admin`** key — a store-scoped admin key only within its own set; an `admin` grant needs a master admin key and `["*"]` | `{"stores":[…],"perms":[…],"label"?,"expiresAt"?}` | `{"key":"ssk_…","id","prefix","stores","perms","expiresAt"}` | `201`, `400`, `401`, `403`, `404` |
-| `GET` | `/keys` | an **`admin`** key — a master admin sees every key, a store-scoped admin only keys inside its own set | — | `{"keys":[{"id","label","stores","prefix","perms","createdAt","expiresAt","lastUsedAt","revokedAt"}]}` | `200`, `401`, `403` |
+| `GET` | `/keys` | an **`admin`** key — a master admin sees every key, a store-scoped admin only keys inside its own set | — | `{"keys":[{"id","label","stores","prefix","perms","createdAt","expiresAt","lastUsedAt","revokedAt","updatedAt","updatedBy"}]}` | `200`, `401`, `403` |
+| `PATCH` | `/keys/{id}` | an **`admin`** key — a master admin may narrow or widen anything, a store-scoped admin only keys it could have minted | `{"label"?,"stores"?,"perms"?}` (any subset) | the updated entry, exactly as `GET /keys` lists it | `200`, `400`, `401`, `403`, `404` |
 | `POST` | `/keys/{id}/revoke` | an **`admin`** key — a master admin may revoke any key, a store-scoped admin only keys it could have minted; a key may always revoke itself | — (no body) | `{"id","revokedAt","changed"}` | `200`, `401`, `403`, `404` |
 | `GET` | `/stores/{store}/objects` | `read` or `admin` on `{store}` | — | `{"objects":[{"store","name","sha256","size","createdAt"}]}` | `200`, `401`, `403`, `404` |
 | `PUT` | `/stores/{store}/objects/{name}` | `write` or `admin` on `{store}` | raw bytes (any `content-type`; ignored) | `{"store","name","sha256","size","createdAt"}` | `201`, `400`, `401`, `403`, `404`, `413` |
@@ -245,6 +259,10 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
     re-deriving it.
   - `perms` — the key's permissions, in the canonical order.
   - `createdAt`, `expiresAt`, `lastUsedAt`, `revokedAt` — ISO-8601, or `null`.
+  - `updatedAt`, `updatedBy` — the **edit audit stamp**: when the key's grant was last
+    changed by `PATCH /keys/{id}`, and the **id** of the key that changed it (the same
+    public id this inventory lists, never a secret). Both are `null` on a key that has
+    never been edited — do not read `createdAt` as "when it changed".
 
   **Revoked keys are listed**, with `revokedAt` set, so the inventory doubles as the
   audit view (`lastUsedAt` is the only per-key usage record). **The raw key, its secret
@@ -252,6 +270,42 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
   sort or search parameter: the population is the operator's keys and one response is
   the whole inventory. A store-scoped admin sees only the keys whose scope lies inside
   its own set. `401` without a key; `403` for a valid key that does not hold `admin`.
+- **`PATCH /keys/{id}`** — **edit a key in place.** Rewrites what the key **holds** and
+  leaves what it **is** alone: `id`, `prefix`, `keyHash`/the stored hash and `createdAt`
+  are untouched, and **no new key is issued** — the raw key the holder already has keeps
+  working, with the new grant. The body may carry **any subset** of the three editable
+  fields; every omitted field is left **unchanged**:
+  - `label` (string) — the operator's name for the key. A present but blank or
+    whitespace-only label means `"unlabelled"`, exactly as at mint.
+  - `stores` (array) — the new scope, validated exactly as at mint: `["*"]` alone for
+    every store, or a non-empty list of distinct, existing store names. The list
+    **replaces** the old scope; it is not merged with it.
+  - `perms` (array) — the new permissions, a non-empty subset of
+    `read|write|delete|admin`, stored in the canonical order.
+
+  **Anything else is refused `400` and nothing changes**: an empty object (no recognised
+  field), an unknown field (including the pre-slice-8 `store`), a non-object body, a
+  malformed `stores`/`perms`, or a store that does not exist (`404 not_found` for a
+  missing store). An unknown field beside a valid one refuses the **whole** request —
+  a field is never silently dropped while the rest is applied.
+
+  **Authorization** is the same boundary as minting. A key that does not hold `admin` is
+  refused `403 forbidden` ("only an admin key may edit keys"), before the key is even
+  looked up. A **store-scoped admin** may edit only a key it could have minted: the
+  target's scope must lie inside its own set, the target may not hold `admin`, and the
+  **result** must obey both too — so it can neither grant `admin` nor widen a key into a
+  store it does not hold (nor demote a peer admin key). A **master admin** may narrow or
+  widen anything; an edit that **adds** `admin` is an admin grant and requires scope
+  `["*"]` — a rename of a key that already holds `admin` is not held to that rule.
+
+  **A revoked key cannot be edited**: the route answers `403 forbidden` naming the
+  revocation instant, and `revokedAt` never moves. Undoing a revocation means minting a
+  new key.
+
+  The `200` body is the updated entry, in exactly the shape `GET /keys` lists
+  (`id`, `label`, `stores`, `prefix`, `perms`, `createdAt`, `expiresAt`, `lastUsedAt`,
+  `revokedAt`, `updatedAt`, `updatedBy`) — **no key material**, and `updatedAt`/`updatedBy`
+  now carry the stamp of this edit (`updatedBy` is the **caller's** id).
 - **`POST /keys/{id}/revoke`** — revoke a key. **Admin-only** and **idempotent**. The
   request carries **no body** (one is ignored), and the response is
   `{"id","revokedAt","changed"}`: `changed` is `true` the first time and `false`
@@ -317,9 +371,10 @@ what a client should do about it:
   truncated** and **never partially stored**.
 - **A failing request writes nothing.** Bytes and the metadata row are written only
   after the whole body has been read and the name/authorisation checks have passed, so
-  a `400`, `403`, `404` or `413` leaves the store exactly as it was. (A blob from an
-  *earlier successful* PUT of the same bytes may still be on disk — see the next
-  point.)
+  a `400`, `403`, `404` or `413` leaves the store exactly as it was — and a refused
+  `PATCH /keys/{id}` leaves the key, its scope rows and its audit stamp unchanged. (A
+  blob from an *earlier successful* PUT of the same bytes may still be on disk — see the
+  next point.)
 - A `DELETE` removes the object's metadata row and **leaves the stored bytes on disk**.
   There is no garbage collection yet.
 - There is no rate limit and no documented request timeout at the application layer.
@@ -393,6 +448,16 @@ curl -s "$BASE/keys" -H "Authorization: Bearer $ADMIN_KEY"
 # 9. Revoke a key (admin only, idempotent; effective on the NEXT request).
 curl -s -X POST "$BASE/keys/<id>/revoke" -H "Authorization: Bearer $ADMIN_KEY"
 # {"id":"<id>","revokedAt":"2026-09-27T20:40:00.000Z","changed":true}
+
+# 10. Edit a key IN PLACE — rename it, and/or rewrite its stores and permissions.
+#     The key itself is unchanged: the holder keeps using the same key. Omitted
+#     fields are left alone; send "label":"" to reset it to "unlabelled".
+curl -s -X PATCH "$BASE/keys/<id>" -H "Authorization: Bearer $ADMIN_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"label":"key for Tom","stores":["game","notes"],"perms":["read","write"]}'
+# {"id":"<id>","label":"key for Tom","stores":["game","notes"],"prefix":"ssk_…",
+#  "perms":["read","write"],"createdAt":"…","expiresAt":null,"lastUsedAt":"…",
+#  "revokedAt":null,"updatedAt":"2026-09-27T21:10:00.000Z","updatedBy":"<your key id>"}
 ```
 
 ## Non-goals (read this before you design around it)
@@ -431,3 +496,7 @@ These are **not** implemented today. A client that assumes them will break:
     is the **operator's** inventory and is admin-only; a caller cannot enumerate keys,
     it asks `GET /whoami` about the one it holds. The inventory has no pagination,
     filter, sort or search parameter, and it does not page.
+11. **No edit HISTORY, and no editing of `expiresAt`.** `PATCH /keys/{id}` records only
+    the LAST change (`updatedAt` + `updatedBy`); there is no event log, so what a key
+    used to hold is not recoverable through the API. `expiresAt` is set at mint time and
+    cannot be changed by an edit (ledger row 52 records both as deferred).

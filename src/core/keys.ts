@@ -18,6 +18,12 @@
  * the admin route serves, and `revokeKey()`/`findKeyById()` are the revoke seam. The
  * route decides WHO may see or revoke a key; what a key IS stays here, in one place.
  *
+ * `editKey()` is the EDIT seam (ledger rows 51, 52) — the SECOND way to grant
+ * permissions, and deliberately here beside `mintKey`, not in the route: an edit
+ * rewrites `label`/`perms`/scope IN PLACE and never the key's VALUE, so the raw key a
+ * holder already has keeps working. The route decides who may edit and to what; what
+ * a key HOLDS stays here.
+ *
  * The scope is loaded HERE, once per resolved key, together with the row (no N+1 in
  * `authorize`, which only ever reads the record it was handed).
  */
@@ -25,7 +31,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { StoreError } from "./errors.ts";
-import { parseStoredPermissions, parseStores } from "./validate.ts";
+import { parsePermissions, parseStoredPermissions, parseStores } from "./validate.ts";
 import {
   ALL_STORES,
   type AccessKeyRecord,
@@ -55,6 +61,22 @@ interface AccessKeyRow {
   expires_at: string | null;
   last_used_at: string | null;
   revoked_at: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+/**
+ * THE label rule, shared by `mintKey` and `editKey` (ledger row 52).
+ *
+ * Through the HTTP routes an absent or blank label is normalised to
+ * `DEFAULT_LABEL` by `parseLabel` BEFORE it reaches here, so this refusal is what a
+ * DIRECT caller (the CLI, a test) gets for whitespace — the same refusal on both
+ * granting doors, rather than a copy per door.
+ */
+function assertLabel(label: string): void {
+  if (label.trim().length === 0) {
+    throw new StoreError("bad_request", "label is required and must not be blank");
+  }
 }
 
 function sha256Hex(value: string | Uint8Array): string {
@@ -108,9 +130,7 @@ export function mintKey(
     readonly subjectKind?: SubjectKind;
   },
 ): MintedKey {
-  if (options.label.trim().length === 0) {
-    throw new StoreError("bad_request", "label is required and must not be blank");
-  }
+  assertLabel(options.label);
   if (options.perms.length === 0) {
     throw new StoreError("bad_request", "a key must carry at least one permission");
   }
@@ -171,6 +191,10 @@ export function mintKey(
       expiresAt,
       lastUsedAt: null,
       revokedAt: null,
+      // A freshly minted key has never been EDITED: the audit columns are NULL and
+      // stay NULL until `editKey` stamps them (ledger row 52). Never back-filled.
+      updatedAt: null,
+      updatedBy: null,
     },
   };
 }
@@ -225,6 +249,8 @@ function recordFrom(row: AccessKeyRow, stores: readonly string[]): AccessKeyReco
     expiresAt: row.expires_at,
     lastUsedAt: row.last_used_at,
     revokedAt: row.revoked_at,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by,
   };
 }
 
@@ -301,6 +327,71 @@ export function findKeyById(db: DatabaseSync, id: string): AccessKeyRecord | nul
     | AccessKeyRow
     | undefined;
   return row === undefined ? null : rowToRecord(db, row);
+}
+
+/**
+ * EDIT a key IN PLACE — the second way to GRANT permissions, which is why it lives
+ * HERE beside `mintKey` and not beside the route that calls it (ledger rows 51, 52).
+ *
+ * What it does NOT touch is the point: `id`, `key_hash`, `prefix` and `created_at` are
+ * absent from the UPDATE and no new raw key is generated, so the credential its holder
+ * already has keeps working after its grant changes (pin E6). Widening therefore takes
+ * effect on whoever holds the key, and narrowing is the only way to take something back
+ * short of revoke-and-mint.
+ *
+ * `label`, `stores` and `perms` are the RESOLVED next state: the route merges an
+ * omitted field with the row it read, because only the route knows the difference
+ * between "omitted" and "given". Each value then goes through the SAME parser minting
+ * uses (`assertLabel`, `parseStores`, `parsePermissions`), so the two granting doors
+ * cannot validate differently. The row and its `key_stores` rows are rewritten in ONE
+ * transaction, so a scope change can never land half-applied.
+ *
+ * The stamp is `now()` at this instant plus the EDITING key's id (pin E4): when and by
+ * which key the grant changed — an id the inventory already lists, never a secret.
+ */
+export function editKey(
+  db: DatabaseSync,
+  options: {
+    readonly id: string;
+    readonly label: string;
+    readonly stores: readonly string[];
+    readonly perms: readonly Permission[];
+    readonly by: string;
+    readonly now: () => number;
+  },
+): AccessKeyRecord {
+  assertLabel(options.label);
+  // The ONE parsers: an edit cannot write a scope or a permission set that minting
+  // would have refused, and `parsePermissions` also returns the canonical order.
+  const stores = parseStores(options.stores);
+  const perms = parsePermissions([...options.perms]);
+  const scopeAll = stores.length === 1 && stores[0] === ALL_STORES;
+  const updatedAt = new Date(options.now()).toISOString();
+
+  db.exec("BEGIN");
+  try {
+    db.prepare(
+      "UPDATE access_keys SET label = ?, perms = ?, scope_all = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+    ).run(options.label, perms.join(","), scopeAll ? 1 : 0, updatedAt, options.by, options.id);
+    db.prepare("DELETE FROM key_stores WHERE key_id = ?").run(options.id);
+    if (!scopeAll) {
+      const insertStore = db.prepare("INSERT INTO key_stores(key_id, store) VALUES (?, ?)");
+      for (const store of stores) insertStore.run(options.id, store);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  // Re-read the row rather than trusting `changes`: the record served back is the
+  // STORED one, which is what proves the write landed AND that the key's value
+  // (`key_hash`, `prefix`, `created_at`) survived the edit untouched.
+  const updated = findKeyById(db, options.id);
+  if (updated === null) {
+    throw new StoreError("internal", `key ${options.id} vanished while it was being edited`);
+  }
+  return updated;
 }
 
 /**

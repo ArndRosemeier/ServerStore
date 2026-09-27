@@ -16,6 +16,7 @@ const ROUTES = {
   whoami: "/whoami",
   stores: "/stores",
   keys: "/keys",
+  keyEdit: (id) => `/keys/${encodeURIComponent(id)}`,
   keyRevoke: (id) => `/keys/${encodeURIComponent(id)}/revoke`,
 };
 
@@ -30,6 +31,12 @@ let key = null;
 
 // The /whoami answer for that key, or null while no key is proven.
 let whoami = null;
+
+// The stores last listed, and the label of every key last listed. The EDIT form reads
+// `storeList` for its store checkboxes and `keyLabels` to render "changed … by <label>"
+// from `updatedBy` — the id of the key that made the change (ledger row 52).
+let storeList = [];
+let keyLabels = {};
 
 /** One API failure, carrying the API's own error code when there is one. */
 class UiError extends Error {
@@ -231,6 +238,7 @@ function renderStoreChoices(stores) {
 
 async function refreshStores() {
   const payload = await api(ROUTES.stores);
+  storeList = payload.stores;
   const list = $("stores");
   list.replaceChildren();
   for (const store of payload.stores) {
@@ -241,39 +249,238 @@ async function refreshStores() {
   renderStoreChoices(payload.stores);
 }
 
+/**
+ * "changed <when> by <label>" for one key — or "never changed".
+ *
+ * `updatedBy` is the id of the key that made the last change. It is resolved against
+ * the keys already loaded; when the editor is not in this inventory (a scoped admin
+ * sees only its own set) the raw ID is shown, so the audit line never becomes blank
+ * and never claims a change came from nowhere. A key with no `updatedAt` has NEVER
+ * been changed: it says so rather than inventing a date from `createdAt`.
+ */
+function changedLine(entry) {
+  if (entry.updatedAt === null) return "never changed";
+  const by = entry.updatedBy === null ? "an unknown key" : keyLabels[entry.updatedBy] ?? entry.updatedBy;
+  return "changed " + entry.updatedAt + " by " + by;
+}
+
+/** One key's row: what it holds, when it last changed, and its Edit/Revoke buttons. */
+function keyRow(entry) {
+  const item = document.createElement("li");
+
+  const summary = document.createElement("span");
+  summary.className = "key-summary";
+  let text =
+    entry.label +
+    " — " +
+    entry.prefix +
+    " — stores " +
+    entry.stores.join(", ") +
+    " — permissions " +
+    entry.perms.join(", ") +
+    " — created " +
+    entry.createdAt;
+  if (entry.revokedAt !== null) text += " — REVOKED " + entry.revokedAt;
+  summary.textContent = text;
+
+  const changed = document.createElement("span");
+  changed.className = "muted changed";
+  changed.textContent = changedLine(entry);
+
+  const actions = document.createElement("span");
+  actions.className = "actions";
+
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.textContent = "Edit";
+  if (entry.revokedAt !== null) {
+    // A revoked key cannot be edited back to life: the API refuses it, so the console
+    // does not offer it. (U1-U4 do not execute this; docs/TESTING.md says so.)
+    edit.disabled = true;
+    edit.title = "This key is revoked. Revocation cannot be undone — mint a new key instead.";
+  } else {
+    edit.addEventListener("click", () => {
+      openEditor(item, entry).catch(showError);
+    });
+  }
+  actions.append(edit);
+
+  if (entry.revokedAt === null) {
+    const revoke = document.createElement("button");
+    revoke.type = "button";
+    revoke.textContent = "Revoke";
+    revoke.addEventListener("click", () => {
+      revokeKey(entry.id, entry.label).catch(showError);
+    });
+    actions.append(revoke);
+  }
+
+  item.append(summary, changed, actions);
+  return item;
+}
+
 async function refreshKeys() {
   const payload = await api(ROUTES.keys);
+  keyLabels = {};
+  for (const entry of payload.keys) keyLabels[entry.id] = entry.label;
   const list = $("keys");
   list.replaceChildren();
-  for (const entry of payload.keys) {
-    const item = document.createElement("li");
-    const line = document.createElement("span");
-    let text =
-      entry.label +
-      " — " +
-      entry.prefix +
-      " — stores " +
-      entry.stores.join(", ") +
-      " — permissions " +
-      entry.perms.join(", ") +
-      " — created " +
-      entry.createdAt;
-    if (entry.revokedAt !== null) {
-      text += " — REVOKED " + entry.revokedAt;
-      line.textContent = text;
-      item.append(line);
-    } else {
-      line.textContent = text + " ";
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = "Revoke";
-      button.addEventListener("click", () => {
-        revokeKey(entry.id, entry.label).catch(showError);
-      });
-      item.append(line, button);
-    }
-    list.append(item);
+  for (const entry of payload.keys) list.append(keyRow(entry));
+}
+
+/**
+ * Turn ONE row into its editor: rename, store checkboxes, permission toggles, Save and
+ * Cancel. The key's VALUE is not here and cannot be: the console only ever edits what
+ * the key HOLDS, and the API keeps the credential itself untouched (pin E6).
+ */
+function openEditor(item, entry) {
+  item.classList.add("editing");
+  const form = document.createElement("div");
+  form.className = "edit-form";
+
+  const heading = document.createElement("p");
+  heading.className = "muted";
+  heading.textContent =
+    "Editing key " + entry.id + " (" + entry.prefix + ") — the key itself is not shown and cannot be changed, only what it holds.";
+  form.append(heading);
+
+  if (whoami !== null && entry.id === whoami.id) {
+    const warning = document.createElement("p");
+    warning.className = "warning inline-warning";
+    warning.textContent =
+      "This is the key you are using. Saving changes or removes the permissions this page runs on, and it takes effect immediately — a later call here may be refused.";
+    form.append(warning);
   }
+
+  const labelField = document.createElement("label");
+  labelField.textContent = "Label (blank means “unlabelled”, exactly as at mint)";
+  const labelInput = document.createElement("input");
+  labelInput.type = "text";
+  labelInput.value = entry.label;
+  labelInput.setAttribute("data-edit-label", "yes");
+  labelField.append(labelInput);
+  form.append(labelField);
+
+  const scope = document.createElement("fieldset");
+  const scopeLegend = document.createElement("legend");
+  scopeLegend.textContent = "Scope";
+  scope.append(scopeLegend);
+
+  const allLabel = document.createElement("label");
+  allLabel.className = "inline";
+  const allBox = document.createElement("input");
+  allBox.type = "checkbox";
+  allBox.setAttribute("data-scope-all", "yes");
+  allBox.checked = entry.stores.length === 1 && entry.stores[0] === "*";
+  allLabel.append(allBox, document.createTextNode(" Every store (master scope)"));
+  scope.append(allLabel);
+
+  const choices = document.createElement("div");
+  choices.className = "choices";
+  for (const store of storeList) {
+    const storeLabel = document.createElement("label");
+    storeLabel.className = "inline";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = store.name;
+    box.setAttribute("data-edit-store", "yes");
+    box.checked = entry.stores.includes(store.name);
+    storeLabel.append(box, document.createTextNode(" " + store.name));
+    choices.append(storeLabel);
+  }
+  scope.append(choices);
+  const scopeNote = document.createElement("p");
+  scopeNote.className = "muted";
+  scope.append(scopeNote);
+  form.append(scope);
+
+  const perms = document.createElement("fieldset");
+  const permsLegend = document.createElement("legend");
+  permsLegend.textContent = "Permissions";
+  perms.append(permsLegend);
+  for (const permission of PERMISSIONS) {
+    const permLabel = document.createElement("label");
+    permLabel.className = "inline";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = permission;
+    box.setAttribute("data-edit-perm", "yes");
+    box.checked = entry.perms.includes(permission);
+    permLabel.append(box, document.createTextNode(" " + permission));
+    perms.append(permLabel);
+  }
+  const permNote = document.createElement("p");
+  permNote.className = "muted";
+  permNote.textContent =
+    "admin is refused by the API unless the scope is every store; the refusal is shown here.";
+  perms.append(permNote);
+  form.append(perms);
+
+  // `admin` is NOT force-unchecked when the scope is a named set (unlike the mint form):
+  // an out-of-band store-scoped admin key keeps its `admin` through a rename, and a
+  // checkbox that silently cleared it would strip a permission the operator never
+  // touched. An invalid combination is refused by the API and rendered as an error.
+  const sync = () => {
+    const all = allBox.checked;
+    for (const box of choices.querySelectorAll('input[data-edit-store="yes"]')) box.disabled = all;
+    scopeNote.textContent = all
+      ? "Scope: every store, including ones created later."
+      : "Scope: the checked stores.";
+  };
+  allBox.addEventListener("change", sync);
+  sync();
+
+  const row = document.createElement("div");
+  row.className = "row";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "primary";
+  save.textContent = "Save";
+  save.addEventListener("click", () => {
+    saveEdit(entry.id, form).catch(showError);
+  });
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => {
+    refreshKeys().catch(showError);
+  });
+  row.append(save, cancel);
+  form.append(row);
+
+  item.replaceChildren(form);
+}
+
+/** Read the editor's fields, validate them locally, and PATCH the key. */
+async function saveEdit(id, form) {
+  clearError();
+  clearStatus();
+  // The label is always sent, blank included: the API's rule (a blank label means
+  // "unlabelled", exactly as at mint) is applied rather than silently keeping the old
+  // label when the operator cleared the field.
+  const body = { label: form.querySelector('input[data-edit-label="yes"]').value.trim() };
+  body.stores = form.querySelector('input[data-scope-all="yes"]').checked
+    ? ["*"]
+    : Array.from(form.querySelectorAll('input[data-edit-store="yes"]'))
+        .filter((input) => input.checked)
+        .map((input) => input.value);
+  body.perms = PERMISSIONS.filter(
+    (permission) =>
+      form.querySelector('input[data-edit-perm="yes"][value="' + permission + '"]').checked,
+  );
+  if (body.stores.length === 0) {
+    showError(new UiError("no_stores", "check at least one store, or every store"));
+    return;
+  }
+  if (body.perms.length === 0) {
+    showError(new UiError("no_perms", "check at least one permission"));
+    return;
+  }
+  await api(ROUTES.keyEdit(id), { method: "PATCH", body: JSON.stringify(body) });
+  showStatus(
+    "Key " + id + " updated. Its value is unchanged — whoever holds the key keeps using the same key.",
+  );
+  await guard(refreshKeys);
 }
 
 async function refreshAll() {

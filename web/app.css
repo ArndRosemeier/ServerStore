@@ -180,6 +180,39 @@ legend {
   font-size: 0.9rem;
 }
 
+/* One key's row: the summary grows, the audit line takes its own line, the buttons sit
+   at the right. The EDIT form replaces the whole row, so it is full width. */
+.key-summary {
+  flex: 1 1 24rem;
+}
+
+.list li .changed {
+  flex: 1 1 100%;
+}
+
+.actions {
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.edit-form {
+  flex: 1 1 100%;
+  border-left: 2px solid var(--accent);
+  padding-left: 0.75rem;
+}
+
+.edit-form fieldset {
+  margin: 0.75rem 0;
+}
+
+.warning.inline-warning {
+  margin: 0.5rem 0;
+  border: 1px solid var(--danger);
+  border-radius: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  color: #ffd9d9;
+}
+
 .error,
 .status,
 .minted {

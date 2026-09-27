@@ -35,6 +35,15 @@ is the one "who may administer keys" predicate shared by mint, list and revoke, 
 boundary, the list filter and the revoke boundary. Neither route invents a second path,
 and neither emits key material.
 
+**`PATCH /keys/:id` is the SECOND WAY TO GRANT PERMISSIONS, and it is the SAME decision**
+(ledger rows 51, 52): `Auth.requireAdmin("edit keys")` is that same "who may administer
+keys" predicate, `Auth.holdsStores(stores)` is that same ONE containment predicate (read
+four ways — the target's scope, the target's `admin`, the resulting scope, the resulting
+`admin`), and `parseStores`/`parsePermissions`/the label rule are the parsers mint uses.
+The route decides WHO may edit and to WHAT; `src/core/keys.ts editKey()` is the one place
+the new grant is WRITTEN, in one transaction, and it never names `id`, `key_hash`,
+`prefix` or `created_at` — so the key's VALUE survives the edit (pin E6).
+
 **PREREQUISITE (do not lose this): any future slice that lets a NON-admin key mint MUST
 reinstate the subset rule — "a key may pass on only what it holds" — in the SAME commit.**
 Until then `requireAdmin()` is the ONLY thing between a read-only key and the write+delete
@@ -53,6 +62,7 @@ checked against the minter's at all (the minter holds `admin`, which implies the
 | **Who may MINT** (the authorization boundary of `POST /keys`) | `src/server/app.ts` `Auth.requireAdmin()` inside the `app.post("/keys")` handler | ONE check, in the SAME authorization decision as the store boundary beside it: a key that does not hold `admin` is refused 403 `forbidden` ("only an admin key may mint keys") **before the body is read**, so a refusal has no side effect. A key scoped to a SET of stores mints only WITHIN that set (the game-backend flow; the set may only contain stores the minter itself holds and may never include `["*"]`); a master admin key (`["*"]`) mints any non-admin permission for any existing store and is the ONLY key that may grant `admin`, only for scope `["*"]`. **The slice-6 subset rule (`lacks` / `Auth.grantablePermissions`) was DELETED as unreachable** — with minting restricted to holders of `admin`, `admin` implies every permission, so it could never fire; keeping it would have left an untested branch that reads as a security control. Pinned M1–M5, `tests/keys.test.ts` (ledger row 39). **Reinstatement prerequisite: a future slice that lets a NON-admin key mint must restore the subset rule in the same commit.** A store-scoped admin key with a SET has no HTTP mint path (an `admin` grant needs `["*"]`): the operator's `pnpm run admin:key --store a --store b --perms admin` is it (row 40). |
 | **The key LIFECYCLE** (listing + revocation) | `src/core/keys.ts` `listKeys()` / `findKeyById()` / `revokeKey()`; the scope rules in `src/server/app.ts` `Auth.holdsStores()`; routes `app.get("/keys")` and `app.post("/keys/:id/revoke")` | The read and revoke halves of key administration, beside the mint route they belong to (ledger row 46). **`listKeys()`** loads every row plus every `key_stores` row in TWO queries (never one per key), ordered `created_at, id` — total because `id` is the primary key — and includes REVOKED keys with `revoked_at` set, so the inventory is also the audit view. **No pagination**, deliberately (small population; stated rather than unstated). **`revokeKey()`** matches only `revoked_at IS NULL`, so a second call changes nothing, and the route reports the timestamp read back from the ROW — never from the clock — which is what makes `changed:false` and a frozen timestamp the same fact. **WHO may list or revoke** is `Auth.requireAdmin("list keys"|"revoke keys")` — the ONE predicate the mint route uses, with the action in the message — and **WHICH keys** is `Auth.holdsStores()`: a master sees/revokes anything (`["*"]` contains every scope, including another `["*"]`); a store-scoped admin sees/revokes only keys whose scope lies inside its own set, and may never revoke a key holding `admin`. **SELF-REVOCATION is ALLOWED deliberately** (the caller's own credential; it is the one case exempt from the scope rules) and takes effect on the NEXT request because `resolveKey` refuses a revoked row per request — no cache to invalidate. An unknown id is `404`. **No key material leaves either route**: the entries carry `id`/`label`/`stores`/`prefix`/`perms`/the four timestamps and never the raw key, its secret or its `sha256`; `prefix` is returned because it is `ssk_` + the first 8 chars of the PUBLIC `id`, which is not a secret byte. Pinned L1–L6, `tests/keys.test.ts`. |
 | Key id from a raw key | `src/core/keys.ts` `keyIdFromRaw()` | Never `split("_")[1]` — see gotchas |
+| **Editing what a key HOLDS** (the second granting door) | route `app.patch("/keys/:id")` in `src/server/app.ts`; the write seam `editKey()` in `src/core/keys.ts`; validation in `src/core/validate.ts` (`parseLabel`, `parseStores`, `parsePermissions`); the audit columns in `src/core/db.ts` (`updated_at`, `updated_by`) | `PATCH` accepts any subset of `{label, stores, perms}`: an OMITTED field is unchanged, while an EMPTY object, an unknown field, a non-object body or unparseable fields are `400` and change **nothing** (pin E7 — an unknown field beside a valid one refuses the WHOLE request, never a partial edit). Validation is IDENTICAL to mint through the SAME three parsers, with the label rule folded into `parseLabel`/`assertLabel` so "blank means `unlabelled`" is one rule for both doors. WHO may edit is the SAME boundary as minting: `Auth.requireAdmin("edit keys")` **before the body is read** (pin E5), then, for a store-scoped admin, `Auth.holdsStores()` **four times** — the target's scope inside its own set, the target not holding `admin`, the RESULT's scope inside its own set, the RESULT not holding `admin` (so it can neither grant `admin` nor widen into a store it does not hold, nor DEMOTE a peer admin key). A master may narrow or widen anything; an edit that **ADDS** `admin` is an admin grant and needs `["*"]` (row 39's rule, reached through this door). **A REVOKED key is refused `403`** before any field decision (pin E3): revocation is terminal. On success `editKey()` rewrites `label`/`perms`/`scope_all` plus the `key_stores` rows in ONE transaction, stamps `updated_at` + `updated_by` (the **caller's** public id — pin E4), re-reads the row, and never names `id`/`key_hash`/`prefix`/`created_at` (pin E6). `GET /keys` and the `PATCH` response share ONE projection (`keyEntry()` in `src/server/app.ts`), so the two cannot drift. Pinned E1–E8, `tests/keys.test.ts`. |
 | **The admin UI** (the served console) | `src/server/assets.ts` `UI_ASSETS` + `readUiAsset()`; the routes are registered in `src/server/app.ts`; the served files are `web/index.html`, `web/app.js`, `web/app.css` | THREE literal `GET` routes (`/`, `/app.js`, `/app.css`), each mapping a fixed route to a fixed file — **no directory walking and no static-file subsystem**, so no client-supplied string can ever become a path (ledger row 49). The assets live in `web/` at the checkout root and are resolved from `assets.ts` via `import.meta.url`, never from the process's cwd. The routes are registered **before** `app.use("*", guard)`: the console must load without a key (it is the page that ASKS for one), and `GET /whoami` is what proves it. `GET /` is a literal route, not a catch-all — it shadows no API route and an unknown path is still the API's JSON 404. Every response carries `cache-control: no-store`; a missing asset is a LOUD 500, never a blank page. **The key is memory-only by construction**: `web/app.js` holds it in ONE module variable and must never touch `localStorage`, `sessionStorage`, `document.cookie`, `location.search`, `location.hash` or `history.pushState` — pinned by scanning the SERVED bytes, and every path it calls is pinned to the route set (U1–U4, `tests/admin-ui.test.ts`). Plain JS is not typechecked by the cheap tier and nothing executes it in a browser: the headless-browser test is OWED (`docs/TESTING.md`). |
 | Error codes → HTTP status | `src/core/errors.ts` | The only place an error body is shaped |
 | Name/scope/permission parsing | `src/core/validate.ts` | Store names, object names, scopes, permissions, expiry |
@@ -132,14 +142,33 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
     `GET /` is a literal path, so it is not a catch-all and shadows no API route; the
     three entries in `UI_ASSETS` are the whole static surface, and adding a fourth is a
     change to that table plus `docs/API.md` (PIN A1 lists every registered route).
+12. **An edit must never write the key's VALUE.** `editKey()`'s UPDATE names only
+    `label`, `perms`, `scope_all`, `updated_at` and `updated_by`; `id`, `key_hash`,
+    `prefix` and `created_at` are absent from it, and no new raw key is generated. That is
+    what "edit in place" MEANS (the owner's *"no need to show them again"*, ledger row
+    51): the credential a holder already has keeps working, with its new grant, so a
+    widening takes effect on whoever holds it and a narrowing is how it is taken back. A
+    future edit route — or a "re-mint on edit" convenience — MUST NOT be added: it is
+    exactly the defect pin E6 catches (`checkpoints/key-edit-differential.sh`, arm A).
+13. **`updated_at`/`updated_by` are ADDED columns, not just fresh-`CREATE TABLE`
+    entries.** A database created before slice 11 has neither, so `openDatabase()` runs
+    `migrateKeyAuditColumns()` on every boot: add-if-absent, guarded by `PRAGMA
+    table_info`, one step per column, in ONE transaction. A never-edited key keeps NULL
+    and the console says "never changed" — nothing is ever back-filled from `created_at`.
+    Pinned E8, which DROPS the columns from a real database and proves the next boot adds
+    them back and that the migrated column is usable through the route.
 
 ## Known debt (and where it is recorded)
 
 - **The admin UI's browser behaviour is UNEXERCISED.** Plain JS is not typechecked by
   the cheap tier, and no automated check runs it in a browser: U1–U4 are static scans of
   the SERVED bytes (no secret, memory-only key, real routes, same-origin HTML) plus the
-  served status/content-type checks. A headless-browser test is OWED (`docs/TESTING.md`),
-  and the host's browser-process-tree rule (kill in a trap) makes it a slice of its own.
+  served status/content-type checks. **That includes slice 11's EDIT flow** — the Edit
+  button, the row editor, Save/Cancel and the disabled-for-revoked state are in the
+  served `web/app.js` and pinned only in the negative (PIN U3 proves the `PATCH` path it
+  calls is a route the API registers; nothing clicks it). A headless-browser test is
+  OWED (`docs/TESTING.md`), and the host's browser-process-tree rule (kill in a trap)
+  makes it a slice of its own.
 - **No garbage collection** for orphaned blobs — ledger row 19, brief §4.
 - **Memory ceiling (GUARD g3) not implemented.** The suite still runs in seconds, so
   there is nothing to bound; the debt is board `g3` and this line changes when the

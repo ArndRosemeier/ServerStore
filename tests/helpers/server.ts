@@ -60,6 +60,8 @@ export interface TestServer {
   put(path: string, body: string | Uint8Array, key?: string): Promise<Response>;
   del(path: string, key?: string): Promise<Response>;
   postJson(path: string, body: unknown, key?: string): Promise<Response>;
+  /** `PATCH` with a JSON body — the edit doorway (ledger row 52). */
+  patchJson(path: string, body: unknown, key?: string): Promise<Response>;
   /** Run a function against the database file directly (fixture setup/cleanup). */
   direct<T>(fn: (db: DatabaseSync) => T): T;
   /** Seed a store directly, bypassing HTTP (fixture setup, not the thing under test). */
@@ -126,6 +128,14 @@ function build(deps: {
       Promise.resolve(
         app.request(path, {
           method: "POST",
+          body: JSON.stringify(body),
+          headers: { "content-type": "application/json", ...(bearer(key) ?? {}) },
+        }),
+      ),
+    patchJson: (path, body, key) =>
+      Promise.resolve(
+        app.request(path, {
+          method: "PATCH",
           body: JSON.stringify(body),
           headers: { "content-type": "application/json", ...(bearer(key) ?? {}) },
         }),

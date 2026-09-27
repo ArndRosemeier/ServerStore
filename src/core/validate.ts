@@ -152,6 +152,29 @@ export function parsePermissions(raw: unknown): Permission[] {
   return PERMISSIONS.filter((perm) => seen.has(perm));
 }
 
+/**
+ * The label a key carries when none was supplied.
+ *
+ * ONE constant, because BOTH granting doors — `POST /keys` (mint) and
+ * `PATCH /keys/:id` (edit) — normalise an absent or blank label through
+ * {@link parseLabel}, and "blank means unlabelled" must not mean two different
+ * things on the two doors.
+ */
+export const DEFAULT_LABEL = "unlabelled";
+
+/**
+ * Parse an optional `label` field from the wire.
+ *
+ * Returns `undefined` when the field was **absent**, which is what lets an edit
+ * leave the label UNCHANGED (an omitted field is not a change); a field that IS
+ * present is normalised exactly as mint has always normalised it — a non-string or
+ * a blank/whitespace-only string becomes {@link DEFAULT_LABEL}.
+ */
+export function parseLabel(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  return typeof raw === "string" && raw.trim() !== "" ? raw : DEFAULT_LABEL;
+}
+
 /** Parse a permissions string as stored in SQLite (`read,write`). */
 export function parseStoredPermissions(raw: string): Permission[] {
   const out: Permission[] = [];

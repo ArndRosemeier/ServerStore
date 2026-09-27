@@ -19,6 +19,13 @@
  * idempotent, self-revocation deliberately allowed). Both reuse the ONE containment
  * predicate the mint boundary already uses, `Auth.holdsStores`, and L1–L6 pin them.
  *
+ * Slice 11 (ledger rows 51, 52) adds the SECOND GRANTING DOOR: `PATCH /keys/:id` rewrites
+ * what a key HOLDS (`label`, `stores`, `perms`) in place, reuses the SAME parsers and the
+ * SAME `requireAdmin`/`holdsStores` boundary as minting, and stamps `updated_at` +
+ * `updated_by`. E1–E7 pin it — including the two facts that give edit-in-place its
+ * meaning: the key's VALUE never changes (E6) and a revoked key cannot be brought back
+ * (E3).
+ *
  * Every test drives the real app through the ONE fixture (`tests/helpers/server.ts`). A
  * store is created through the real `POST /stores` with a master admin key, never seeded,
  * so the setup walks the same boundary as the thing under test.
@@ -515,7 +522,9 @@ describe("keys: the key LIFECYCLE (pin L1-L6)", () => {
     }
 
     // The entry shape is EXACTLY the documented one, so a hash or a secret field cannot
-    // be added silently (the same structural move as PIN G4).
+    // be added silently (the same structural move as PIN G4). Slice 11 (ledger row 52)
+    // ADDS the two audit fields `updatedAt`/`updatedBy` — the only change to this list,
+    // and it is deliberate: a never-edited key reports both as `null`.
     for (const entry of body.keys) {
       expect(Object.keys(entry).sort()).toEqual([
         "createdAt",
@@ -527,6 +536,8 @@ describe("keys: the key LIFECYCLE (pin L1-L6)", () => {
         "prefix",
         "revokedAt",
         "stores",
+        "updatedAt",
+        "updatedBy",
       ]);
     }
   });
@@ -707,6 +718,496 @@ describe("keys: the key LIFECYCLE (pin L1-L6)", () => {
     expect((await server.get("/stores", secondMaster)).status).toBe(401);
   });
 });
+
+/**
+ * PIN E1–E7 — EDITING a key in place (`PATCH /keys/:id`).
+ *
+ * Slice 11 (ledger rows 51, 52): editing is a SECOND WAY TO GRANT PERMISSIONS, so it
+ * must reuse the SAME boundary minting uses — `Auth.requireAdmin` for WHO may grant and
+ * `Auth.holdsStores` for the store boundary — and must never become a second
+ * authorization path. The two facts that make "edit in place" mean anything are pinned
+ * directly: the key's VALUE is unchanged by an edit (E6), and a REVOKED key cannot be
+ * edited back to life (E3).
+ */
+describe("keys: EDITING a key in place (pin E1-E7)", () => {
+  test("PIN E1: an edit changes exactly the fields given, and nothing else", async () => {
+    const { server, master } = setup();
+    for (const name of ["a", "b"]) await store(server, master, name);
+    const target = await mintStores(server, master, ["a"], ["read", "write"], "before");
+    const id = keyId(target);
+    const valueBefore = storedValue(server, id);
+
+    // A brand-new key has NEVER been changed, and the listing says so with NULLs.
+    const initial = await keyEntryById(server, master, id);
+    expect(initial.updatedAt).toBeNull();
+    expect(initial.updatedBy).toBeNull();
+
+    // RENAME only: stores and perms are untouched.
+    const named = await server.patchJson(`/keys/${id}`, { label: "after" }, master);
+    expect(named.status, await named.clone().text()).toBe(200);
+    const afterName = (await named.json()) as KeyEntry;
+    expect(afterName.label).toBe("after");
+    expect(afterName.stores).toEqual(["a"]);
+    expect(afterName.perms).toEqual(["read", "write"]);
+
+    // PERMS only: the label and the stores are untouched.
+    const permsOnly = await server.patchJson(`/keys/${id}`, { perms: ["read"] }, master);
+    expect(permsOnly.status, await permsOnly.clone().text()).toBe(200);
+    const afterPerms = (await permsOnly.json()) as KeyEntry;
+    expect(afterPerms.label).toBe("after");
+    expect(afterPerms.stores).toEqual(["a"]);
+    expect(afterPerms.perms).toEqual(["read"]);
+
+    // STORES only: the label and the perms are untouched, and the scope is REPLACED
+    // (not merged with the old set).
+    const storesOnly = await server.patchJson(`/keys/${id}`, { stores: ["b"] }, master);
+    expect(storesOnly.status, await storesOnly.clone().text()).toBe(200);
+    const afterStores = (await storesOnly.json()) as KeyEntry;
+    expect(afterStores.label).toBe("after");
+    expect(afterStores.perms).toEqual(["read"]);
+    expect(afterStores.stores).toEqual(["b"]);
+
+    // The key's VALUE never moved through any of the three edits...
+    expect(storedValue(server, id)).toEqual(valueBefore);
+    // ...the scope rows are the new SET, with no leftover from the old one...
+    expect(
+      server.direct((db) =>
+        db.prepare("SELECT store FROM key_stores WHERE key_id = ? ORDER BY store").all(id),
+      ),
+    ).toEqual([{ store: "b" }]);
+    // ...and the grant really changed: `b` is now readable, `a` is out of scope and
+    // `read` does not write. (The SAME raw key is used for all three: E6's subject.)
+    expect((await server.get("/stores/b/objects", target)).status).toBe(200);
+    expect((await server.put("/stores/b/objects/x.txt", "no", target)).status).toBe(403);
+    expect((await server.get("/stores/a/objects", target)).status).toBe(403);
+  });
+
+  test("PIN E2: an editor may grant only what it could have minted", async () => {
+    const { server, master } = setup();
+    for (const name of ["a", "b", "c"]) await store(server, master, name);
+    // The game-backend key: a store-scoped admin, minted out of band exactly as the
+    // operator CLI would (the route refuses a store-scoped admin GRANT, pin M4).
+    const scopedAdmin = server.mint({ stores: ["a", "b"], perms: ["admin"], label: "backend" });
+    const target = await mintStores(server, master, ["a"], ["read"], "player");
+    const outside = await mintStores(server, master, ["c"], ["read"], "in-c");
+    const peer = server.mint({ stores: ["a"], perms: ["admin"], label: "peer-admin" });
+
+    // POSITIVE first, so the refusals below are not "everything is 403": a grant the
+    // scoped admin COULD have minted — inside its own set, no `admin` — is accepted.
+    const ok = await server.patchJson(
+      `/keys/${keyId(target)}`,
+      { stores: ["a", "b"], perms: ["read", "write"] },
+      scopedAdmin,
+    );
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(((await ok.json()) as KeyEntry).stores).toEqual(["a", "b"]);
+
+    const before = storedKey(server, keyId(target));
+    const keysBefore = countKeys(server);
+    const scopesBefore = countKeyStores(server);
+
+    // WIDEN into a store it does not hold: 403.
+    const widen = await server.patchJson(
+      `/keys/${keyId(target)}`,
+      { stores: ["a", "b", "c"] },
+      scopedAdmin,
+    );
+    expect(widen.status).toBe(403);
+    expect((await readError(widen)).code).toBe("forbidden");
+
+    // ESCAPE to the master scope: 403 (`["*"]` is never inside a scoped set).
+    expect(
+      (await server.patchJson(`/keys/${keyId(target)}`, { stores: ["*"] }, scopedAdmin)).status,
+    ).toBe(403);
+
+    // GRANT `admin`: 403 — a scoped admin can never mint one, so it can never edit one on.
+    const grant = await server.patchJson(
+      `/keys/${keyId(target)}`,
+      { perms: ["read", "admin"] },
+      scopedAdmin,
+    );
+    expect(grant.status).toBe(403);
+    expect((await readError(grant)).code).toBe("forbidden");
+
+    // A key OUTSIDE its set: 403, even for a rename.
+    const outsideEdit = await server.patchJson(
+      `/keys/${keyId(outside)}`,
+      { label: "stolen" },
+      scopedAdmin,
+    );
+    expect(outsideEdit.status).toBe(403);
+    expect((await readError(outsideEdit)).code).toBe("forbidden");
+
+    // A PEER ADMIN key inside its set: 403 for a rename AND for a DEMOTION — it is not
+    // a key the caller could have minted. (Judgement call recorded in docs/TESTING.md:
+    // the brief's E2 names the widen/grant cases; the same "could have minted" rule
+    // covers the target, so a scoped admin cannot strip a peer's admin either.)
+    const peerRename = await server.patchJson(`/keys/${keyId(peer)}`, { label: "x" }, scopedAdmin);
+    expect(peerRename.status).toBe(403);
+    const peerDemote = await server.patchJson(
+      `/keys/${keyId(peer)}`,
+      { perms: ["read"] },
+      scopedAdmin,
+    );
+    expect(peerDemote.status).toBe(403);
+
+    // Every refusal left the target EXACTLY as it was, and minted no key or scope row.
+    expect(storedKey(server, keyId(target))).toEqual(before);
+    expect(countKeys(server)).toBe(keysBefore);
+    expect(countKeyStores(server)).toBe(scopesBefore);
+    // The peer still administers, so the refusals did not quietly change it.
+    expect((await server.get("/stores/a/objects", peer)).status).toBe(200);
+
+    // The MASTER's half of the same rule (row 39, reached through this new door):
+    // granting `admin` needs `["*"]`...
+    const badGrant = await server.patchJson(
+      `/keys/${keyId(target)}`,
+      { perms: ["read", "admin"] },
+      master,
+    );
+    expect(badGrant.status).toBe(403);
+    expect((await readError(badGrant)).code).toBe("forbidden");
+    // ...and with `["*"]` it lands, and the edited key really is a master admin.
+    const goodGrant = await server.patchJson(
+      `/keys/${keyId(target)}`,
+      { stores: ["*"], perms: ["read", "admin"] },
+      master,
+    );
+    expect(goodGrant.status, await goodGrant.clone().text()).toBe(200);
+    expect((await server.get("/stores", target)).status).toBe(200);
+  });
+
+  test("PIN E3: a REVOKED key cannot be edited back to life", async () => {
+    const { server, master } = setup();
+    await store(server, master, "a");
+    const doomed = await mintStores(server, master, ["a"], ["read", "write"], "doomed");
+    const id = keyId(doomed);
+    const revoked = await server.postJson(`/keys/${id}/revoke`, {}, master);
+    expect(revoked.status, await revoked.clone().text()).toBe(200);
+    const revokedAt = ((await revoked.json()) as { revokedAt: string }).revokedAt;
+    const before = storedKey(server, id);
+
+    // EVERY kind of edit is refused, including a rename — the check is on the target,
+    // not on which field was sent.
+    for (const body of [
+      { label: "alive again" },
+      { perms: ["read"] },
+      { stores: ["a"] },
+      { label: "x", stores: ["a"], perms: ["read", "write", "delete", "admin"] },
+    ]) {
+      const refused = await server.patchJson(`/keys/${id}`, body, master);
+      expect(refused.status, JSON.stringify(body)).toBe(403);
+      const error = await readError(refused);
+      expect(error.code).toBe("forbidden");
+      expect(error.message).toContain("revoked");
+    }
+
+    // `revoked_at` did not move, and nothing else in the row did either.
+    expect(
+      server.direct((db) =>
+        db.prepare("SELECT revoked_at FROM access_keys WHERE id = ?").get(id),
+      ),
+    ).toEqual({ revoked_at: revokedAt });
+    expect(storedKey(server, id)).toEqual(before);
+    // ...and the key is still dead on its next request: revocation was not undone.
+    expect((await server.get("/whoami", doomed)).status).toBe(401);
+  });
+
+  test("PIN E4: an edit is stamped and visible", async () => {
+    const { server, master } = setup();
+    await store(server, master, "a");
+    // A DISTINCT editor key, so `updatedBy` cannot accidentally be the target's id or
+    // the master's.
+    const editor = server.mint({ stores: ["*"], perms: ["admin"], label: "editor" });
+    const target = await mintStores(server, master, ["a"], ["read"], "player");
+    const id = keyId(target);
+
+    // NEVER EDITED: both fields are NULL in the listing — never a date invented from
+    // `createdAt`.
+    const initial = await keyEntryById(server, master, id);
+    expect(initial.updatedAt).toBeNull();
+    expect(initial.updatedBy).toBeNull();
+    expect(initial.createdAt).toBe("2026-01-01T00:00:00.000Z");
+
+    // The fixture's clock is frozen, so it is ADVANCED here: a stamp that ignored the
+    // clock would then be visibly wrong rather than coincidentally right (L5's lesson).
+    server.clock.value += 60_000;
+    const firstAt = new Date(server.clock.value).toISOString();
+
+    const first = await server.patchJson(`/keys/${id}`, { label: "renamed" }, editor);
+    expect(first.status, await first.clone().text()).toBe(200);
+    const firstBody = (await first.json()) as KeyEntry;
+    expect(firstBody.updatedAt).toBe(firstAt);
+    expect(firstBody.updatedBy).toBe(keyId(editor));
+    expect(firstBody.updatedBy).not.toBe(id);
+    expect(firstBody.updatedBy).not.toBe(keyId(master));
+
+    // The SAME two values appear in `GET /keys`.
+    const listed = await keyEntryById(server, master, id);
+    expect(listed.updatedAt).toBe(firstAt);
+    expect(listed.updatedBy).toBe(keyId(editor));
+
+    // A SECOND edit MOVES the stamp.
+    server.clock.value += 60_000;
+    const secondAt = new Date(server.clock.value).toISOString();
+    const second = await server.patchJson(`/keys/${id}`, { perms: ["read", "write"] }, editor);
+    expect(second.status, await second.clone().text()).toBe(200);
+    const secondBody = (await second.json()) as KeyEntry;
+    expect(secondBody.updatedAt).toBe(secondAt);
+    expect(secondBody.updatedAt).not.toBe(firstAt);
+    expect(secondBody.updatedBy).toBe(keyId(editor));
+
+    // The ROW really holds the stamp, and the stamp is the editor's PUBLIC id, not key
+    // material: the response carries no raw key.
+    expect(
+      server.direct((db) =>
+        db.prepare("SELECT updated_at, updated_by FROM access_keys WHERE id = ?").get(id),
+      ),
+    ).toEqual({ updated_at: secondAt, updated_by: keyId(editor) });
+    expect(JSON.stringify(secondBody)).not.toContain(editor);
+    expect(JSON.stringify(secondBody)).not.toContain(sha256Hex(editor));
+  });
+
+  test("PIN E5: a non-admin key cannot edit anything", async () => {
+    const { server, master } = setup();
+    await store(server, master, "a");
+    const readOnly = await mintScoped(server, master, "a", ["read"]);
+    const target = await mintStores(server, master, ["a"], ["read"], "player");
+    const before = storedKey(server, keyId(target));
+    const keysBefore = countKeys(server);
+
+    // 401 without a key: the guard, before the route.
+    const anonymous = await server.patchJson(`/keys/${keyId(target)}`, { label: "x" });
+    expect(anonymous.status).toBe(401);
+    expect((await readError(anonymous)).code).toBe("unauthorized");
+
+    // 403 for a VERIFIED non-admin key, whatever field it sends — and the message says
+    // WHO may edit, exactly as the mint route's refusal does.
+    for (const body of [{ label: "x" }, { perms: ["read"] }, { stores: ["a"] }]) {
+      const refused = await server.patchJson(`/keys/${keyId(target)}`, body, readOnly);
+      expect(refused.status, JSON.stringify(body)).toBe(403);
+      const error = await readError(refused);
+      expect(error.code).toBe("forbidden");
+      expect(error.message).toContain("only an admin key may edit keys");
+    }
+    // Not even its OWN row: the check is on the caller, not on the target.
+    expect(
+      (await server.patchJson(`/keys/${keyId(readOnly)}`, { label: "me" }, readOnly)).status,
+    ).toBe(403);
+
+    // Nothing changed anywhere, and no key or scope row appeared.
+    expect(storedKey(server, keyId(target))).toEqual(before);
+    expect(countKeys(server)).toBe(keysBefore);
+  });
+
+  test("PIN E6: an edit does NOT change the key's value", async () => {
+    const { server, master } = setup();
+    for (const name of ["a", "b"]) await store(server, master, name);
+    const target = await mintStores(server, master, ["a"], ["read"], "player");
+    const id = keyId(target);
+    const valueBefore = storedValue(server, id);
+
+    const edited = await server.patchJson(
+      `/keys/${id}`,
+      { label: "renamed", stores: ["b"], perms: ["read", "write", "delete"] },
+      master,
+    );
+    expect(edited.status, await edited.clone().text()).toBe(200);
+
+    // THE SAME RAW KEY still authenticates, and reports the NEW grant — so the change
+    // really landed on the credential its holder already has (the owner's "no need to
+    // show them again", ledger row 51).
+    const whoami = await server.get("/whoami", target);
+    expect(whoami.status, await whoami.clone().text()).toBe(200);
+    const identity = (await whoami.json()) as {
+      id: string;
+      label: string;
+      stores: readonly string[];
+      perms: readonly string[];
+    };
+    expect(identity.id).toBe(id);
+    expect(identity.label).toBe("renamed");
+    expect(identity.stores).toEqual(["b"]);
+    expect(identity.perms).toEqual(["read", "write", "delete"]);
+
+    // It really exercises the new grant: writes and deletes in `b`, refused in `a`.
+    expect((await server.put("/stores/b/objects/x.txt", "state", target)).status).toBe(201);
+    expect((await server.del("/stores/b/objects/x.txt", target)).status).toBe(204);
+    expect((await server.get("/stores/a/objects", target)).status).toBe(403);
+
+    // Byte-identical value fields: id, key_hash, prefix, created_at.
+    expect(storedValue(server, id)).toEqual(valueBefore);
+
+    // No key material in the edit response either: a re-mint would have had to put a
+    // new raw key somewhere, and the OLD one is never in a response.
+    const response = await server.patchJson(`/keys/${id}`, { label: "renamed-2" }, master);
+    expect(response.status, await response.clone().text()).toBe(200);
+    const text = JSON.stringify(await response.json());
+    expect(text).not.toContain(target);
+    expect(text).not.toContain(secretOf(target));
+    expect(text).not.toContain(sha256Hex(target));
+  });
+
+  test("PIN E7: a body with no recognised field is refused and nothing changes", async () => {
+    const { server, master } = setup();
+    await store(server, master, "a");
+    const target = await mintStores(server, master, ["a"], ["read", "write"], "player");
+    const id = keyId(target);
+    const before = storedKey(server, id);
+
+    // An EMPTY object asks for nothing.
+    const empty = await server.patchJson(`/keys/${id}`, {}, master);
+    expect(empty.status).toBe(400);
+    expect((await readError(empty)).code).toBe("bad_request");
+
+    // The OLD single-store field is refused BY NAME, never silently scored as a scope.
+    const legacy = await server.patchJson(`/keys/${id}`, { store: "a" }, master);
+    expect(legacy.status).toBe(400);
+    expect((await readError(legacy)).code).toBe("bad_request");
+
+    // One UNKNOWN field beside a KNOWN one refuses the WHOLE request: `label` must not
+    // be applied while `bogus` is dropped.
+    const mixed = await server.patchJson(`/keys/${id}`, { label: "applied?", bogus: 1 }, master);
+    expect(mixed.status).toBe(400);
+    expect((await readError(mixed)).code).toBe("bad_request");
+
+    // A body that is present but not an object, and no body at all.
+    const notObject = await server.patchJson(`/keys/${id}`, [1, 2], master);
+    expect(notObject.status).toBe(400);
+    expect((await readError(notObject)).code).toBe("invalid_body");
+    const noBody = await server.patchJson(`/keys/${id}`, undefined, master);
+    expect(noBody.status).toBe(400);
+    expect((await readError(noBody)).code).toBe("invalid_body");
+
+    // Validation IDENTICAL to mint, on the fields that ARE recognised.
+    expect((await server.patchJson(`/keys/${id}`, { stores: [] }, master)).status).toBe(400);
+    expect((await server.patchJson(`/keys/${id}`, { stores: ["*", "a"] }, master)).status).toBe(400);
+    expect((await server.patchJson(`/keys/${id}`, { perms: [] }, master)).status).toBe(400);
+    expect((await server.patchJson(`/keys/${id}`, { perms: ["root"] }, master)).status).toBe(400);
+    expect((await server.patchJson(`/keys/${id}`, { stores: ["ghost"] }, master)).status).toBe(404);
+
+    // NOTHING changed: the whole stored state of the key, and its scope rows, are what
+    // they were. (An `admin`-grant refusal is E2's; this pin is about the BODY.)
+    expect(storedKey(server, id)).toEqual(before);
+    expect(
+      server.direct((db) =>
+        db.prepare("SELECT store FROM key_stores WHERE key_id = ? ORDER BY store").all(id),
+      ),
+    ).toEqual([{ store: "a" }]);
+    // The key is still exactly what it was, behaviourally: it writes `a`.
+    expect((await server.put("/stores/a/objects/x.txt", "still", target)).status).toBe(201);
+  });
+
+  test("PIN E8: a database that predates the audit columns is migrated add-if-absent", async () => {
+    // The brief names E1-E7; E8 is added because the audit columns are a SCHEMA CHANGE
+    // on a LIVE database, and "the migration is real rather than asserted" is this
+    // project's rule for exactly that (B1's G6). The live store's shape is post-B1 and
+    // pre-C2 — `scope_all` present, no audit columns — so that is the shape built here:
+    // the columns are DROPPED from a real database, and the next boot must add them
+    // back. A pin that only read the `CREATE TABLE` would prove nothing for the file
+    // the service actually runs on.
+    const server = createTestServer();
+    const target = server.mint({ stores: ["*"], perms: ["admin"], label: "pre-c2" });
+    const id = keyId(target);
+
+    const columns = (s: Server): string[] =>
+      s.direct((db) =>
+        (db.prepare("PRAGMA table_info(access_keys)").all() as unknown as { name: string }[]).map(
+          (column) => column.name,
+        ),
+      );
+
+    server.direct((db) => {
+      db.exec("ALTER TABLE access_keys DROP COLUMN updated_at");
+      db.exec("ALTER TABLE access_keys DROP COLUMN updated_by");
+    });
+    expect(columns(server)).not.toContain("updated_at");
+    expect(columns(server)).not.toContain("updated_by");
+
+    // The SECOND boot is the one that migrates.
+    const rebooted = server.reboot();
+    expect(columns(rebooted)).toContain("updated_at");
+    expect(columns(rebooted)).toContain("updated_by");
+    // ...and it is IDEMPOTENT: a third boot changes nothing.
+    const third = rebooted.reboot();
+    expect(columns(third)).toEqual(columns(rebooted));
+
+    // The migrated columns are USABLE through the real route: the pre-C2 key is still
+    // "never changed", and an edit now stamps it.
+    expect(
+      third.direct((db) =>
+        db.prepare("SELECT updated_at, updated_by FROM access_keys WHERE id = ?").get(id),
+      ),
+    ).toEqual({ updated_at: null, updated_by: null });
+    third.clock.value += 60_000;
+    const edited = await third.patchJson(`/keys/${id}`, { label: "post-c2" }, target);
+    expect(edited.status, await edited.clone().text()).toBe(200);
+    expect(
+      third.direct((db) =>
+        db.prepare("SELECT updated_at, updated_by FROM access_keys WHERE id = ?").get(id),
+      ),
+    ).toEqual({ updated_at: new Date(third.clock.value).toISOString(), updated_by: id });
+  });
+});
+
+/** The public entry `GET /keys` lists — the shape a client reads. */
+interface KeyEntry {
+  readonly id: string;
+  readonly label: string;
+  readonly stores: readonly string[];
+  readonly prefix: string;
+  readonly perms: readonly string[];
+  readonly createdAt: string;
+  readonly expiresAt: string | null;
+  readonly lastUsedAt: string | null;
+  readonly revokedAt: string | null;
+  readonly updatedAt: string | null;
+  readonly updatedBy: string | null;
+}
+
+/** One key's entry from `GET /keys` (loud when the id is not listed). */
+async function keyEntryById(server: Server, master: string, id: string): Promise<KeyEntry> {
+  const response = await server.get("/keys", master);
+  expect(response.status, await response.clone().text()).toBe(200);
+  const body = (await response.json()) as { keys: KeyEntry[] };
+  const entry = body.keys.find((key) => key.id === id);
+  if (entry === undefined) throw new Error(`key ${id} is not in the inventory`);
+  return entry;
+}
+
+/**
+ * The key's VALUE — the fields an edit must never move (pin E6).
+ *
+ * Deliberately NOT the whole row: `last_used_at` moves on every authenticated request,
+ * so including it would make an "untouched" comparison meaningless rather than strict.
+ */
+function storedValue(server: Server, id: string): unknown {
+  return server.direct((db) =>
+    db
+      .prepare("SELECT id, key_hash, prefix, created_at FROM access_keys WHERE id = ?")
+      .get(id),
+  );
+}
+
+/**
+ * A key's ENTIRE persisted state — the "nothing changed" witness for the refusals
+ * (pins E2, E3, E5, E7). As in {@link storedValue}, `last_used_at` is excluded because
+ * every authenticated request writes it; everything an edit COULD write is included.
+ */
+function storedKey(server: Server, id: string): unknown {
+  const row = server.direct((db) =>
+    db
+      .prepare(
+        "SELECT scope_all, label, key_hash, prefix, perms, subject_kind, created_at, " +
+          "expires_at, revoked_at, updated_at, updated_by FROM access_keys WHERE id = ?",
+      )
+      .get(id),
+  );
+  const stores = server.direct((db) =>
+    db.prepare("SELECT store FROM key_stores WHERE key_id = ? ORDER BY store").all(id),
+  );
+  return { row, stores };
+}
 
 /** A fresh server plus the single master admin key every test in this file mints. */
 function setup(): { server: Server; master: string } {

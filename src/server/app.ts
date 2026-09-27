@@ -19,10 +19,12 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { openDatabase } from "../core/db.ts";
 import { errorBody, StoreError, toStoreError, type ErrorCode } from "../core/errors.ts";
-import { describeStores, findKeyById, listKeys, mintKey, resolveKey, revokeKey, touchKey } from "../core/keys.ts";
+import { describeStores, editKey, findKeyById, listKeys, mintKey, resolveKey, revokeKey, touchKey } from "../core/keys.ts";
 import {
   assertNoTraversalSegments,
+  DEFAULT_LABEL,
   parseExpiresAt,
+  parseLabel,
   parsePermissions,
   parseObjectName,
   parseStoreKind,
@@ -197,6 +199,46 @@ function rawPathname(request: Request): string {
   return getPath(request);
 }
 
+/**
+ * THE public projection of a key — the entry `GET /keys` lists and `PATCH /keys/:id`
+ * returns (ledger rows 46, 52).
+ *
+ * One function, so the two routes cannot drift and no key material can appear on one
+ * and not the other. `prefix` is `ssk_` + the first 8 characters of the PUBLIC `id`
+ * (the secret begins after the id, so it carries no secret byte); the raw key, its
+ * secret half and its `sha256` are not in this shape and never will be.
+ */
+function keyEntry(key: AccessKeyRecord): {
+  id: string;
+  label: string;
+  stores: readonly string[];
+  prefix: string;
+  perms: readonly Permission[];
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+} {
+  return {
+    id: key.id,
+    label: key.label,
+    stores: key.stores,
+    prefix: key.prefix,
+    perms: key.perms,
+    createdAt: key.createdAt,
+    expiresAt: key.expiresAt,
+    lastUsedAt: key.lastUsedAt,
+    revokedAt: key.revokedAt,
+    // The EDIT stamp (pin E4): `null` on a never-edited key — the console says "never
+    // changed" rather than inventing a time from `createdAt` — and otherwise when it
+    // was last changed and by which (public) key id.
+    updatedAt: key.updatedAt,
+    updatedBy: key.updatedBy,
+  };
+}
+
 export function createApp(dependencies: AppDependencies): Hono<{ Variables: Variables }> {  const deps: Required<AppDependencies> = {
     dataRoot: dependencies.dataRoot,
     dbPath: dependencies.dbPath,
@@ -324,7 +366,10 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     // Any future slice that lets a NON-admin key mint MUST reinstate the subset rule in
     // the SAME commit (docs/SEAM-INDEX.md, "Who may MINT").
     const expiresAt = parseExpiresAt(body.expiresAt);
-    const label = typeof body.label === "string" && body.label.trim() !== "" ? body.label : "unlabelled";
+    // The ONE label rule (src/core/validate.ts `parseLabel`): an absent, non-string or
+    // blank label means `DEFAULT_LABEL` — the same normalisation the edit route uses,
+    // so the two granting doors cannot disagree about what "unlabelled" means.
+    const label = parseLabel(body.label) ?? DEFAULT_LABEL;
     const minted = mintKey(ctx.db, {
       stores,
       label,
@@ -346,6 +391,143 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     );
   });
 
+  // THE SECOND GRANTING DOOR (ledger rows 51, 52): `PATCH /keys/:id` rewrites what a
+  // key HOLDS without changing what it IS. It reuses the SAME boundary the mint route
+  // above enforces — `Auth.requireAdmin()` for WHO may grant, `Auth.holdsStores()` for
+  // the store boundary, and `parseStores`/`parsePermissions`/the label rule for
+  // validation — so there is no second authorization path. The key's VALUE (`id`,
+  // `key_hash`, `prefix`, `created_at`) is never written and no new raw key is made,
+  // which is what turns "edit in place" into a fact (pin E6).
+  app.patch("/keys/:id", async (c) => {
+    const auth = c.get("auth");
+    // WHO MAY EDIT is the row-39 predicate reached through this new door (pin E5),
+    // decided BEFORE the body is read exactly as minting decides it.
+    auth.requireAdmin("edit keys");
+    const id = c.req.param("id");
+    const body = await readJsonObject(c.req.raw, deps.maxBytes);
+
+    // A body may carry ONLY the three editable fields, each optional. An unknown field
+    // is refused BY NAME rather than ignored: a client written against a different
+    // contract (the pre-slice-8 `store` field, say) must get neither a silent no-op nor
+    // a PARTIAL edit (pin E7). `EDITABLE` is also what "no recognised field" is read
+    // against, so the two halves of that pin cannot drift.
+    const EDITABLE = ["label", "stores", "perms"] as const;
+    const unknown = Object.keys(body).filter(
+      (field) => !(EDITABLE as readonly string[]).includes(field),
+    );
+    if (unknown.length > 0) {
+      throw new StoreError(
+        "bad_request",
+        `unknown field(s) ${unknown.map((field) => JSON.stringify(field)).join(", ")}; ` +
+          `an edit may carry any subset of: ${EDITABLE.join(", ")}`,
+      );
+    }
+    // Validation IDENTICAL to mint: the same scope parser, the same permission parser,
+    // the same label rule. `undefined` means the field was OMITTED, and the row's
+    // current value is kept — that is what makes an edit change EXACTLY what was given
+    // (pin E1).
+    const label = parseLabel(body.label);
+    const stores = body.stores === undefined ? undefined : parseStores(body.stores);
+    const perms = body.perms === undefined ? undefined : parsePermissions(body.perms);
+    if (label === undefined && stores === undefined && perms === undefined) {
+      throw new StoreError(
+        "bad_request",
+        `an edit must carry at least one of: ${EDITABLE.join(", ")}`,
+      );
+    }
+
+    const target = findKeyById(ctx.db, id);
+    if (target === null) {
+      throw new StoreError("not_found", `no key with id ${JSON.stringify(id)}`);
+    }
+    // A REVOKED key cannot be edited back to life (pin E3): revocation is terminal, or
+    // revoking a key (row 45) would mean nothing. Refused BEFORE any field decision, so
+    // no part of the request is applied.
+    if (target.revokedAt !== null) {
+      throw new StoreError(
+        "forbidden",
+        `key ${id} is revoked (at ${target.revokedAt}) and cannot be edited; mint a new key instead`,
+      );
+    }
+
+    const nextStores = stores ?? target.stores;
+    const nextPerms = perms ?? target.perms;
+
+    // THE BOUNDARY, in the same shape as the mint route: what the key would HOLD must
+    // be something the CALLER could have minted (pin E2).
+    if (auth.spansStores) {
+      // A master may narrow or widen anything. Granting `admin` is still stricter than
+      // editing at all: an edit that ADDS `admin` is an admin GRANT, and row 39's rule
+      // says an admin grant is `["*"]` or it is refused. The check reads the CHANGE,
+      // not the resulting set, so a key that already holds `admin` (a store-scoped
+      // admin minted out of band, row 40) can still be renamed or narrowed by its
+      // master; only a NEW admin grant is held to `["*"]`.
+      if (
+        nextPerms.includes("admin") &&
+        !target.perms.includes("admin") &&
+        !(nextStores.length === 1 && nextStores[0] === ALL_STORES)
+      ) {
+        throw new StoreError("forbidden", `an admin grant must be scoped to ["${ALL_STORES}"]`);
+      }
+    } else {
+      // A store-scoped admin may edit only keys it could have minted — the rule the
+      // revoke boundary already applies (row 46), reached through `holdsStores`, the
+      // ONE containment predicate: the target must lie inside its own set and may not
+      // hold `admin` (it could never have minted one), and the RESULT must obey the
+      // same two rules, so it can neither grant `admin` nor widen a key into a store it
+      // does not hold — nor DEMOTE a peer admin key, which the target rule already
+      // refuses. One predicate, four readings, no second copy.
+      if (!auth.holdsStores(target.stores)) {
+        throw new StoreError(
+          "forbidden",
+          `key is scoped to ${describeStores(auth.key.stores)}; ` +
+            `it may not edit a key scoped to ${describeStores(target.stores)}`,
+        );
+      }
+      if (target.perms.includes("admin")) {
+        throw new StoreError(
+          "forbidden",
+          `key is scoped to ${describeStores(auth.key.stores)}; ` +
+            `only a master admin key may edit a key holding 'admin'`,
+        );
+      }
+      if (!auth.holdsStores(nextStores)) {
+        throw new StoreError(
+          "forbidden",
+          `key is scoped to ${describeStores(auth.key.stores)}; ` +
+            `it may not grant ${describeStores(nextStores)}`,
+        );
+      }
+      if (nextPerms.includes("admin")) {
+        throw new StoreError(
+          "forbidden",
+          `key is scoped to ${describeStores(auth.key.stores)}; ` +
+            `only a master admin key may grant 'admin'`,
+        );
+      }
+    }
+
+    // Every named store must already exist (the master scope has no names to check) —
+    // the same check the mint route makes, BEFORE anything is written, so a refusal
+    // leaves the key exactly as it was.
+    for (const store of nextStores) {
+      if (store !== ALL_STORES) requireStore(ctx.db, store);
+    }
+
+    const updated = editKey(ctx.db, {
+      id,
+      // The merged state: an omitted field keeps the row's value, so only what was
+      // given changes (pin E1).
+      label: label ?? target.label,
+      stores: nextStores,
+      perms: nextPerms,
+      // The CALLER's own key id — an id the inventory already lists, never a secret.
+      by: auth.key.id,
+      now: deps.now,
+    });
+    return c.json(keyEntry(updated));
+  });
+
   // THE KEY LIFECYCLE (ledger row 46): listing and revocation live here, beside the
   // mint route they are the other half of, and reuse the SAME scope predicate
   // (`Auth.holdsStores`) that route already enforces. There is no second authorization
@@ -359,21 +541,7 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     // sees another master.
     const keys = listKeys(ctx.db)
       .filter((key) => auth.holdsStores(key.stores))
-      .map((key) => ({
-        id: key.id,
-        label: key.label,
-        stores: key.stores,
-        // `prefix` is `ssk_` + the first 8 characters of the PUBLIC `id` (the stored
-        // DISPLAY_PREFIX_LENGTH is 12); the secret begins after the id, so this carries
-        // no secret byte, and it is returned so a console shows the same handle the
-        // operator saw at mint without re-deriving it (ledger row 46).
-        prefix: key.prefix,
-        perms: key.perms,
-        createdAt: key.createdAt,
-        expiresAt: key.expiresAt,
-        lastUsedAt: key.lastUsedAt,
-        revokedAt: key.revokedAt,
-      }));
+      .map(keyEntry);
     return c.json({ keys });
   });
 

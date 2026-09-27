@@ -44,6 +44,11 @@ export interface Store {
  * It is canonical: either exactly `["*"]` (every store, the master case) or a
  * non-empty, sorted list of real store names. `src/core/validate.ts` `parseStores()`
  * is the only thing that produces one, so a mixed or empty scope cannot exist.
+ *
+ * `updatedAt`/`updatedBy` are the EDIT audit stamp (ledger row 52): `null` on a
+ * never-edited key — the console says "never changed" rather than inventing a time
+ * from `createdAt` — and otherwise the instant of the last successful
+ * `PATCH /keys/:id` and the **id** of the key that made it (never a secret).
  */
 export interface AccessKeyRecord {
   readonly id: string;
@@ -56,6 +61,8 @@ export interface AccessKeyRecord {
   readonly expiresAt: string | null;
   readonly lastUsedAt: string | null;
   readonly revokedAt: string | null;
+  readonly updatedAt: string | null;
+  readonly updatedBy: string | null;
 }
 
 /** What a successful key resolution yields. */

@@ -10,6 +10,9 @@
  * change adds a statement to MIGRATIONS and never rewrites one — EXCEPT the
  * pre-slice-8 scope migration below, which rewrites the ONE table whose shape it
  * replaces and is guarded by the presence of the old column, so it runs exactly once.
+ * A column ADDED to an existing table cannot come from `CREATE TABLE IF NOT EXISTS`
+ * (which is a no-op once the table exists), so it lands as an add-if-absent step:
+ * `migrateKeyAuditColumns` for the slice-11 edit audit columns.
  */
 
 import { DatabaseSync } from "node:sqlite";
@@ -60,7 +63,9 @@ const MIGRATIONS: readonly string[] = [
      created_at TEXT NOT NULL,
      expires_at TEXT,
      last_used_at TEXT,
-     revoked_at TEXT
+     revoked_at TEXT,
+     updated_at TEXT,
+     updated_by TEXT
    )
    STRICT`,
   `CREATE INDEX IF NOT EXISTS access_keys_hash ON access_keys(key_hash)`,
@@ -71,6 +76,44 @@ const MIGRATIONS: readonly string[] = [
    )
    STRICT`,
 ];
+
+/**
+ * The audit columns of an EDIT (ledger row 52, slice 11): when a key was last changed
+ * and by WHICH key. Add-if-absent, one step per column, so the guard is the column's
+ * own absence — the B1 pattern. A never-edited key keeps NULL, which is what the
+ * console renders as "never changed"; nothing is ever back-filled from `created_at`
+ * (that would be a lie about when the grant changed).
+ *
+ * `updated_by` holds the EDITING key's **id** — the public lookup id the inventory
+ * already lists — never its raw value or its hash, so no secret can reach a stored
+ * audit field through a database read.
+ */
+const KEY_AUDIT_MIGRATION: readonly { readonly column: string; readonly statement: string }[] = [
+  { column: "updated_at", statement: "ALTER TABLE access_keys ADD COLUMN updated_at TEXT" },
+  { column: "updated_by", statement: "ALTER TABLE access_keys ADD COLUMN updated_by TEXT" },
+];
+
+/**
+ * Apply {@link KEY_AUDIT_MIGRATION} to a database that predates it. Idempotent (the
+ * column's absence is the guard, so a second boot adds nothing) and atomic (both
+ * columns land together or neither does), and LOUD on failure rather than booting a
+ * process whose edit route would then die on a missing column.
+ */
+function migrateKeyAuditColumns(db: DatabaseSync): void {
+  const missing = KEY_AUDIT_MIGRATION.filter((step) => !hasColumn(db, "access_keys", step.column));
+  if (missing.length === 0) return;
+  db.exec("BEGIN");
+  try {
+    for (const step of missing) db.exec(step.statement);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw new Error(
+      `could not add the key-audit columns (${missing.map((step) => step.column).join(", ")}) ` +
+        `to access_keys: ${(error as Error).message}`,
+    );
+  }
+}
 
 /**
  * The statements that carry a PRE-slice-8 database (one nullable `access_keys.store`)
@@ -134,5 +177,6 @@ export function openDatabase(dbPath: string): DatabaseSync {
     db.exec(statement);
   }
   migrateLegacyKeyScope(db);
+  migrateKeyAuditColumns(db);
   return db;
 }
