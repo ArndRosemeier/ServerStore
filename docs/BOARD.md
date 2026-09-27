@@ -54,8 +54,10 @@ reconciled: e1e363f · 2026-09-27T20:12Z — the tip of the row-27 landing (the 
   the time, the dispatcher's error, corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight; slices 1-4 verified and retired; NEXT = the API doc (row 28),
-  |   with the order for the owner's registration model proposed in row 30
+  | state=DEPLOYED TO LOOPBACK: serverstore.service is installed, enabled and active on
+  |   127.0.0.1:8477 ONLY (local probe PASS exit 0). The PUBLIC name is blocked by a ZONE-WIDE
+  |   Cloudflare Access policy — one dashboard change from the owner unblocks it (row 31).
+  |   No writer in flight; slices 1-4 verified and retired.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -174,17 +176,19 @@ QUEUE-CLOSED | row=none | FIRST FEATURE SLICE — the multi-store core LANDED as
 QUEUE-CLOSED | row=26 | RESOLVED 2026-09-27: a claim is now the explicit key `retired_branch=<name>`,
   landed here (bec97e1) and upstream in Toolbox (a709f78), each pinned in BOTH directions. The
   vocabulary table carries the rule and this board lists its own claims explicitly.
-QUEUE | row=27 | DEPLOYMENT SLICE LANDED (see the LANDED row above): the unit, the runbook, the
-  probe and the spawned-entrypoint pins are on the branch. STILL OWED, and none of it is the
-  writer's: (a) the dispatcher's OWN verification of the landing; (b) INSTALLING the unit
-  (`cp deploy/serverstore.service ~/.config/systemd/user/ && systemctl --user daemon-reload &&
-  systemctl --user enable --now serverstore`) and VERIFYING loopback with `ss -ltn 'sport = :8477'`;
-  (c) the ONE ingress line for store.futuremagic.de in /etc/cloudflared/config.yml +
-  `cloudflared tunnel route dns f4dec46d-fd5e-4870-894b-a5c8635c2b82 store.futuremagic.de` + the
-  tunnel restart, which needs the owner's go-ahead AT THAT MOMENT (TRAP t1); (d) the owner minting
-  the master key with `pnpm run admin:key` and his key-bearing round-trip — the dispatcher must
-  never hold it (ledger row 7); (e) the live probe
-  `bash scripts/probe-live.sh https://store.futuremagic.de`. Order and rollback: docs/DEPLOYMENT.md.
+QUEUE-CLOSED | row=27 | DONE 2026-09-27: the deployment slice LANDED, was independently verified by
+  the dispatcher (row 29), and is INSTALLED — runbook steps 0-5: the unit is enabled and active on
+  127.0.0.1:8477 only, the LOCAL probe is PASS exit 0, one ingress line validates as rule #5 →
+  http://127.0.0.1:8477, DNS answers, and the tunnel restarted with every existing hostname back.
+  What remains is not installation: see the row=31 line below.
+QUEUE | row=31 | BLOCKED ON THE OWNER, one dashboard change: a ZONE-WIDE Cloudflare Access policy
+  sits in front of store.futuremagic.de (a hostname minutes old already 302s to
+  spring-thunder-dad0.cloudflareaccess.com), so NO key-bearing client can reach the API — Access
+  gates curl exactly as it gates a browser. Fix: a MORE SPECIFIC Access application for
+  store.futuremagic.de with a Bypass policy for Everyone, or narrow the wildcard so it no longer
+  covers this name. THEN, in his own shell: `pnpm run admin:key` (the master key is his; the
+  dispatcher must never hold it) and his key-bearing round-trip. The dispatcher then re-runs
+  `scripts/probe-live.sh https://store.futuremagic.de` and records the result.
 QUEUE | row=28 | API DOC: `docs/API.md` — the CLIENT contract (base URL, the auth header, the eight
   routes that actually exist, the `{error:{code,message}}` envelope with its codes, and the caps),
   PINNED to the code by a test that derives the route list from the app. Next landing after the
@@ -251,6 +255,10 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
+  | live=serverstore.service — systemctl --user, ENABLED and active on 127.0.0.1:8477 only; data
+  |   root /home/administrator/serverstore-data; logs `journalctl --user -u serverstore -f`;
+  |   ingress rule #5 in /etc/cloudflared/config.yml (backup .bak.pre-store-*); PUBLIC ACCESS
+  |   CURRENTLY BLOCKED BY A ZONE-WIDE CLOUDFLARE ACCESS POLICY (row 31)
   | briefs=docs/BRIEF.md + docs/briefs/ | seams=docs/SEAM-INDEX.md | tests=docs/TESTING.md
   | sessions=~/.dsh/sessions/--home-administrator-projects-ServerStore--
 ```
