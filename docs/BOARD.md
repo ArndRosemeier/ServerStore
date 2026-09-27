@@ -58,11 +58,10 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=LIVE at https://store.futuremagic.de and CURRENT: the service was restarted to B1 at
-  |   2026-09-27 23:05:03 CEST (main@5ae13b4), so the running code and the migrated schema agree.
-  |   Keyless probe PASS exit 0; loopback only; the owner's master key works (his round-trip's
-  |   `last_used_at` proves it). NO writer in flight; NEXT = B2 (key listing + the REVOKE route),
-  |   with one fork pending on the TWO UNUSED master keys in the live database (row 44).
+  | state=LIVE at https://store.futuremagic.de, running main@5ae13b4 (restarted 2026-09-27 23:05:03)
+  |   with the B1 schema. EXACTLY ONE live admin key (the owner's; the two unused ones are revoked —
+  |   row 45). Keyless probe PASS exit 0; loopback only. NO writer in flight; NEXT = B2 (key listing
+  |   + the REVOKE route), then C (the admin UI).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -457,6 +456,10 @@ QUEUE | row=41 | NEXT = STEP B1 (dispatched): a key is scoped to a SET of stores
   `GET /whoami`. `POST /keys` moves from `store: string` to `stores: string[]` (`["*"]` = master)
   while NO client exists, which is why the breaking change is free today. Then B2 = the REVOKE route
   and key listing (what the step-C UI needs), then C = the UI itself.
+QUEUE-CLOSED | row=45 | RESOLVED 2026-09-27: the two unused master admin keys are revoked via
+  `revokeKey()` (read back from the live database: two revoked, the owner's untouched), so the store
+  holds exactly ONE live admin credential. No restart needed and that was checked in the code —
+  resolution reads `revoked_at` per request. B2 makes this self-service.
 QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
   the two the live store needs NOW, because the live database holds THREE master admin keys (two
   unused, created before the service existed) and revocation is currently operator-only. Then C
@@ -551,10 +554,10 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-44 (19, 23, 27, 33, 36, 39 and 42 appended by writers,
-  |   out of numeric order by design; 43 = the store LIVE and the bypass verified, 43b = the
-  |   running-service-is-not-the-repo discovery (GUARD g5 / DEPLOYMENT §8), 44 = B1 verified with the
-  |   live schema migration inspected and the three-master-key finding)
+  | decisions=docs/DECISION-LEDGER.md rows 1-45 (19, 23, 27, 33, 36, 39 and 42 appended by writers,
+  |   out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
+  |   running-service-is-not-the-repo discovery (GUARD g5), 44 = B1 verified with the live migration
+  |   inspected, 45 = the two stray master keys revoked)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -568,6 +571,12 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=45 | sha=93de802 (the record commit) | verify=MY OWN, on the LIVE database: the two
+  | unused master keys read back as revoked (`revoked_at` set) and the owner's key as untouched;
+  | no restart needed, checked in the code (resolution reads `revoked_at` per request; `keys.ts`
+  | holds no lookup cache); keyless live probe PASS exit 0.
+  | retired=nothing | docs=ledger row 45 · this board.
+
 LANDED | row=44 | sha=5ae13b4 (the B1 tip; pulled, migrated and restarted BEFORE my own gate — see
   | the note in ledger row 44 on why that order was the smaller risk)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 11 files · 86 tests ·
