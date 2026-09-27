@@ -29,7 +29,7 @@ import {
   parseStoreName,
   parseStoreScope,
 } from "../core/validate.ts";
-import { PERMISSIONS, type Permission, type AccessKeyRecord } from "../core/types.ts";
+import { type Permission, type AccessKeyRecord } from "../core/types.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_HOST, DEFAULT_PORT } from "./config.ts";
 import { createStore, ensureMasterStore, listStores, requireStore } from "../stores/registry.ts";
 import { handlerFor } from "../storage/kinds.ts";
@@ -72,15 +72,23 @@ class Auth {
   }
 
   /**
-   * The permissions this key is allowed to GRANT — the union the subset rule uses.
+   * 403 unless this key may mint at all.
    *
-   * `admin` implies every permission (the same implication `authorize()` applies to a
-   * single operation), so a master admin key may grant anything. This is the ONLY
-   * place the implication is spelled out for minting; a second copy of it is the
-   * defect AGENTS.md rule 4 exists to prevent.
+   * WHO MAY MINT is the FIRST thing `POST /keys` decides (ledger row 39): only a key
+   * that holds `admin`. A store-scoped admin key mints within its own store (the
+   * game-backend flow); a master admin key mints any non-admin permission anywhere,
+   * and is the only key that may grant `admin`. This replaces the subset rule of
+   * ledger row 36 (`grantablePermissions` + the `lacks` check), which became
+   * UNREACHABLE once only admins may mint — `admin` implies every permission, so a
+   * subset check could never fire. Unreachable code that reads as a security control
+   * is a trap, so it was deleted rather than kept behind a comment. A future slice
+   * that lets a NON-admin key mint MUST reinstate the subset rule in the SAME commit
+   * (docs/SEAM-INDEX.md, "Who may MINT").
    */
-  get grantablePermissions(): readonly Permission[] {
-    return this.key.perms.includes("admin") ? PERMISSIONS : this.key.perms;
+  requireAdmin(): void {
+    if (!this.key.perms.includes("admin")) {
+      throw new StoreError("forbidden", "only an admin key may mint keys");
+    }
   }
 
   /** 403 unless the key carries `permission` for `store` (admin implies all). */
@@ -222,6 +230,9 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
 
   app.post("/keys", async (c) => {
     const auth = c.get("auth");
+    // WHO MAY MINT (ledger row 39) — decided BEFORE the body is read, so a non-admin
+    // key's request is refused with no parsing and no side effect at all.
+    auth.requireAdmin();
     const body = await readJsonObject(c.req.raw, deps.maxBytes);
     const perms = parsePermissions(body.perms);
     const targetStore = body.store === undefined ? auth.key.store : parseStoreScope(body.store);
@@ -242,21 +253,12 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
       // A scoped key can only ever mint within its own store.
       throw new StoreError("forbidden", `key is scoped to store ${JSON.stringify(auth.key.store)}`);
     }
-    // THE PERMISSION BOUNDARY — the other half of the same authorization decision as
-    // the store boundary above. A key is the principal AND the limit (ledger rows 2 and
-    // 6): it may pass on what it holds, and may not mint a permission it does not have.
-    // `grantablePermissions` treats `admin` as implying every permission, so a master
-    // admin key still mints anything — the owner's bootstrap path. The check runs
-    // BEFORE anything is minted, so a refusal has no side effect at all.
-    const lacks = perms.filter((perm) => !auth.grantablePermissions.includes(perm));
-    if (lacks.length > 0) {
-      throw new StoreError(
-        "forbidden",
-        `key cannot grant ${lacks.map((perm) => `'${perm}'`).join(", ")}: it does not hold ${
-          lacks.length === 1 ? "that permission" : "those permissions"
-        }`,
-      );
-    }
+    // The slice-6 subset check (`lacks` / `grantablePermissions`) is DELETED as
+    // unreachable: `requireAdmin()` above means every minter holds `admin`, which
+    // implies every permission, so a subset check could never fire. The rule that
+    // replaced it — "a non-admin key cannot mint" — is pinned M1 in tests/keys.test.ts.
+    // Any future slice that lets a NON-admin key mint MUST reinstate the subset rule in
+    // the SAME commit (docs/SEAM-INDEX.md, "Who may MINT").
     const expiresAt = parseExpiresAt(body.expiresAt);
     const label = typeof body.label === "string" && body.label.trim() !== "" ? body.label : "unlabelled";
     const minted = mintKey(ctx.db, {

@@ -168,7 +168,47 @@ control gate run on the restored tree must be GREEN.
 | S | a fake `ghp_`+36×`A` appended to a tracked file | `AGENTS.md` | `2af90514d3fc…409e` → `d0034621e1d6…7f0e` | `PIN S1: the tracked tree carries no GitHub token shape` — `a GitHub token shape is TRACKED — it is already published: remove it and rotate it: expected [ Array(1) ] to deeply equal []`, received `["AGENTS.md: GitHub token shape at byte offset 7671"]` |
 | control | none — the restored tree | — | `2af90514d3fc…409e` (back) | **GREEN**: 7 files · 60 tests · ~2.0s |
 
-## The permission-boundary pins (slice 6, `POST /keys`)
+## The mint-authorization pins (slice 7, `POST /keys`)
+
+Slice 6 bounded minting by the minter's OWN permissions (the subset rule); slice 7
+**supersedes it with the owner's stricter rule (ledger row 39): only a key holding
+`admin` may mint at all.** `Auth.requireAdmin()` is the first thing the route decides —
+**before the body is read** — so a non-admin key's request has no side effect. The subset
+check is consequently unreachable (`admin` implies every permission) and was **DELETED**;
+a future slice that lets a NON-admin key mint must reinstate it in the same commit
+(`docs/SEAM-INDEX.md`, "Who may MINT", and the comment in `src/server/app.ts`).
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| M1 | a NON-admin key cannot mint ANY key, not even one with a SUBSET of its own permissions — 403 `forbidden`, the message says only an admin key may mint, and the key count is UNCHANGED | `tests/keys.test.ts` (`PIN M1`) |
+| M2 | a store-scoped ADMIN key mints WITHIN its store — `read` → 201 (store omitted, so the caller's own scope is used) and `read`+`write` → 201; the read child reads (200), the read+write child writes (201) and is refused a DELETE it was not granted (403) | `tests/keys.test.ts` (`PIN M2`) |
+| M3 | a store-scoped admin key still cannot mint for another store (403, count unchanged) — nor escape to `*` | `tests/keys.test.ts` (`PIN M3`) |
+| M4 | only a MASTER admin key may grant `admin`, and only for scope `*` — the positive (master grants `admin` for `*` → 201, and the child really is a master admin) AND both refusals (a store-scoped admin granting `admin` → 403; a master admin granting `admin` for a NAMED store → 403) | `tests/keys.test.ts` (`PIN M4`) |
+| M5 | a master admin key still mints any non-admin permission for any existing store — the bootstrap positive control: `read`+`write`+`delete` → 201, and the child deletes (204) | `tests/keys.test.ts` (`PIN M5`) |
+
+**Which slice-6 pin meanings CHANGED (required by the slice-7 brief).** Slice 6's K1–K3
+asserted the subset rule *through the route*; that route no longer reaches it, because a
+non-admin minter is refused before any permission check.
+
+- **K1/K2** ("a read-only / no-`delete` key cannot mint what it lacks") keep the same
+  OUTCOME — 403 and the count unchanged — but their MEANING changed: they are no longer
+  about a missing permission, they are M1's "a non-admin key cannot mint at all", and the
+  message changed with it. Replaced by **M1**.
+- **K3** ("a key passes on exactly what it holds, and no more") is **gone**, and its
+  positive direction is now the opposite: a `read`+`write` key minting `read`+`write` is
+  correctly **403** (M1). The minting positive that survives is **M2** — a store-scoped
+  ADMIN key minting within its store.
+- **K4** ("the boundaries that already held still hold") folded into **M3** (cross-store →
+  403) and **M4** (an `admin` grant needs a master admin AND `*`).
+- **K5**'s meaning is UNCHANGED — a master admin mints any non-admin permission for any
+  existing store — and it is carried forward as **M5**.
+
+The slice-6 arms recorded below are HISTORY: their anchor (`const lacks = …`) no longer
+exists in `src/server/app.ts`, so re-running `checkpoints/keys-subset-differential.sh`
+would (and should) refuse with a harness failure rather than mutate a line that is not
+there.
+
+## The permission-boundary pins (slice 6, `POST /keys`) — SUPERSEDED by slice 7's M1–M5 above
 
 The store boundary of `POST /keys` was already pinned (PIN 2, `tests/auth.test.ts`);
 what was **not** pinned — and was wrong — is the PERMISSION boundary. A key is the
@@ -188,7 +228,7 @@ no more. Measured defect before the fix (ledger row 35): a key minted
 K3 carries the **subset-not-equality** direction in the same test (the bare-`read`
 mint), which is what makes arm B below able to fail it.
 
-## The permission-boundary differential (2 arms + two controls)
+## The permission-boundary differential (slice 6, HISTORY — superseded K1–K5)
 
 Machinery: `checkpoints/keys-subset-differential.sh`. Raw transcript:
 `checkpoints/keys-subset-differential.out` (per-arm logs are `*.log`, so gitignored).

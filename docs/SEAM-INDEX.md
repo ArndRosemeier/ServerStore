@@ -12,7 +12,7 @@ restated here — the test **is** the statement, and `docs/TESTING.md` names the
 request
   └─ path guard            src/server/app.ts          (raw target, before routing)
        └─ resolve key      src/core/keys.ts           resolveKey()
-            └─ authorize   src/server/app.ts          Auth.authorize() / requireMasterAdmin()
+            └─ authorize   src/server/app.ts          Auth.authorize() / requireAdmin() / requireMasterAdmin()
                  └─ dispatch to the store kind       src/storage/kinds.ts   handlerFor(kind)
                       └─ storage                     src/storage/fs.ts    bytes on disk
 ```
@@ -21,11 +21,18 @@ Everything the project will ever do is either **core** (a step above `dispatch`)
 **store kind** (a handler at `dispatch`). There is no third mechanism.
 
 **The `POST /keys` authorization decision is the `authorize` step applied to a GRANT**,
-not a separate path: it enforces the store boundary (a scoped key mints only within its
-own store) and the permission boundary (the requested `perms` are a subset of the
-minter's own, `admin` implying all) in ONE branch of the route handler — see the
-"What a key may GRANT" row below and ledger row 36. There is no second authorization
-middleware and no second subset predicate.
+not a separate path: it enforces WHO may mint (a key that holds `admin` — ledger row 39)
+and the store boundary (a scoped key mints only within its own store) in ONE branch of
+the route handler — see the "Who may MINT" row below. A key without `admin` is refused
+`403 forbidden` **before the body is read**, and the slice-6 subset rule it used to carry
+was **DELETED as unreachable** (an `admin` key implies every permission, so a subset
+check could never fire). There is no second authorization middleware.
+
+**PREREQUISITE (do not lose this): any future slice that lets a NON-admin key mint MUST
+reinstate the subset rule — "a key may pass on only what it holds" — in the SAME commit.**
+Until then `requireAdmin()` is the ONLY thing between a read-only key and the write+delete
+escalation of ledger row 35, because the permissions of the key being minted are not
+checked against the minter's at all (the minter holds `admin`, which implies them all).
 
 | Concern | The one place | Notes |
 | --- | --- | --- |
@@ -34,7 +41,7 @@ middleware and no second subset predicate.
 | Binding a socket | `src/server/main.ts` | `127.0.0.1` only; the host is NOT configurable |
 | Metadata schema | `src/core/db.ts` `openDatabase()` | One file `<dataRoot>/serverstore.db`; idempotent `CREATE TABLE IF NOT EXISTS` |
 | What a key IS | `src/core/keys.ts` | mint, hash, resolve, touch, revoke; `ssk_<id>_<secret>` |
-| **What a key may GRANT** (the permission boundary of `POST /keys`) | `src/server/app.ts` `Auth.grantablePermissions` + the `lacks` check inside the `app.post("/keys")` handler | ONE predicate, in the SAME authorization decision as the store boundary beside it: the requested `perms` must be a subset of the minter's own, with `admin` implying all of them (`grantablePermissions` is the ONE place that implication is spelled out for minting, exactly as `authorize()` spells it out for a single operation). A refusal is 403 `forbidden`, names the missing permission(s), and happens **before** `mintKey` — no row, no side effect. Pinned K1–K5, `tests/keys.test.ts` (ledger row 36) |
+| **Who may MINT** (the authorization boundary of `POST /keys`) | `src/server/app.ts` `Auth.requireAdmin()` inside the `app.post("/keys")` handler | ONE check, in the SAME authorization decision as the store boundary beside it: a key that does not hold `admin` is refused 403 `forbidden` ("only an admin key may mint keys") **before the body is read**, so a refusal has no side effect. A store-scoped admin key mints within its own store (the game-backend flow); a master admin key mints any non-admin permission for any existing store and is the ONLY key that may grant `admin`, only for scope `*`. **The slice-6 subset rule (`lacks` / `Auth.grantablePermissions`) was DELETED as unreachable** — with minting restricted to holders of `admin`, `admin` implies every permission, so it could never fire; keeping it would have left an untested branch that reads as a security control. Pinned M1–M5, `tests/keys.test.ts` (ledger row 39). **Reinstatement prerequisite: a future slice that lets a NON-admin key mint must restore the subset rule in the same commit.** |
 | Key id from a raw key | `src/core/keys.ts` `keyIdFromRaw()` | Never `split("_")[1]` — see gotchas |
 | Error codes → HTTP status | `src/core/errors.ts` | The only place an error body is shaped |
 | Name/scope/permission parsing | `src/core/validate.ts` | Store names, object names, scopes, permissions, expiry |
@@ -117,17 +124,20 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
   within the same landing — 49 written, 52 landed. A volatile number restated in prose
   is exactly what the ledger warns about; point at the suite, not at its tally.)
 - **`POST /keys` exists** (admin keys mint scoped keys); it is not in the brief's
-  minimum route list and is pinned in the direction that matters — it cannot mint an
-  admin key without a master admin key, and it constrains BOTH boundaries now: a
-  scoped key cannot escape its store, and no key can grant a permission it does not
-  hold (`Auth.grantablePermissions`, ledger row 36).
+  minimum route list and is pinned in the direction that matters — only a key holding
+  `admin` may mint at all, an `admin` grant still needs a MASTER admin key and scope
+  `*`, and a scoped key still cannot mint outside its store (`Auth.requireAdmin()`,
+  ledger row 39). The slice-6 subset rule was removed as unreachable; the seam row
+  above carries the reinstatement prerequisite.
 - **`store_kinds` is enforced by a foreign key**, so `kind` is a real vocabulary in
   the file and not a comment.
 - **The client contract's own findings** (ledger row 33, `docs/API.md`): `name_taken`
   (409) is in `ERROR_CODES` and **no route emits it** — the doc says "reserved";
   ~~`POST /keys` bounds minting by **store**, not by the minter's permissions (a
   `read`-only key mints a `write`+`delete` key for its own store)~~ — **CLOSED by
-  ledger row 36**: the permission boundary now holds, pinned K1–K5; there is **no
+  ledger row 36** (the permission boundary held, pinned K1–K5) and then **NARROWED by
+  ledger row 39**: only a key holding `admin` may mint at all, so the subset rule is
+  no longer the live boundary and K1–K5 were replaced by M1–M5; there is **no
   revoke route** (`revokeKey()` is called only by tests); and a key scoped elsewhere
   learns a store's existence from a `404` because `requireStore()` runs before
   `authorize()`. The remaining two were not fixed by the doc slice — fixing `src/` is

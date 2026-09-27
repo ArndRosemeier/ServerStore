@@ -1,14 +1,20 @@
 /**
- * PIN K1–K5 — the PERMISSION boundary of `POST /keys`.
+ * PIN M1–M5 — WHO MAY MINT on `POST /keys`.
  *
- * The store boundary (a scoped key may only mint within its own store) is pinned in
- * `tests/auth.test.ts` (PIN 2). This file pins the OTHER half of the same
- * authorization decision, in `src/server/app.ts`: **a key may pass on what it holds,
- * and no more** — the key IS the principal AND the limit (ledger rows 2, 6 and 36).
+ * Slice 6 (ledger row 36) bounded minting by the minter's OWN permissions — the subset
+ * rule, "a key may pass on only what it holds". Slice 7 replaces that with the stricter
+ * rule the owner chose (ledger row 39): **only a key holding `admin` may mint at all.**
+ * The subset check is consequently UNREACHABLE through the route — `admin` implies every
+ * permission — and was DELETED rather than kept as an untested branch.
  *
- * Every test drives the real app through the ONE fixture (`tests/helpers/server.ts`).
- * A store is created through the real `POST /stores` with a master admin key, never
- * seeded, so the setup walks the same boundary as the thing under test.
+ * What still holds, and is pinned here: a store-scoped admin key mints WITHIN its store
+ * (the game-backend flow, M2) but not for another (M3); an `admin` grant still requires a
+ * MASTER admin key AND scope `*` (M4); and a master admin key still mints any non-admin
+ * permission for any existing store (M5, the bootstrap path).
+ *
+ * Every test drives the real app through the ONE fixture (`tests/helpers/server.ts`). A
+ * store is created through the real `POST /stores` with a master admin key, never seeded,
+ * so the setup walks the same boundary as the thing under test.
  */
 
 import { afterEach, describe, expect, test } from "vitest";
@@ -17,99 +23,131 @@ import { createTestServer, cleanupTestServers, readError } from "./helpers/serve
 afterEach(cleanupTestServers);
 
 type Server = ReturnType<typeof createTestServer>;
+type Perm = "read" | "write" | "delete" | "admin";
 
-describe("keys: a key may not mint a permission it does not hold (pin K1-K5)", () => {
-  test("PIN K1: a READ-ONLY key cannot mint a permission it does not hold", async () => {
+describe("keys: only an admin key may mint (pin M1-M5)", () => {
+  test("PIN M1: a non-admin key cannot mint ANY key, not even one with a subset of its own permissions", async () => {
     const { server, master } = setup();
-    const readOnly = await scopedKey(server, master, "alpha", ["read"]);
+    await store(server, master, "alpha");
+    const readOnly = await mintScoped(server, master, "alpha", ["read"]);
+    const readWrite = await mintScoped(server, master, "alpha", ["read", "write"]);
     const keysBefore = countKeys(server);
 
-    const response = await server.postJson("/keys", { store: "alpha", perms: ["write"] }, readOnly);
+    // A legal SUBSET of the minter's own permissions — slice 6's K3 positive, which is
+    // exactly what the owner's stricter rule now refuses. (The MINT response body is
+    // deliberately NOT used as the assertion message: it carries the raw key, and a key
+    // belongs only in the mint response and the auth header — ledger row 21.)
+    const subset = await server.postJson("/keys", { store: "alpha", perms: ["read"] }, readOnly);
+    expect(subset.status).toBe(403);
+    const subsetError = await readError(subset);
+    expect(subsetError.code).toBe("forbidden");
+    // The message must say WHO may mint, not which permission is missing.
+    expect(subsetError.message).toContain("only an admin key may mint");
 
-    expect(response.status).toBe(403);
-    const error = await readError(response);
-    expect(error.code).toBe("forbidden");
-    // The message must name the permission the minter lacks.
-    expect(error.message).toContain("write");
-    // And NOTHING was minted: no row, no side effect.
+    // And exactly what the minter holds is refused too: it is not about subset at all.
+    const equal = await server.postJson(
+      "/keys",
+      { store: "alpha", perms: ["read", "write"] },
+      readWrite,
+    );
+    expect(equal.status).toBe(403);
+    expect((await readError(equal)).code).toBe("forbidden");
+
+    // NOTHING was minted: no row, no side effect.
     expect(countKeys(server)).toBe(keysBefore);
   });
 
-  test("PIN K2: a key lacking 'delete' cannot mint 'delete'", async () => {
+  test("PIN M2: a store-scoped ADMIN key mints within its store", async () => {
     const { server, master } = setup();
-    const readWrite = await scopedKey(server, master, "alpha", ["read", "write"]);
-    const keysBefore = countKeys(server);
+    await store(server, master, "alpha");
+    // The game-backend key: a store-scoped admin key. It is minted out of band by the
+    // operator (`pnpm run admin:key --store alpha --perms admin`) — the route
+    // deliberately refuses a store-scoped admin GRANT (PIN M4) — so the fixture mints it
+    // directly, exactly as that CLI would.
+    const storeAdmin = server.mint({ store: "alpha", perms: ["admin"], label: "game-backend" });
 
-    const response = await server.postJson(
+    // `read`, with the store OMITTED so the caller's own scope is used...
+    const readChild = await server.postJson("/keys", { perms: ["read"] }, storeAdmin);
+    expect(readChild.status).toBe(201);
+    const readKey = ((await readChild.json()) as { key: string }).key;
+
+    // ...and `read`+`write`, naming the store.
+    const rwChild = await server.postJson(
       "/keys",
-      { store: "alpha", perms: ["read", "write", "delete"] },
-      readWrite,
+      { store: "alpha", perms: ["read", "write"], label: "player" },
+      storeAdmin,
     );
+    expect(rwChild.status).toBe(201);
+    const rwBody = (await rwChild.json()) as { key: string; perms: readonly string[] };
+    expect(rwBody.perms).toEqual(["read", "write"]);
 
-    expect(response.status).toBe(403);
-    const error = await readError(response);
-    expect(error.code).toBe("forbidden");
-    expect(error.message).toContain("delete");
-    expect(countKeys(server)).toBe(keysBefore);
-  });
+    // The children are real: the read key reads, the read+write key writes.
+    const put = await server.put("/stores/alpha/objects/room-1", "state", rwBody.key);
+    expect(put.status, await put.clone().text()).toBe(201);
+    expect((await server.get("/stores/alpha/objects/room-1", readKey)).status).toBe(200);
 
-  test("PIN K3: a key passes on exactly what it holds, and no more", async () => {
-    const { server, master } = setup();
-    const readWrite = await scopedKey(server, master, "alpha", ["read", "write"]);
-
-    // The positive: the same permission SET is mintable, and the minted key is real.
-    const minted = await server.postJson(
-      "/keys",
-      { store: "alpha", perms: ["read", "write"], label: "passed-on" },
-      readWrite,
-    );
-    expect(minted.status, await minted.clone().text()).toBe(201);
-    const child = (await minted.json()) as { key: string; perms: readonly string[] };
-    expect(child.perms).toEqual(["read", "write"]);
-
-    // A SUBSET is mintable too — the rule is subset, not equality.
-    const subset = await server.postJson("/keys", { store: "alpha", perms: ["read"] }, readWrite);
-    expect(subset.status, await subset.clone().text()).toBe(201);
-
-    // The new key works for what it was granted...
-    const put = await server.put("/stores/alpha/objects/room-1", "state", child.key);
-    expect(put.status).toBe(201);
-
-    // ...and is refused what it was NOT granted: the child did not inherit the
-    // minter's key, it inherited the minter's LIMIT.
-    const del = await server.del("/stores/alpha/objects/room-1", child.key);
+    // And the child is refused the DELETE it was not granted — it inherited the limit,
+    // not the minter's own key.
+    const del = await server.del("/stores/alpha/objects/room-1", rwBody.key);
     expect(del.status).toBe(403);
     expect((await readError(del)).code).toBe("forbidden");
   });
 
-  test("PIN K4: the boundaries that already held still hold", async () => {
+  test("PIN M3: a store-scoped admin key still cannot mint for another store", async () => {
     const { server, master } = setup();
-    const alpha = await scopedKey(server, master, "alpha", ["read", "write"]);
-    await scopedKey(server, master, "beta", ["read", "write"]);
+    await store(server, master, "alpha");
+    await store(server, master, "beta");
+    const storeAdmin = server.mint({ store: "alpha", perms: ["admin"] });
+    const keysBefore = countKeys(server);
 
-    // Another store: a scoped key can never mint outside its own store.
-    const crossStore = await server.postJson("/keys", { store: "beta", perms: ["read"] }, alpha);
-    expect(crossStore.status).toBe(403);
-    expect((await readError(crossStore)).code).toBe("forbidden");
+    const cross = await server.postJson("/keys", { store: "beta", perms: ["read"] }, storeAdmin);
+    expect(cross.status).toBe(403);
+    expect((await readError(cross)).code).toBe("forbidden");
 
-    // `admin` without a master admin key: refused even when scoped to `*`.
-    const admin = await server.postJson("/keys", { store: "*", perms: ["admin"] }, alpha);
-    expect(admin.status).toBe(403);
-    expect((await readError(admin)).code).toBe("forbidden");
+    // Neither may it escape to `*`: a store-scoped key is scoped for MINTING too.
+    const wildcard = await server.postJson("/keys", { store: "*", perms: ["read"] }, storeAdmin);
+    expect(wildcard.status).toBe(403);
 
-    // A master admin key with the WRONG scope still may not hand out `admin`: an
-    // admin grant must be `*`, and a store-scoped one is refused.
-    const scopedAdmin = await server.postJson("/keys", { store: "alpha", perms: ["admin"] }, master);
-    expect(scopedAdmin.status).toBe(403);
-    expect((await readError(scopedAdmin)).code).toBe("forbidden");
+    expect(countKeys(server)).toBe(keysBefore);
   });
 
-  test("PIN K5: a master admin key still mints any non-admin permission for any existing store", async () => {
+  test("PIN M4: only a MASTER admin key may grant 'admin', and only for scope '*'", async () => {
     const { server, master } = setup();
-    await scopedKey(server, master, "alpha", ["read"]);
+    await store(server, master, "alpha");
+    const storeAdmin = server.mint({ store: "alpha", perms: ["admin"] });
 
-    // The owner's bootstrap path: `admin` implies every permission, so the full
-    // non-admin set is mintable for a store the caller holds no row in itself.
+    // The positive direction: a master admin key grants `admin` for `*`, and the child
+    // really is a master admin.
+    const granted = await server.postJson(
+      "/keys",
+      { store: "*", perms: ["admin"], label: "second-master" },
+      master,
+    );
+    expect(granted.status).toBe(201);
+    const secondMaster = ((await granted.json()) as { key: string }).key;
+    expect((await server.get("/stores", secondMaster)).status).toBe(200);
+
+    // Direction 1: a store-scoped ADMIN key may not grant `admin`, even for `*`.
+    const scopedGrant = await server.postJson("/keys", { store: "*", perms: ["admin"] }, storeAdmin);
+    expect(scopedGrant.status).toBe(403);
+    expect((await readError(scopedGrant)).code).toBe("forbidden");
+
+    // Direction 2: even the MASTER admin key may not grant `admin` for a named store —
+    // an admin grant is `*` or it is refused.
+    const storeScopedAdminGrant = await server.postJson(
+      "/keys",
+      { store: "alpha", perms: ["admin"] },
+      master,
+    );
+    expect(storeScopedAdminGrant.status).toBe(403);
+    expect((await readError(storeScopedAdminGrant)).code).toBe("forbidden");
+  });
+
+  test("PIN M5: a master admin key still mints any non-admin permission for any existing store", async () => {
+    const { server, master } = setup();
+    await store(server, master, "alpha");
+
+    // The owner's bootstrap path — the positive control for the whole slice.
     const response = await server.postJson(
       "/keys",
       { store: "alpha", perms: ["read", "write", "delete"], label: "bootstrap" },
@@ -119,8 +157,7 @@ describe("keys: a key may not mint a permission it does not hold (pin K1-K5)", (
     const body = (await response.json()) as { key: string; perms: readonly string[] };
     expect(body.perms).toEqual(["read", "write", "delete"]);
 
-    // The minted key really carries the whole set — including `delete`, which the
-    // read-only `alpha` key above could not have passed on.
+    // The minted key really carries the whole set — including `delete`.
     const put = await server.put("/stores/alpha/objects/room-1", "state", body.key);
     expect(put.status).toBe(201);
     const del = await server.del("/stores/alpha/objects/room-1", body.key);
@@ -136,17 +173,21 @@ function setup(): { server: Server; master: string } {
   return { server, master: server.mint({ store: "*", perms: ["admin"] }) };
 }
 
-/** Create the store over HTTP (loud on failure) and mint a key scoped to it. */
-async function scopedKey(
+/** Create the store over HTTP (loud on failure). */
+async function store(server: Server, master: string, name: string): Promise<void> {
+  const created = await server.postJson("/stores", { name }, master);
+  expect(created.status, await created.clone().text()).toBe(201);
+}
+
+/** Mint a NON-admin key scoped to an EXISTING store (the store row must already exist). */
+async function mintScoped(
   server: Server,
   master: string,
-  store: string,
-  perms: readonly ("read" | "write" | "delete" | "admin")[],
+  storeName: string,
+  perms: readonly Perm[],
 ): Promise<string> {
-  const created = await server.postJson("/stores", { name: store }, master);
-  expect(created.status, await created.clone().text()).toBe(201);
-  const response = await server.postJson("/keys", { store, perms }, master);
-  expect(response.status, await response.clone().text()).toBe(201);
+  const response = await server.postJson("/keys", { store: storeName, perms }, master);
+  expect(response.status).toBe(201);
   return ((await response.json()) as { key: string }).key;
 }
 

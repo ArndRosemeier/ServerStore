@@ -92,19 +92,18 @@ or a log line — it would end up in access logs and browser history.
 - **There is no identity beyond the key.** A player pasting a key is not "logged in":
   the server keeps no session, and `last_used_at` on the key row is the only audit
   trail. Treat every key as a password.
-- **Minting is bounded by the minter's OWN permissions, and by its store.** A key may
-  pass on what it holds and **no more**: the requested `perms` must be a **subset of
-  the caller's own**, with `admin` counting as every permission. A `read`-only key
-  mints only `read` keys; a key holding `read`+`write` may mint `read`, `write` or
-  both, and is refused `delete`. A request for a permission the caller does not hold
-  is `403 forbidden`, the message names the permission(s) the caller lacks, and
-  **nothing is minted** (no key row, no side effect). The store rule is unchanged and
-  applies on top: a key scoped to a store may only mint **for that same store**, never
-  for another one; an `admin` grant is only ever issued by a master admin key and only
-  for scope `*`. A **master admin** key (`*` + `admin`) can therefore still mint any
-  non-`admin` permission for any existing store — the operator's bootstrap path — but
-  that is now the *only* key that can hand out more than it personally holds. Keep
-  keys out of untrusted hands accordingly: a key is both the principal and the limit.
+- **Who may mint: only a key that holds `admin`.** `POST /keys` refuses every other key
+  with `403 forbidden` ("only an admin key may mint keys") **before anything is
+  minted** — a read-only key cannot mint even a read-only key, so **every key traces
+  back to an admin action** (the operator's UI, or a game backend he handed an admin key
+  for its store). An admin key **scoped to one store** is the **game-backend flow**: it
+  may mint keys **for its own store only**, and is the kind of key an operator mints on
+  the box with `pnpm run admin:key --store <store> --perms admin`. A **master admin** key
+  (`*` + `admin`) may mint any non-`admin` permission for any existing store — the
+  operator's bootstrap path. Granting `admin` is stricter than minting at all: it
+  requires a **master admin caller and scope `*`**, so neither a store-scoped admin key
+  nor any non-admin key can create another admin. A request refused for any of these
+  reasons mints nothing (no key row, no side effect).
 
 ## Routes
 
@@ -116,7 +115,7 @@ response bodies are JSON unless the row says otherwise.
 | `GET` | `/healthz` | anyone — no key required | — | `{"ok":true}` | `200` |
 | `GET` | `/stores` | master admin key | — | `{"stores":[{"name","kind","createdAt"}]}` | `200`, `401`, `403` |
 | `POST` | `/stores` | master admin key | `{"name":"game","kind":"bytes"?}` | `{"store":{"name","kind","createdAt"}}` | `201`, `400`, `401`, `403`, `409` |
-| `POST` | `/keys` | any valid key, within the bounds above | `{"store"?,"perms":[…],"label"?,"expiresAt"?}` | `{"key":"ssk_…","id","prefix","store","perms","expiresAt"}` | `201`, `400`, `401`, `403`, `404` |
+| `POST` | `/keys` | an **`admin`** key — a store-scoped admin key only within its own store; an `admin` grant needs a master admin key and scope `*` | `{"store"?,"perms":[…],"label"?,"expiresAt"?}` | `{"key":"ssk_…","id","prefix","store","perms","expiresAt"}` | `201`, `400`, `401`, `403`, `404` |
 | `GET` | `/stores/{store}/objects` | `read` or `admin` on `{store}` | — | `{"objects":[{"store","name","sha256","size","createdAt"}]}` | `200`, `401`, `403`, `404` |
 | `PUT` | `/stores/{store}/objects/{name}` | `write` or `admin` on `{store}` | raw bytes (any `content-type`; ignored) | `{"store","name","sha256","size","createdAt"}` | `201`, `400`, `401`, `403`, `404`, `413` |
 | `GET` | `/stores/{store}/objects/{name}` | `read` or `admin` on `{store}` | — | raw bytes (+ `x-serverstore-sha256`) | `200`, `401`, `403`, `404` |
@@ -149,10 +148,10 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
   name is taken. The response is `201` with the new store.
 - **`POST /keys`** — the request body:
   - `perms` (**required**, non-empty array) — a subset of `read|write|delete|admin`.
-    The stored order is always `read,write,delete,admin`. It must also be a **subset of
-    the CALLER's own permissions** (`admin` counting as all of them); otherwise the
-    request is `403 forbidden`, the message names the permission(s) the caller lacks,
-    and **no key is minted**.
+    The stored order is always `read,write,delete,admin`. Only an **`admin`** key may
+    mint at all (see Authentication): any other key is `403 forbidden` and **no key is
+    minted**. An `admin` value additionally requires a **master admin** caller and
+    `store: "*"`.
   - `store` (optional) — the store to scope to. An omitted `store` means the caller's
     own scope. A non-`admin` grant **must name a store**; an `admin` grant must be
     `"*"` and requires a master admin caller. A named store must already exist
