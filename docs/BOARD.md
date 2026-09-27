@@ -58,11 +58,10 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight; slices 1-7 verified and retired. NEXT = step B (multi-store scope per
-  |   key + `whoami` + the missing REVOKE route), then step C (the admin UI). serverstore.service is
-  |   installed, enabled and active on 127.0.0.1:8477 ONLY (local probe PASS exit 0); the PUBLIC name
-  |   is still blocked by the zone-wide Cloudflare Access policy (row 31 — one dashboard change from
-  |   the owner, explained in the session).
+  | state=ONE writer in flight (B1, row 42: a key scoped to a SET of stores); slices 1-7 verified
+  |   and retired. serverstore.service is installed, enabled and active on 127.0.0.1:8477 ONLY
+  |   (local probe PASS exit 0); the PUBLIC name is still blocked by the zone-wide Cloudflare Access
+  |   policy (row 31 — one dashboard change from the owner, explained in the session).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -290,6 +289,17 @@ session d4c6cb54… are RETIRED. Audit after: lock free, 0 node/vitest/chrome pr
 ONLY AN ADMIN KEY MAY MINT — the owner's rule (row 38/39), pinned in both directions, and the
 unreachable subset branch is deleted with its reinstatement prerequisite in the code and the seam
 index.)
+
+IN-FLIGHT | row=42 | writer=session-c596e5cf-035c-4261-80a8-a6e8e5017c68 | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/key-stores | branch=feat/key-stores
+  | base=2b7eb41 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 20:53Z, no commit yet | brief=docs/briefs/slice-8-key-stores.md
+  | note=STEP B1: a key is scoped to a SET of stores — a `key_stores` table with an FK per store, the
+  |   `*` master case kept expressible (recommended `scope_all` on access_keys), and existing rows
+  |   MIGRATED. `resolveKey` loads the scope once; `authorize` becomes a membership test.
+  |   `POST /keys` takes `stores: string[]` (empty and mixed lists refused); NEW `GET /whoami`.
+  |   Pins G1-G6; arms in OPPOSITE directions (authorize ignores the set → G1 red; the migration
+  |   skips the legacy row → G6 red). The wire change is free today because no client exists (row 41).
 
 (The row=39 landing (B0.1: only an admin key may mint) is recorded in the LANDED row=39
 block above; its worktree worktrees/mint-admin and branch feat/mint-admin are the
