@@ -711,6 +711,12 @@ TRAP | t4 | A DIFFERENTIAL HARNESS's restore is itself code that can be wrong, a
   | a restore restores EVERY mutated path, is NEVER guarded by a "already done" flag (`git checkout
   | HEAD --` is idempotent), and the harness must assert each hash is back before it claims success
   | — the hash check is what caught it, not the trap.
+TRAP | t5 | A dispatcher board patch anchored on a WRITER'S IN-FLIGHT block aborted TWICE, because
+  |   the writer folds that block when it lands ("(No writer in flight …)") and the anchor stops
+  |   existing. Both times the script failed SAFE — it asserts before writing, so nothing was
+  |   half-applied — and the missing records were noticed and added in the next commit. RULE: anchor
+  |   a dispatcher board edit on a field the DISPATCHER owns (the SESSION `state=` field, the
+  |   `decisions=` field, or the insert point in `## Landed`); never on a writer's IN-FLIGHT block.
 
 GUARD | g1 | Never bind to 0.0.0.0. Loopback + tunnel is how every service on this box is exposed
   | (precedent: apps-web.service).
