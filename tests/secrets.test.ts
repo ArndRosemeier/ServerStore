@@ -28,6 +28,14 @@ const REPO = fileURLToPath(new URL("../", import.meta.url));
  */
 const FAKE_GITHUB_TOKEN = "ghp_" + "A".repeat(36);
 
+/**
+ * A deliberately NON-GitHub-shaped secret, built from parts for the same reason as the
+ * token above: this file is TRACKED, so a literal here would have to dodge the
+ * GitHub-token rule by accident. The credential arm compares the host file's VALUE,
+ * whatever shape that value happens to have.
+ */
+const PLANTED_HOST_SECRET = "fixture-" + "Z".repeat(24);
+
 /** A legal `ssk_…` key fixture — the SAME shape `tests/auth.test.ts` and `tests/admin-key.test.ts` mint. */
 const LEGAL_KEY_FIXTURE = "ssk_AAAAAAAAAAAA_" + "b".repeat(43);
 
@@ -94,6 +102,52 @@ describe("the secret tripwire on the tracked tree (ledger row 23)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("PIN S3 control: the host credential IS detected when planted", () => {
+    // The positive control this pin was MISSING. Measured 2026-09-27 (dispatcher arm J,
+    // ledger row 25): with the credential comparison broken the whole suite stayed GREEN,
+    // so PIN S3 could not fail and proved nothing — and it is the arm guarding the only
+    // real secret on this box. `credentialPath` exists for exactly this.
+    const dir = mkdtempSync(join(tmpdir(), "serverstore-credential-"));
+    try {
+      const credentials = join(dir, "git-credentials");
+      writeFileSync(credentials, `https://x-access-token:${PLANTED_HOST_SECRET}@github.com\n`);
+      writeFileSync(join(dir, "leaked.txt"), `token=${PLANTED_HOST_SECRET}\n`);
+      expect(spawnSync("git", ["init", "-q"], { cwd: dir, encoding: "utf8" }).status).toBe(0);
+      expect(spawnSync("git", ["add", "leaked.txt"], { cwd: dir, encoding: "utf8" }).status).toBe(0);
+
+      const found = scanTrackedTree(dir, { credentialPath: credentials });
+      expect(found.credential.status, "the planted credential file must read and parse").toBe("checked");
+      expect(found.findings.map((finding) => `${finding.kind}:${finding.file}`)).toContain(
+        "host-credential:leaked.txt",
+      );
+      const detail = found.findings.find((finding) => finding.kind === "host-credential")?.detail ?? "";
+      expect(detail, "a finding names the FILE and never the value").not.toContain(PLANTED_HOST_SECRET);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("PIN S3 direction: a credential file with no github.com line is 'cannot-check', never clean", () => {
+    const dir = mkdtempSync(join(tmpdir(), "serverstore-credential-"));
+    try {
+      const credentials = join(dir, "git-credentials");
+      writeFileSync(credentials, "https://user:not-a-github-secret@gitlab.example.com\n");
+      const found = scanTrackedTree(REPO, { credentialPath: credentials });
+      expect(found.credential.status).toBe("cannot-check");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("PIN S2 control: a planted PEM private-key header IS detected", () => {
+    // The positive control PIN S2 was missing (dispatcher arm K, ledger row 25). Built
+    // from parts: a literal header here would be TRACKED, and PIN S2 would flag its own
+    // fixture — the same trap the token literal avoids.
+    const pem = "-----BEGIN " + "RSA " + "PRIVATE KEY-----";
+    const found = findingsInText("planted.pem", `${pem}\nMIIEnotarealkey\n`);
+    expect(found.map((finding) => finding.kind)).toContain("pem-private-key");
   });
 
   test("PIN S5: a legal key-shaped fixture is NOT flagged", () => {
