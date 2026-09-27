@@ -93,6 +93,14 @@ QUEUE | row=20 | IF the repo is ever made private, the CREDENTIAL must change fi
   replacement must be written to BOTH ~/.git-credentials AND
   ~/projects/Campaigner/.git/github-credentials (byte-identical today; it wins inside Campaigner).
   BlasterMaster's helper just points at the global file and follows a rotation automatically.
+QUEUE | row=21 | SLICE 3 (small, SERIALIZED after the core lands — it touches the gate while a writer runs,
+  which is exactly the sequencing rule): a SECRET TRIPWIRE, because a public repo turns "we won't push
+  the key" from an intention into something that must be enforced. Scan the TRACKED tree for token
+  shapes that never appear in fixtures (`ghp_`, `github_pat_`, `-----BEGIN * PRIVATE KEY-----`, and
+  the literal host token value), and assert no data-root path or `*.db` file is tracked; add
+  `*.db`/`*.sqlite` to .gitignore. Rejected: scanning for `ssk_`-shaped strings — the writer's own
+  fixtures are necessarily key-shaped, so it would either red on the tests or have to exclude the
+  very files most likely to hide a real leak.
 QUEUE | row=17 | the reconciler defect (row 15) is STILL upstream at Toolbox head 824a8b5 —
   scaffold/scripts/board.sh:53 and :60 keep the bare `git rev-parse`. Toolbox is outside this
   project, so it needs the owner's word before anyone touches it.
