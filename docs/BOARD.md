@@ -105,13 +105,20 @@ QUEUE | row=21 | SLICE 3 (small, SERIALIZED after the core lands — it touches 
   `*.db`/`*.sqlite` to .gitignore. Rejected: scanning for `ssk_`-shaped strings — the writer's own
   fixtures are necessarily key-shaped, so it would either red on the tests or have to exclude the
   very files most likely to hide a real leak.
-QUEUE | row=17 | the reconciler defect (row 15) is STILL upstream at Toolbox head 824a8b5 —
-  scaffold/scripts/board.sh:53 and :60 keep the bare `git rev-parse`. Toolbox is outside this
-  project, so it needs the owner's word before anyone touches it.
-QUEUE | row=none | HTTP framework (Hono vs Fastify) — deliberately deferred to the first feature slice.
-QUEUE | row=none | FIRST FEATURE SLICE: multi-store core — store registry + master store + access-key
-  auth (hashed, prefixed, scoped) + PUT/GET, per ledger rows 5, 6, 10.
-QUEUE | row=none | systemd --user unit + cloudflared ingress for the live subdomain.
+QUEUE-CLOSED | row=17 | RESOLVED 2026-09-27: fixed UPSTREAM in Toolbox at 830a224, with a
+  BEHAVIOURAL pin (tests/scaffold-board.test.mjs) that Toolbox never had — its existing guards
+  only read text, which is exactly why the defect survived there. Observed RED against the old
+  script (exit 1) and GREEN with the fix: npm test → 34 tests, 34 pass, 0 fail, exit 0.
+  Ledger row 24. Other downstream copies (Expert, FracVibe, Campaigner, …) are unexamined.
+QUEUE-CLOSED | row=none | HTTP framework (Hono vs Fastify) — SETTLED by slice 2: Hono, chosen
+  against a real route; rejected Fastify (more machinery than a handful of routes needs) and
+  Express (no Web-standard Request/Response, so no in-process tests). Ledger row 19.
+QUEUE-CLOSED | row=none | FIRST FEATURE SLICE — the multi-store core LANDED as row 19 and was
+  independently verified and retired by the dispatcher (ledger row 22).
+QUEUE | row=none | DEPLOYMENT: systemd --user unit + cloudflared ingress for
+  store.futuremagic.de + the first end-to-end probe through the tunnel. The owner picked this
+  ("Deploy it"); the tunnel restart needs his go-ahead at that moment (TRAP t1), and the master
+  key is HIS to mint — the dispatcher must never hold it.
 
 TRAP | t1 | Adding a hostname to /etc/cloudflared/config.yml REQUIRES RESTARTING the tunnel — a few
   | seconds in which dsh.futuremagic.de (the owner's own GUI), opencode.futuremagic.de and
@@ -134,7 +141,8 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   row-19 landing, whose sha is the LANDED row below)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-21 (19 appended last, out of order by design)
+  | decisions=docs/DECISION-LEDGER.md rows 1-22 + 24 (row 19 appended by the writer, out of
+  |   numeric order by design; row 23 belongs to the in-flight tripwire writer)
   | briefs=docs/BRIEF.md + docs/briefs/ | seams=docs/SEAM-INDEX.md | tests=docs/TESTING.md
   | sessions=~/.dsh/sessions/--home-administrator-projects-ServerStore--
 ```
@@ -142,6 +150,19 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=24 | sha=830a224 (TOOLBOX — a DIFFERENT repo: ~/projects/Toolbox, its main branch)
+  | verify=MY OWN, in Toolbox: the new pin was RED against the pre-fix script (exit 1, on the
+  | assertion that the reconciler must not say BOARD STALE) and GREEN with the fix —
+  | npm test → 34 tests, 34 pass, 0 fail, exit 0; `git rev-parse HEAD origin/main` → both 830a224;
+  | Toolbox's own portability guard (tests/shared-layer.test.mjs) is among those 34.
+  | change=scaffold/scripts/board.sh now resolves with `git rev-parse --verify --quiet
+  | <rev>^{commit}` plus a 40-hex shape check, so an unresolvable remote yields CANNOT LOOK instead
+  | of blaming the record; NEW tests/scaffold-board.test.mjs pins it behaviourally.
+  | retired=nothing — the dispatcher did this one itself, in Toolbox's tree on its main branch: no
+  | writer and no worktree, because Toolbox has no worktree recipe and its board/ledger are
+  | TEMPLATES that a briefed writer could have poisoned with project-specific records.
+  | docs=ledger row 24 · this board (Toolbox's own commit carries the reasoning).
+
 LANDED | row=19 | sha=9ddf8f8 (the verified CODE tip; this docs commit is its own sha) | THE MULTI-STORE CORE, writer session
   | session-b0fbcc08-9760-4545-bad0-1e5acd46d524, worktree worktrees/core, branch feat/core, base
   | b60c716 (rebased onto 659e503 before push).
