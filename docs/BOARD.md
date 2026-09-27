@@ -58,11 +58,11 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=LIVE at https://store.futuremagic.de (keyless probe PASS exit 0; the owner's Access bypass
-  |   verified SURGICAL — dsh/opencode/openclaw still 302). The service was RESTARTED 2026-09-27
-  |   22:56:34 CEST to main@0cfba87, so it now runs the B0/B0.1 key rules; it had been up since
-  |   22:20:41 and was therefore THREE LANDINGS BEHIND while `main` moved (GUARD g5).
-  |   ONE writer in flight (B1, row 42: a key scoped to a SET of stores).
+  | state=LIVE at https://store.futuremagic.de and CURRENT: the service was restarted to B1 at
+  |   2026-09-27 23:05:03 CEST (main@5ae13b4), so the running code and the migrated schema agree.
+  |   Keyless probe PASS exit 0; loopback only; the owner's master key works (his round-trip's
+  |   `last_used_at` proves it). NO writer in flight; NEXT = B2 (key listing + the REVOKE route),
+  |   with one fork pending on the TWO UNUSED master keys in the live database (row 44).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -361,16 +361,10 @@ ONLY AN ADMIN KEY MAY MINT — the owner's rule (row 38/39), pinned in both dire
 unreachable subset branch is deleted with its reinstatement prerequisite in the code and the seam
 index.)
 
-IN-FLIGHT | row=42 | writer=session-c596e5cf-035c-4261-80a8-a6e8e5017c68 | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/key-stores | branch=feat/key-stores
-  | base=2b7eb41 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 20:53Z, no commit yet | brief=docs/briefs/slice-8-key-stores.md
-  | note=STEP B1: a key is scoped to a SET of stores — a `key_stores` table with an FK per store, the
-  |   `*` master case kept expressible (recommended `scope_all` on access_keys), and existing rows
-  |   MIGRATED. `resolveKey` loads the scope once; `authorize` becomes a membership test.
-  |   `POST /keys` takes `stores: string[]` (empty and mixed lists refused); NEW `GET /whoami`.
-  |   Pins G1-G6; arms in OPPOSITE directions (authorize ignores the set → G1 red; the migration
-  |   skips the legacy row → G6 red). The wire change is free today because no client exists (row 41).
+(B1 is CLOSED: verified by the dispatcher (row 44 — gate 11 files / 86 tests / 2.02s; arms T and U
+RED on PIN G3 and PIN G5), its worktree worktrees/key-stores, branch feat/key-stores and session
+c596e5cf… are RETIRED, and the LIVE service was restarted to it at 23:05:03 with the schema
+migration inspected on the real database (GUARD g5). A key may now be scoped to a SET of stores.)
 
 (The row=39 landing (B0.1: only an admin key may mint) is recorded in the LANDED row=39
 block above; its worktree worktrees/mint-admin and branch feat/mint-admin are the
@@ -463,6 +457,11 @@ QUEUE | row=41 | NEXT = STEP B1 (dispatched): a key is scoped to a SET of stores
   `GET /whoami`. `POST /keys` moves from `store: string` to `stores: string[]` (`["*"]` = master)
   while NO client exists, which is why the breaking change is free today. Then B2 = the REVOKE route
   and key listing (what the step-C UI needs), then C = the UI itself.
+QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
+  the two the live store needs NOW, because the live database holds THREE master admin keys (two
+  unused, created before the service existed) and revocation is currently operator-only. Then C
+  (the admin UI) and rate limiting (row 43's note: the only queued item that protects a public
+  endpoint rather than extending it).
 QUEUE | row=40 | B0.1 LANDED (row 39, verified row 40): ONLY AN ADMIN KEY MAY MINT, and the subset
   check is deleted as unreachable, with its reinstatement prerequisite written into the code comment
   and docs/SEAM-INDEX.md. NEXT = step B (multi-store scope per key + `whoami` + the missing REVOKE
@@ -544,6 +543,7 @@ retired_branch=feat/tripwire
 retired_branch=feat/api-doc
 retired_branch=feat/keys-subset
 retired_branch=feat/mint-admin
+retired_branch=feat/key-stores
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -551,9 +551,10 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-43 (19, 23, 27, 33, 36 and 39 appended by writers, out
-  |   of numeric order by design; 43 = the store is LIVE and the bypass verified; 43b = the
-  |   running-service-is-not-the-repo discovery, now GUARD g5 and docs/DEPLOYMENT.md §8)
+  | decisions=docs/DECISION-LEDGER.md rows 1-44 (19, 23, 27, 33, 36, 39 and 42 appended by writers,
+  |   out of numeric order by design; 43 = the store LIVE and the bypass verified, 43b = the
+  |   running-service-is-not-the-repo discovery (GUARD g5 / DEPLOYMENT §8), 44 = B1 verified with the
+  |   live schema migration inspected and the three-master-key finding)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -567,6 +568,18 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=44 | sha=5ae13b4 (the B1 tip; pulled, migrated and restarted BEFORE my own gate — see
+  | the note in ledger row 44 on why that order was the smaller risk)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 11 files · 86 tests ·
+  | 2.02s. My arms, neither of them the writer's: T removed the MIXED-LIST rejection in
+  | `parseStores` → RED on PIN G3 (201 vs 400); U neutered the master case (`spansStores` → false)
+  | → RED on PIN G5 (403 vs 201). Both restored byte-identical.
+  | LIVE=restarted to B1 at 23:05:03; schema migration inspected on the REAL database: `scope_all`
+  | present, `store` DROPPED, `key_stores` created, clean boot journal. THREE master admin keys
+  | exist (two unused, pre-service) and the owner's key works — his round-trip's `last_used_at`.
+  | retired=worktree worktrees/key-stores · branch feat/key-stores · session c596e5cf…
+  | docs=ledger row 44 · this board.
+
 LANDED | row=40 | sha=9fc93b4 (the B0.1 record tip, pulled BEFORE gating)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 11 files · 80 tests ·
   | 2.12s. My arms, neither of them the writer's: R the shared PREDICATE neutered
