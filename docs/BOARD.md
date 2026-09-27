@@ -58,11 +58,12 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (C2, row 53: named, EDITABLE keys + an audit stamp). LIVE at
-  |   https://store.futuremagic.de/ with the C1 console — the page is public by design and the key
-  |   gates every store and key operation behind it. The service runs the C1 code (restarted at
-  |   7e92967; every commit since is docs-only). EXACTLY ONE live admin key (the owner's).
-  |   After C2: a headless-browser test (owed) and rate limiting.
+  | state=LIVE and CURRENT: main@81341ff, service restarted with C2 and re-probed — the console at
+  |   https://store.futuremagic.de/ now EDITS keys (rename, stores, perms) and stamps every change
+  |   with when and by which key; the live database carries the two audit columns and every existing
+  |   key says "never changed". EXACTLY ONE live admin key (the owner's). NO writer in flight.
+  |   NEXT, both owed by design: a headless-browser test (nothing clicks Edit) and RATE LIMITING on
+  |   a public endpoint.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -731,6 +732,7 @@ retired_branch=feat/mint-admin
 retired_branch=feat/key-stores
 retired_branch=feat/key-lifecycle
 retired_branch=feat/admin-ui
+retired_branch=feat/key-edit
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -738,11 +740,11 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-54 (19, 23, 27, 33, 36, 39, 42, 46 and 49 appended by
-  |   writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
+  | decisions=docs/DECISION-LEDGER.md rows 1-55 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
-  |   the admin UI requirement and its forks, 50 = B2 verified, 51/52 = named + editable keys,
-  |   54 = C1 verified with the console LIVE)
+  |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
+  |   54 = C1 verified with the console LIVE, 55 = C2 verified with the audit stamp LIVE)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -756,6 +758,20 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=55 | sha=81341ff (the C2 tip; pulled, restarted and re-probed BEFORE my own gate, per
+  | GUARD g5 — this landing changes the SCHEMA)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 12 files · 104 tests.
+  | Arms, neither of them the writer's: P removed the scoped-admin RESULT-scope boundary → RED on
+  | PIN E2 (a scoped admin could widen a key beyond its own stores); Q froze the audit timestamp →
+  | RED on PIN E4 AND E8 (E8 drives an edit through the route after dropping the columns, so a stamp
+  | that never moves fails it too — honest collateral). Both files restored byte-identical.
+  | LIVE=restarted to C2; probe PASS; the live database now carries updated_at/updated_by and every
+  | existing key holds NULL for both ("never changed"); PATCH is live (401 without a key).
+  | docs/API.md's stale "public host is behind Access" claim corrected by the writer after
+  | re-measuring the probe.
+  | retired=worktree worktrees/key-edit · branch feat/key-edit · session 10c1ec41…
+  | docs=ledger row 55 · this board.
+
 LANDED | row=53 | sha=3f0a866 (the VERIFIED CODE tip ON THE REBASED TREE: `src/core/db.ts`,
   | `src/core/keys.ts`, `src/core/types.ts`, `src/core/validate.ts`, `src/server/app.ts`,
   | `web/index.html`, `web/app.js`, `web/app.css`, `tests/keys.test.ts`,
