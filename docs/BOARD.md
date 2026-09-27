@@ -58,10 +58,10 @@ reconciled: 1063e29 · 2026-09-27T23:02Z — the row-39 landing's CODE tip (only
   than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=DEPLOYED and CURRENT: main@5217cec, service restarted with B2 (key listing + revoke) and
-  |   re-probed — live probe PASS exit 0, and /keys, /keys/:id/revoke and /whoami answer 401 (they
-  |   exist and want a key). EXACTLY ONE live admin key (the owner's). NO writer in flight;
-  |   NEXT = C1, the ADMIN UI the owner asked for (row 47/48: same origin, no build).
+  | state=ONE writer in flight (C1, row 49: the ADMIN UI the owner asked for). LIVE at
+  |   https://store.futuremagic.de running main@5217cec with B2 (key listing + revoke); live probe
+  |   PASS; EXACTLY ONE live admin key (the owner's). After C1: a headless-browser test (owed) and
+  |   rate limiting.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -442,6 +442,18 @@ FOUR pins across three features by mutating the ONE containment predicate, arm Y
 the peer-admin rule), its worktree worktrees/key-lifecycle, branch feat/key-lifecycle and session
 a5bcf77c… are RETIRED, and the LIVE service was restarted to it and re-probed under GUARD g5. The key
 lifecycle — list and revoke — is now available over HTTP.)
+
+IN-FLIGHT | row=49 | writer=session-529a0ac5-a705-41f0-a268-c22ba265da5c | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/admin-ui | branch=feat/admin-ui
+  | base=45346fb | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 21:19Z, no commit yet | brief=docs/briefs/slice-10-admin-ui.md (committed)
+  | note=STEP C1, the owner's requirement (row 47: "a web UI ... I do not want to use the terminal"),
+  |   with both forks settled by him in row 48 — SAME ORIGIN, served by the service, NO-BUILD static
+  |   assets at three fixed routes (/ , /app.js , /app.css). The key is memory-only by construction
+  |   and that is a PIN (U2 scans the served bytes for every persistence API), the served bytes carry
+  |   no secret (U1), and every path the UI calls must be a route the API registers (U3).
+  |   Honest price: plain JS is not typechecked and no automated check exercises it in a browser —
+  |   a headless test is owed, not v1.
 
 (The row=39 landing (B0.1: only an admin key may mint) is recorded in the LANDED row=39
 block above; its worktree worktrees/mint-admin and branch feat/mint-admin are the
