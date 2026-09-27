@@ -20,6 +20,13 @@ request
 Everything the project will ever do is either **core** (a step above `dispatch`) or a
 **store kind** (a handler at `dispatch`). There is no third mechanism.
 
+**The `POST /keys` authorization decision is the `authorize` step applied to a GRANT**,
+not a separate path: it enforces the store boundary (a scoped key mints only within its
+own store) and the permission boundary (the requested `perms` are a subset of the
+minter's own, `admin` implying all) in ONE branch of the route handler — see the
+"What a key may GRANT" row below and ledger row 36. There is no second authorization
+middleware and no second subset predicate.
+
 | Concern | The one place | Notes |
 | --- | --- | --- |
 | HTTP app, built from injected deps | `src/server/app.ts` `createApp({dataRoot, dbPath, now, maxBytes})` | Tests drive it with `app.request()`; no port is bound outside `main.ts` |
@@ -27,6 +34,7 @@ Everything the project will ever do is either **core** (a step above `dispatch`)
 | Binding a socket | `src/server/main.ts` | `127.0.0.1` only; the host is NOT configurable |
 | Metadata schema | `src/core/db.ts` `openDatabase()` | One file `<dataRoot>/serverstore.db`; idempotent `CREATE TABLE IF NOT EXISTS` |
 | What a key IS | `src/core/keys.ts` | mint, hash, resolve, touch, revoke; `ssk_<id>_<secret>` |
+| **What a key may GRANT** (the permission boundary of `POST /keys`) | `src/server/app.ts` `Auth.grantablePermissions` + the `lacks` check inside the `app.post("/keys")` handler | ONE predicate, in the SAME authorization decision as the store boundary beside it: the requested `perms` must be a subset of the minter's own, with `admin` implying all of them (`grantablePermissions` is the ONE place that implication is spelled out for minting, exactly as `authorize()` spells it out for a single operation). A refusal is 403 `forbidden`, names the missing permission(s), and happens **before** `mintKey` — no row, no side effect. Pinned K1–K5, `tests/keys.test.ts` (ledger row 36) |
 | Key id from a raw key | `src/core/keys.ts` `keyIdFromRaw()` | Never `split("_")[1]` — see gotchas |
 | Error codes → HTTP status | `src/core/errors.ts` | The only place an error body is shaped |
 | Name/scope/permission parsing | `src/core/validate.ts` | Store names, object names, scopes, permissions, expiry |
@@ -110,14 +118,17 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
   is exactly what the ledger warns about; point at the suite, not at its tally.)
 - **`POST /keys` exists** (admin keys mint scoped keys); it is not in the brief's
   minimum route list and is pinned in the direction that matters — it cannot mint an
-  admin key without a master admin key, and a scoped key cannot escape its store.
+  admin key without a master admin key, and it constrains BOTH boundaries now: a
+  scoped key cannot escape its store, and no key can grant a permission it does not
+  hold (`Auth.grantablePermissions`, ledger row 36).
 - **`store_kinds` is enforced by a foreign key**, so `kind` is a real vocabulary in
   the file and not a comment.
 - **The client contract's own findings** (ledger row 33, `docs/API.md`): `name_taken`
   (409) is in `ERROR_CODES` and **no route emits it** — the doc says "reserved";
-  `POST /keys` bounds minting by **store**, not by the minter's permissions (a
-  `read`-only key mints a `write`+`delete` key for its own store); there is **no revoke
-  route** (`revokeKey()` is called only by tests); and a key scoped elsewhere learns a
-  store's existence from a `404` because `requireStore()` runs before `authorize()`.
-  None of these is fixed by the doc slice — fixing `src/` is a separate, owner-visible
-  decision.
+  ~~`POST /keys` bounds minting by **store**, not by the minter's permissions (a
+  `read`-only key mints a `write`+`delete` key for its own store)~~ — **CLOSED by
+  ledger row 36**: the permission boundary now holds, pinned K1–K5; there is **no
+  revoke route** (`revokeKey()` is called only by tests); and a key scoped elsewhere
+  learns a store's existence from a `404` because `requireStore()` runs before
+  `authorize()`. The remaining two were not fixed by the doc slice — fixing `src/` is
+  a separate, owner-visible decision.

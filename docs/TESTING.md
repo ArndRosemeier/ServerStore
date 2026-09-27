@@ -168,7 +168,58 @@ control gate run on the restored tree must be GREEN.
 | S | a fake `ghp_`+36×`A` appended to a tracked file | `AGENTS.md` | `2af90514d3fc…409e` → `d0034621e1d6…7f0e` | `PIN S1: the tracked tree carries no GitHub token shape` — `a GitHub token shape is TRACKED — it is already published: remove it and rotate it: expected [ Array(1) ] to deeply equal []`, received `["AGENTS.md: GitHub token shape at byte offset 7671"]` |
 | control | none — the restored tree | — | `2af90514d3fc…409e` (back) | **GREEN**: 7 files · 60 tests · ~2.0s |
 
-## The client-contract pins (slice 5)
+## The permission-boundary pins (slice 6, `POST /keys`)
+
+The store boundary of `POST /keys` was already pinned (PIN 2, `tests/auth.test.ts`);
+what was **not** pinned — and was wrong — is the PERMISSION boundary. A key is the
+principal AND the limit (ledger rows 2, 6, 36), so a key may pass on what it holds and
+no more. Measured defect before the fix (ledger row 35): a key minted
+`{store:"master", perms:["read"]}` minted `{store:"master", perms:["write","delete"]}`
+→ **201**, and the child then wrote (201) and deleted (204).
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| K1 | a READ-ONLY key cannot mint a permission it does not hold — 403 `forbidden`, the message names it, and the key count is UNCHANGED | `tests/keys.test.ts` (`PIN K1`) |
+| K2 | a key lacking `delete` cannot mint `delete` — 403, and nothing was minted | `tests/keys.test.ts` (`PIN K2`) |
+| K3 | a key passes on exactly what it holds, and no more — a `read`+`write` key mints `read`+`write` → 201 AND a bare `read` (a legal subset) → 201; the child writes (201) and is refused a DELETE (403) | `tests/keys.test.ts` (`PIN K3`) |
+| K4 | the boundaries that already held still hold — another store → 403; `admin` without a master admin key → 403; a master admin key granting `admin` for a STORE (not `*`) → 403 | `tests/keys.test.ts` (`PIN K4`) |
+| K5 | a master admin key still mints any non-admin permission for any existing store — the bootstrap positive control: `read`+`write`+`delete` → 201, and the child deletes (204) | `tests/keys.test.ts` (`PIN K5`) |
+
+K3 carries the **subset-not-equality** direction in the same test (the bare-`read`
+mint), which is what makes arm B below able to fail it.
+
+## The permission-boundary differential (2 arms + two controls)
+
+Machinery: `checkpoints/keys-subset-differential.sh`. Raw transcript:
+`checkpoints/keys-subset-differential.out` (per-arm logs are `*.log`, so gitignored).
+
+Same shape as the earlier differentials — the slice is committed FIRST, the same lock
+`scripts/gate.sh` takes is held across every arm, each mutated file's sha256 is printed
+before and after, restore is `git checkout HEAD --` inside an `EXIT INT TERM` trap, and
+a control runs BEFORE **and** AFTER. Both arms mutate the ONE anchored line (the
+subset predicate's refusal list) in `src/server/app.ts`.
+
+| Arm | Injected defect | sha256 before → after | Went RED on |
+| --- | --- | --- | --- |
+| A | the subset check is **DELETED** (`lacks` pinned to `[]`) — the pre-fix behaviour | `f4db030f…cb18` → `dc8ab008…5471` | `PIN K1` — `expected 201 to be 403` (a `read`-only key minted a `write` key), and `PIN K2` — `expected 201 to be 403` |
+| B | the check is **STRICTER than correct**: the requested perms must EQUAL the minter's grantable set, so a legal SUBSET is refused | `f4db030f…cb18` → `8f69f28e…60c3` | `PIN K3` — `expected 403 to be 201` (`key cannot grant 'read', 'write': it does not hold those permissions`), the bare-`read` subset mint; **K4 and K5 also fell** (see below) |
+| control | none — the committed tree, same lock held | — | **GREEN**: 11 files · 80 tests |
+| control | none — the restored tree, `app.ts` back at `f4db030f…cb18` | — | **GREEN**: 11 files · 80 tests |
+
+- The two arms are the two directions the rule can be wrong: **absent** (A) and
+  **over-strict** (B). Arm A proves K1/K2 are not vacuous; arm B proves K3 is not,
+  because a check that simply refused everything would have satisfied A's pins.
+- **Arm B's blast radius is reported, not hidden:** its equality test also breaks the
+  master-admin bootstrap path (a master holds `admin`, which can never EQUAL a
+  non-admin request), so K4 and K5 fell with K3. That is the injected defect behaving
+  as injected — the arm's named pin (K3) is the subset/equality boundary it exists to
+  prove, and the extra reds are the same defect seen from the other side (the only key
+  that may grant more than it holds must still work, and under arm B it does not).
+- No hash was unchanged (a VOID probe would have been refused by the harness), the two
+  arms produced DIFFERENT hashes, and both controls are GREEN — so the injection, and
+  nothing else, was the difference.
+
+
 
 The doc a **client developer** reads is `docs/API.md`, and it is held to the code by
 `tests/api-doc.test.ts` — the truth is DERIVED, never restated. Both directions matter:

@@ -92,12 +92,19 @@ or a log line — it would end up in access logs and browser history.
 - **There is no identity beyond the key.** A player pasting a key is not "logged in":
   the server keeps no session, and `last_used_at` on the key row is the only audit
   trail. Treat every key as a password.
-- **Minting is bounded by STORE, not by the minter's own permissions.** A valid key
-  scoped to a store may mint another key **for that same store** with any non-`admin`
-  permission set — including permissions the minter does not itself hold (a
-  `read`-only key can mint a `write`+`delete` key for its store). It can never mint
-  for another store, and it can never mint `admin`. Keep keys out of untrusted hands
-  accordingly.
+- **Minting is bounded by the minter's OWN permissions, and by its store.** A key may
+  pass on what it holds and **no more**: the requested `perms` must be a **subset of
+  the caller's own**, with `admin` counting as every permission. A `read`-only key
+  mints only `read` keys; a key holding `read`+`write` may mint `read`, `write` or
+  both, and is refused `delete`. A request for a permission the caller does not hold
+  is `403 forbidden`, the message names the permission(s) the caller lacks, and
+  **nothing is minted** (no key row, no side effect). The store rule is unchanged and
+  applies on top: a key scoped to a store may only mint **for that same store**, never
+  for another one; an `admin` grant is only ever issued by a master admin key and only
+  for scope `*`. A **master admin** key (`*` + `admin`) can therefore still mint any
+  non-`admin` permission for any existing store — the operator's bootstrap path — but
+  that is now the *only* key that can hand out more than it personally holds. Keep
+  keys out of untrusted hands accordingly: a key is both the principal and the limit.
 
 ## Routes
 
@@ -142,7 +149,10 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
   name is taken. The response is `201` with the new store.
 - **`POST /keys`** — the request body:
   - `perms` (**required**, non-empty array) — a subset of `read|write|delete|admin`.
-    The stored order is always `read,write,delete,admin`.
+    The stored order is always `read,write,delete,admin`. It must also be a **subset of
+    the CALLER's own permissions** (`admin` counting as all of them); otherwise the
+    request is `403 forbidden`, the message names the permission(s) the caller lacks,
+    and **no key is minted**.
   - `store` (optional) — the store to scope to. An omitted `store` means the caller's
     own scope. A non-`admin` grant **must name a store**; an `admin` grant must be
     `"*"` and requires a master admin caller. A named store must already exist

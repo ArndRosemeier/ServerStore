@@ -64,6 +64,49 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
+LANDED | row=36 | sha=PENDING (this landing's code tip: `9f1a467` carries `src/server/app.ts` +
+  | `tests/keys.test.ts`; the docs commit that carries THIS line and the ledger row is its child)
+  | THE PERMISSION BOUNDARY OF `POST /keys`, writer session (a subagent of dispatcher
+  | session dcd6176e-b4b9-4759-b64d-4c90d3495dfa), worktree worktrees/keys-subset, branch
+  | feat/keys-subset, base origin/main 267fe50.
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 11 test files ·
+  | 80 tests · 2.04s · raw log `.gate-logs/gate.log` · load 0.87 before / 0.88 after; no memory
+  | ceiling needed (GUARD g3 still open and still honest). The DISPATCHER's independent gate is OWED.
+  | arms=checkpoints/keys-subset-differential.sh, the gate lock held across BOTH arms, sha256 printed
+  | before and after, restore from HEAD in an EXIT/INT/TERM trap, a control BEFORE and AFTER, raw
+  | transcript checkpoints/keys-subset-differential.out:
+  |   A the subset check DELETED (`lacks` pinned to `[]`), src/server/app.ts f4db030f…cb18 →
+  |     dc8ab008…5471, RED on `PIN K1: a READ-ONLY key cannot mint a permission it does not hold`
+  |     (`expected 201 to be 403`) AND `PIN K2: a key lacking 'delete' cannot mint 'delete'`
+  |   B the check STRICTER than correct — EQUALITY instead of subset, f4db030f…cb18 → 8f69f28e…60c3,
+  |     RED on `PIN K3: a key passes on exactly what it holds, and no more` (`expected 403 to be 201`
+  |     on the legal bare-`read` subset mint); K4/K5 fell too, and that blast radius is REPORTED in
+  |     docs/TESTING.md, not hidden — the equality mutation also breaks the master-admin bootstrap
+  |   both controls GREEN (11 files · 80 tests), app.ts back at f4db030f…cb18. The two arms carry
+  |     DIFFERENT hashes. No VOID probe.
+  | what it is=the SECOND half of the `POST /keys` authorization decision, in the SAME branch as the
+  |   store boundary: the requested `perms` must be a subset of the minter's own, with `admin`
+  |   implying all of them, so a master admin key still mints anything (the bootstrap path, K5). A
+  |   refusal is 403 `forbidden`, the message names the permission(s) the minter lacks, and it happens
+  |   BEFORE anything is minted — K1/K2 assert the key count is unchanged. ONE predicate, one place:
+  |   `Auth.grantablePermissions` + the `lacks` check in `app.post("/keys")`, recorded in the seam index.
+  | what it FIXES=the measured defect of ledger row 35: a `{store:"master",perms:["read"]}` key minted
+  |   `{perms:["write","delete"]}` → 201 and the child then wrote/deleted. That route now answers 403.
+  |   Every existing rule is unchanged and still pinned: cross-store → 403, an `admin` grant needs a
+  |   master admin key AND scope `*`, a `spansStores` non-admin key must name an existing store.
+  | wire format=unchanged: `{error:{code,message}}`. NO route was added, removed or renamed, so pins
+  |   A1–A3 stay green (11 files · 80 tests, `tests/api-doc.test.ts` 3/3).
+  | docs=docs/API.md (the Authentication bullet stated the escalation as behaviour — rewritten to the
+  |   subset rule, plus the `POST /keys` request-field note) · ledger row 36 (appended) ·
+  |   docs/SEAM-INDEX.md (a new "what a key may GRANT" row + the pipeline note + the row-33 finding
+  |   marked CLOSED) · docs/TESTING.md (K1–K5 and both arms with their hashes) · this board.
+  | COPIES: 1→1 — checked, no duplication (grepped: "grantablePermissions", "perms", "subset",
+  |   "admin" implying, "forbidden" — the subset predicate exists ONCE, in `app.post("/keys")`, via the
+  |   ONE `Auth.grantablePermissions` getter; it is not duplicated in `src/core/validate.ts` (parsing)
+  |   nor in `src/core/keys.ts` (minting), and there is no second authorization middleware).
+  | retired=none yet. The worktree worktrees/keys-subset and branch feat/keys-subset are the
+  | dispatcher's to retire after ITS OWN verification; this writer does not retire itself.
+
 LANDED | row=33 | sha=8a7a2f5 (the contract tip — `docs/API.md` + `tests/api-doc.test.ts`, rebased
   | from dc93fdc onto origin/main 069f1fd; the differential harness, the ledger/seam/testing
   | amendments and this record are the commits after it) | THE CLIENT CONTRACT, writer session
@@ -177,24 +220,22 @@ LANDED | row=27 | sha=e1e363f (the docs tip; the CODE tip 1439f61 is its parent)
   | this slice creates no such directory (the probe writes to stdout; the differential's logs are
   | `*.log`, already ignored). Adding a rule for a path that never exists blesses an imaginary file.
 
-IN-FLIGHT | row=36 | writer=session-6e744d65-7714-47e4-9c34-7d2b9e3e58f4 | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/keys-subset | branch=feat/keys-subset
-  | base=267fe50 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 20:32Z, no commit yet | brief=docs/briefs/slice-6-keys-subset.md
-  | note=B0, ahead of step B and the UI because row 35 is a CONFIRMED ESCALATION: a read-only key
-  |   mints write+delete for its own store and then writes (201) and deletes (204). The ONE seam is
-  |   the authorization decision inside POST /keys: the branch that enforces the STORE boundary must
-  |   also enforce the PERMISSION boundary — requested perms must be a SUBSET of the minter's, with
-  |   admin implying all so the master-admin bootstrap still works. Pins K1-K5 in BOTH directions (a
-  |   too-strict check must red K3), docs/API.md changes in the same commit (it documents the
-  |   escalation today) and PIN A1-A3 must stay green. Out of scope but reportable: the same class
-  |   of hole on another route.
+(No writer in flight. The row=36 IN-FLIGHT block this dispatch created is CLOSED by the
+LANDED row=36 record above: B0 landed (permission boundary of `POST /keys`, pins K1-K5,
+two arms). The dispatcher's own independent gate and its own arm are owed; the worktree
+worktrees/keys-subset and branch feat/keys-subset are the dispatcher's to retire. Audit
+after the landing: lock free, 0 suite processes, 0 browser processes.)
 
 (The slice-3 writer is RETIRED: slice 3 LANDED, was verified by the dispatcher, and its worktree
-worktrees/tripwire, branch feat/tripwire (fully merged) and session ebb420aa… are gone. No writer
-is in flight. The dispatcher then fixed forward the two pins that could not fail — ledger row 25,
-LANDED below. "Nothing outlives the writer": audit after the landing showed lock free, 0 suite
-processes, 0 browser processes.)
+worktrees/tripwire, branch feat/tripwire (fully merged) and session ebb420aa… are gone. The
+dispatcher then fixed forward the two pins that could not fail — ledger row 25, LANDED below.
+"Nothing outlives the writer": audit after the landing showed lock free, 0 suite processes,
+0 browser processes.)
+
+(STALE, the dispatcher's to drop: the row=33 IN-FLIGHT block, superseded by the LANDED row=33
+record above — slice 5 landed, was verified, and its worktree worktrees/api-doc / branch
+feat/api-doc are the dispatcher's to retire. It is kept here, marked stale, rather than deleted by
+a writer.)
 
 (Slice 2 is retired: worktree worktrees/core removed, branch feat/core deleted as fully merged,
 writer session b0fbcc08… deleted; the dispatcher's independent verification is a LANDED record.)
@@ -328,11 +369,12 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-35 (19, 23, 27 and 33 appended by writers, out of
+  | decisions=docs/DECISION-LEDGER.md rows 1-36 (19, 23, 27, 33 and 36 appended by writers, out of
   |   numeric order by design; 24 the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the
   |   explicit retirement key, 27 slice 4, 28 the multiplayer requirement, 29 its verification,
   |   30 the owner's registration model, 31 the Access blocker, 32 the perimeter re-ratification,
-  |   33 the client contract, 34 its verification, 35 the CONFIRMED key escalation)
+  |   33 the client contract, 34 its verification, 35 the CONFIRMED key escalation, 36 its fix —
+  |   the permission boundary of `POST /keys`)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
