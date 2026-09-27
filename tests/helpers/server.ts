@@ -315,3 +315,28 @@ export function cleanupTestServers(): void {
     rmSync(server.dataRoot, { recursive: true, force: true });
   }
 }
+
+/**
+ * The routes the RUNNING app registers, as `METHOD /path`.
+ *
+ * Middleware registers as method `ALL` on `/*` (the path guard and the key guard); it
+ * is not part of the API surface, so it is filtered out. Everything left is a real
+ * route, derived from `createApp(...).routes` — never from a hand-kept list. This is
+ * the ONE route-set source: `tests/api-doc.test.ts` (PIN A1, doc vs code) and
+ * `tests/admin-ui.test.ts` (PIN U3, UI paths vs code) both read it, so neither can
+ * drift on a private copy of the derivation.
+ */
+export function registeredRoutes(): string[] {
+  const dataRoot = mkdtempSync(join(tmpdir(), "serverstore-routes-"));
+  try {
+    const app = createApp({ dataRoot, dbPath: join(dataRoot, "serverstore.db") });
+    return app.routes
+      .filter((route) => route.method !== "ALL")
+      .map((route) => {
+        const base = route.basePath === "/" ? "" : route.basePath;
+        return `${route.method} ${base}${route.path}`;
+      });
+  } finally {
+    rmSync(dataRoot, { recursive: true, force: true });
+  }
+}

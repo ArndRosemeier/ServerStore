@@ -49,6 +49,32 @@ gap on the host, not an API behaviour: a client developer should expect a **302 
 always reach the service on loopback in the meantime. `probe-live.sh` distinguishes
 this (exit 1) from a broken service.
 
+## The admin UI (no build, same origin)
+
+The service also serves a small **admin console** at the root of the same origin
+(`https://store.futuremagic.de/`, or `http://127.0.0.1:8477/` on the box): enter a
+master key, see what that key is, list and create stores, list keys, mint one (shown
+once) and revoke one. It is plain HTML, one ES module and one stylesheet — **no build
+step, no bundler, no framework** — served from `web/` at three **literal** routes
+(`/`, `/app.js`, `/app.css`); there is no static-file subsystem, no directory walking,
+and no other path is served.
+
+- **The key lives in a JavaScript variable for the life of the page.** It is never
+  written to `localStorage`, `sessionStorage`, a cookie, the URL, `history` or the
+  console, and a reload forgets it — "Forget key" clears it immediately. The page
+  itself carries no secret.
+- **Same origin is the whole point** (ledger row 48): the browser calls this API with
+  `fetch` on its own origin, so there is no CORS and the key never crosses an origin.
+- **Nothing is fetched until the key is proven.** The console calls `GET /whoami`
+  first and shows what the key is (label, scope, permissions) or the refusal; every
+  later call presents the key in the `Authorization` header.
+- **Errors are rendered, not swallowed**: the `{error:{code,message}}` envelope is
+  shown in the page, code and message both.
+- **It is the operator's console, not a client API.** The paths it calls are pinned to
+  the routes below (pin U3), and its behaviour inside a real browser is **not**
+  exercised by any automated check yet — a headless-browser test is owed
+  (`docs/TESTING.md`, honest unknowns).
+
 ## Authentication
 
 Every route except `GET /healthz` requires a key. Present it either way:
@@ -128,6 +154,9 @@ response bodies are JSON unless the row says otherwise.
 | Method | Path | Who may call it | Request | Response | Statuses |
 | --- | --- | --- | --- | --- | --- |
 | `GET` | `/healthz` | anyone — no key required | — | `{"ok":true}` | `200` |
+| `GET` | `/` | anyone — no key required | — | the admin console (HTML) | `200` |
+| `GET` | `/app.js` | anyone — no key required | — | the admin console's ES module (`text/javascript`) | `200` |
+| `GET` | `/app.css` | anyone — no key required | — | the admin console's stylesheet (`text/css`) | `200` |
 | `GET` | `/whoami` | any valid key — reports the CALLER | — | `{"id","label","stores","perms","expiresAt","lastUsedAt"}` | `200`, `401` |
 | `GET` | `/stores` | master admin key | — | `{"stores":[{"name","kind","createdAt"}]}` | `200`, `401`, `403` |
 | `POST` | `/stores` | master admin key | `{"name":"game","kind":"bytes"?}` | `{"store":{"name","kind","createdAt"}}` | `201`, `400`, `401`, `403`, `409` |

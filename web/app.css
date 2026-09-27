@@ -1,0 +1,231 @@
+/* The admin console's whole stylesheet: one narrow-friendly column, no framework. */
+
+:root {
+  --bg: #10141a;
+  --card: #1a2029;
+  --line: #2c3644;
+  --text: #e6ebf2;
+  --muted: #93a1b3;
+  --accent: #4f8cff;
+  --danger: #ff6b6b;
+  --ok: #57c98a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.bar {
+  padding: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.bar h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.25rem;
+}
+
+footer.bar {
+  border-top: 1px solid var(--line);
+  border-bottom: none;
+  margin-top: 1.5rem;
+}
+
+main {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 0 0 1rem;
+}
+
+h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+}
+
+h3 {
+  font-size: 0.95rem;
+  margin: 1rem 0 0.5rem;
+}
+
+label {
+  display: block;
+  margin: 0.5rem 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+label.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.25rem 0.75rem 0.25rem 0;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="datetime-local"] {
+  width: 100%;
+  padding: 0.6rem;
+  background: #0d1117;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  font-size: 1rem;
+}
+
+input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+button {
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: #232c38;
+  color: var(--text);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06101f;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.row.spread {
+  justify-content: space-between;
+}
+
+.row input[type="password"],
+.row input[type="text"] {
+  flex: 1 1 12rem;
+  width: auto;
+}
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+legend {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0 0.35rem;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.list li:last-child {
+  border-bottom: none;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.error,
+.status,
+.minted {
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.error {
+  background: #3a1c1c;
+  border: 1px solid var(--danger);
+  color: #ffd9d9;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  background: #17301f;
+  border: 1px solid var(--ok);
+  color: #d6f5e3;
+}
+
+.minted {
+  background: #1d2a1d;
+  border: 1px solid var(--ok);
+  margin-top: 1rem;
+}
+
+.warning {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+code {
+  background: #0d1117;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+}
+
+@media (max-width: 30rem) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .row input[type="password"],
+  .row input[type="text"] {
+    flex: 1 1 auto;
+  }
+}

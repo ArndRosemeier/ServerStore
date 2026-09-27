@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>ServerStore admin</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1>ServerStore</h1>
+      <p class="muted">The store's admin console. Everything here talks to this same origin.</p>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="key-heading">
+        <h2 id="key-heading">1. Enter the master key</h2>
+        <form id="key-form" autocomplete="off">
+          <label for="key-input">Master key</label>
+          <div class="row">
+            <input
+              id="key-input"
+              type="password"
+              name="serverstore-console-credential"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              placeholder="paste the key"
+            />
+            <button type="submit" class="primary">Use key</button>
+            <button type="button" id="forget" hidden>Forget key</button>
+          </div>
+        </form>
+        <p id="session" class="muted">
+          No key entered. Nothing is fetched until a key is proven with <code>whoami</code>.
+        </p>
+      </section>
+
+      <div id="error" class="error" role="alert" hidden></div>
+      <div id="status" class="status" role="status" hidden></div>
+
+      <div id="app" hidden>
+        <section class="card" aria-labelledby="stores-heading">
+          <div class="row spread">
+            <h2 id="stores-heading">2. Stores</h2>
+            <button type="button" id="refresh">Refresh</button>
+          </div>
+          <ul id="stores" class="list"></ul>
+          <form id="create-store-form" autocomplete="off">
+            <label for="store-name">New store name</label>
+            <div class="row">
+              <input
+                id="store-name"
+                type="text"
+                name="store-name"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="lowercase-name"
+              />
+              <button type="submit" class="primary">Create store</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card" aria-labelledby="mint-heading">
+          <h2 id="mint-heading">3. Mint a key</h2>
+          <form id="mint-form" autocomplete="off">
+            <label for="label-input">Label</label>
+            <input
+              id="label-input"
+              type="text"
+              name="label"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="player-1"
+            />
+
+            <fieldset>
+              <legend>Scope</legend>
+              <label class="inline">
+                <input id="scope-all" type="checkbox" />
+                Every store (master scope)
+              </label>
+              <div id="store-choices" class="choices"></div>
+              <p id="scope-note" class="muted"></p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Permissions</legend>
+              <label class="inline"><input id="perm-read" type="checkbox" checked /> read</label>
+              <label class="inline"><input id="perm-write" type="checkbox" checked /> write</label>
+              <label class="inline"><input id="perm-delete" type="checkbox" /> delete</label>
+              <label class="inline">
+                <input id="perm-admin" type="checkbox" /> admin
+                <span id="admin-note" class="muted"></span>
+              </label>
+            </fieldset>
+
+            <label for="expires-input">Expires at (optional)</label>
+            <input id="expires-input" type="datetime-local" name="expires" />
+
+            <div class="row">
+              <button type="submit" class="primary">Mint key</button>
+            </div>
+          </form>
+
+          <div id="minted-panel" class="minted" hidden>
+            <p id="minted-warning" class="warning"></p>
+            <div class="row">
+              <input id="minted-key" type="text" readonly />
+              <button type="button" id="copy-key" class="primary">Copy</button>
+            </div>
+            <p id="minted-meta" class="muted"></p>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="keys-heading">
+          <h2 id="keys-heading">4. Keys</h2>
+          <ul id="keys" class="list"></ul>
+        </section>
+      </div>
+    </main>
+
+    <footer class="bar muted">
+      The key is kept in memory only: reloading this page forgets it. There is no cookie,
+      no stored copy and no key in the address bar.
+    </footer>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

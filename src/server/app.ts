@@ -29,6 +29,7 @@ import {
   parseStores,
 } from "../core/validate.ts";
 import { ALL_STORES, type Permission, type AccessKeyRecord } from "../core/types.ts";
+import { UI_ASSETS, readUiAsset } from "./assets.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_HOST, DEFAULT_PORT } from "./config.ts";
 import { createStore, ensureMasterStore, listStores, requireStore } from "../stores/registry.ts";
 import { handlerFor } from "../storage/kinds.ts";
@@ -241,6 +242,22 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
   };
 
   app.get("/healthz", (c) => c.json({ ok: true }));
+
+  // THE ADMIN UI (ledger row 49): the THREE literal asset routes from `web/`, served
+  // with no directory walking and no static-file middleware. They are registered HERE,
+  // before the key guard, because the console itself must load without a key — the
+  // operator types the key INTO it, and `GET /whoami` is what proves it. `GET /` is a
+  // literal route, not a catch-all: it shadows no API route and an unknown path is
+  // still the API's JSON 404. `no-store` keeps a stale console out of a browser cache.
+  for (const asset of UI_ASSETS) {
+    app.get(asset.route, async () => {
+      const body = await readUiAsset(asset);
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": asset.contentType, "cache-control": "no-store" },
+      });
+    });
+  }
 
   app.use("*", guard);
 

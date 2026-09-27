@@ -19,14 +19,13 @@
  * vacuously) if a section or a row it needs is missing.
  */
 
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve as resolvePath } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { createApp } from "../src/server/app.ts";
 import { DEFAULT_MAX_BYTES } from "../src/server/config.ts";
 import { ERROR_CODES, StoreError } from "../src/core/errors.ts";
+import { registeredRoutes } from "./helpers/server.ts";
 
 const REPO = resolvePath(fileURLToPath(new URL("../", import.meta.url)));
 const DOC_PATH = resolvePath(REPO, "docs/API.md");
@@ -43,28 +42,6 @@ function section(title: string): string {
   const rest = doc.slice(start + 1);
   const end = rest.indexOf("\n## ", 1);
   return end === -1 ? rest : rest.slice(0, end);
-}
-
-/**
- * The routes the RUNNING app registers, as `METHOD /path`.
- *
- * Middleware registers as method `ALL` on `/*` (the path guard and the key guard);
- * it is not part of the API surface, so it is filtered out. Everything left is a real
- * route, derived from `createApp(...).routes` — never from a hand-kept list.
- */
-function registeredRoutes(): string[] {
-  const dataRoot = mkdtempSync(join(tmpdir(), "serverstore-apidoc-"));
-  try {
-    const app = createApp({ dataRoot, dbPath: join(dataRoot, "serverstore.db") });
-    return app.routes
-      .filter((route) => route.method !== "ALL")
-      .map((route) => {
-        const base = route.basePath === "/" ? "" : route.basePath;
-        return `${route.method} ${base}${route.path}`;
-      });
-  } finally {
-    rmSync(dataRoot, { recursive: true, force: true });
-  }
 }
 
 /**
