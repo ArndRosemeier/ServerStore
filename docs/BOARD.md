@@ -54,10 +54,10 @@ reconciled: e1e363f · 2026-09-27T20:12Z — the tip of the row-27 landing (the 
   the time, the dispatcher's error, corrected rather than quietly.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=DEPLOYED TO LOOPBACK: serverstore.service is installed, enabled and active on
-  |   127.0.0.1:8477 ONLY (local probe PASS exit 0). The PUBLIC name is blocked by a ZONE-WIDE
-  |   Cloudflare Access policy — one dashboard change from the owner unblocks it (row 31).
-  |   No writer in flight; slices 1-4 verified and retired.
+  | state=ONE writer in flight (B0, row 36: the key-subset fix); slices 1-5 verified and retired.
+  |   serverstore.service is installed, enabled and active on 127.0.0.1:8477 ONLY (local probe
+  |   PASS exit 0); the PUBLIC name is still blocked by the zone-wide Cloudflare Access policy
+  |   (row 31 — one dashboard change from the owner).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -177,17 +177,18 @@ LANDED | row=27 | sha=e1e363f (the docs tip; the CODE tip 1439f61 is its parent)
   | this slice creates no such directory (the probe writes to stdout; the differential's logs are
   | `*.log`, already ignored). Adding a rule for a path that never exists blesses an imaginary file.
 
-IN-FLIGHT | row=33 | writer=session-d037deb5-84e8-4aa6-b065-4a672c93ffe2 | model=harness default
-  | worktree=/home/administrator/projects/ServerStore/worktrees/api-doc | branch=feat/api-doc
-  | base=2991ec6 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
-  | state=dispatched 2026-09-27T20:24Z, no commit yet | brief=docs/briefs/slice-5-api-doc.md
-  | note=STEP A of the owner's approved order: `docs/API.md`, the CLIENT contract another agent codes
-  |   against — base URL, auth (401 vs 403, one store or `*`), all eight routes with shapes, the
-  |   `{error:{code,message}}` envelope with EVERY `ERROR_CODES` entry, caps, a curl "first five
-  |   minutes", and explicit non-goals (no GC, no concurrency control, no CORS, no rate limiting, no
-  |   identity beyond keys). Pins bind the doc to the CODE both ways: A1 routes (derived from
-  |   `createApp().routes`, middleware filtered), A2 error codes (from `ERROR_CODES`), A3 the
-  |   max-bytes default. `src/` must NOT change; a contract/code disagreement is reported, not fixed.
+IN-FLIGHT | row=36 | writer=session-6e744d65-7714-47e4-9c34-7d2b9e3e58f4 | model=harness default
+  | worktree=/home/administrator/projects/ServerStore/worktrees/keys-subset | branch=feat/keys-subset
+  | base=267fe50 | dispatched_by=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa
+  | state=dispatched 20:32Z, no commit yet | brief=docs/briefs/slice-6-keys-subset.md
+  | note=B0, ahead of step B and the UI because row 35 is a CONFIRMED ESCALATION: a read-only key
+  |   mints write+delete for its own store and then writes (201) and deletes (204). The ONE seam is
+  |   the authorization decision inside POST /keys: the branch that enforces the STORE boundary must
+  |   also enforce the PERMISSION boundary — requested perms must be a SUBSET of the minter's, with
+  |   admin implying all so the master-admin bootstrap still works. Pins K1-K5 in BOTH directions (a
+  |   too-strict check must red K3), docs/API.md changes in the same commit (it documents the
+  |   escalation today) and PIN A1-A3 must stay green. Out of scope but reportable: the same class
+  |   of hole on another route.
 
 (The slice-3 writer is RETIRED: slice 3 LANDED, was verified by the dispatcher, and its worktree
 worktrees/tripwire, branch feat/tripwire (fully merged) and session ebb420aa… are gone. No writer
@@ -261,6 +262,13 @@ QUEUE | row=31 | BLOCKED ON THE OWNER, one dashboard change: a ZONE-WIDE Cloudfl
   | RATIFIED 2026-09-27: the owner RE-CHOSE keys-only with the wildcard KNOWN, rejecting
   |   Access-as-identity-provider (which would have given browsers a real login and let the store
   |   trust the tunnel's Access JWT, at the price of an Access seat per player) — ledger row 32.
+QUEUE | row=35 | B0 DISPATCHED (the key-subset fix, row 36). Row-34 findings NOT in B0, not to be
+  lost: (a) there is NO REVOKE ROUTE — `revokeKey()` is called only by tests, so row 6's rotation
+  story is half-built and the row-30 UI's revoke button has nothing to call; (b) `name_taken` (409)
+  is emitted by NOTHING — remove it or use it, but a code a client can never receive is a lie in the
+  vocabulary; (c) `requireStore()` runs before `authorize()`, so a wrong-scope key learns whether a
+  store EXISTS from the 404-vs-403 difference; (d) no `whoami`/last-used route. (a) and (d) belong to
+  step B (multi-store scope + whoami + defaults); (b) and (c) are small calls to take with it.
 QUEUE | row=28 | API DOC: `docs/API.md` — the CLIENT contract (base URL, the auth header, the eight
   routes that actually exist, the `{error:{code,message}}` envelope with its codes, and the caps),
   PINNED to the code by a test that derives the route list from the app. Next landing after the
@@ -320,10 +328,11 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-30 (19, 23 and 27 appended by writers, out of numeric
-  |   order by design; 24 the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the explicit
-  |   retirement key, 27 slice 4, 28 the multiplayer requirement, 29 its verification, 30 the
-  |   owner's registration model)
+  | decisions=docs/DECISION-LEDGER.md rows 1-35 (19, 23, 27 and 33 appended by writers, out of
+  |   numeric order by design; 24 the Toolbox upstream fix, 25 the S2/S3 pin-hardening, 26 the
+  |   explicit retirement key, 27 slice 4, 28 the multiplayer requirement, 29 its verification,
+  |   30 the owner's registration model, 31 the Access blocker, 32 the perimeter re-ratification,
+  |   33 the client contract, 34 its verification, 35 the CONFIRMED key escalation)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -338,6 +347,16 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=34 | sha=267fe50 (the record tip pulled before verifying; the contract tip is 8a7a2f5)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 10 files · 75 tests ·
+  | 2.03s. My arms, neither of them the writer's: N the app registers `/health` instead of
+  | `/healthz` → RED on PIN A1 (code→doc direction); O the doc loses its `payload_too_large` row →
+  | RED on PIN A2. MY OWN ERROR, recorded: the first gate ran BEFORE `git pull` and reported 9 files
+  | / 72 tests — a STALE TREE, so VOID as verification of this landing; refetched and re-ran.
+  | retired=worktree worktrees/api-doc · branch feat/api-doc · session d037deb5…
+  | findings=row 34 (name_taken emitted by nothing; no revoke route; requireStore before authorize;
+  | no whoami route) and row 35 (the escalation) | docs=ledger rows 34-35 · this board.
+
 LANDED | row=29 | sha=aabf8a1 (the record commit; the code+docs tip verified is e1e363f)
   | verify=THE DISPATCHER'S OWN: gate exit 0 GREEN · 9 files · 72 tests · 2.01s, on the integrated
   | tree that also carries the row-28 record. Arms, NEITHER of them the writer's: X
