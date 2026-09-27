@@ -44,8 +44,10 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: 20c132d · 2026-09-27T17:45Z (the seeded-record commit; the landing commit is newer
-  and is named in the LANDED record below)
+reconciled: 2e44eaf · 2026-09-27T16:04Z (LOCAL REALITY ONLY: this repo has no remote yet, so
+  scripts/board.sh correctly says CANNOT LOOK and this marker is NOT machine-verified. The
+  line below it previously read "20c132d · 2026-09-27T17:45Z", which was LOCAL time mislabelled
+  as Z - the dispatcher's error, corrected here rather than quietly. Local time is UTC+2.)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
   | state=slice 1 (the process itself) landed from the MAIN TREE — no writer was dispatched
@@ -103,13 +105,13 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main | remote=
 ## Landed
 
 ```
-LANDED | row=14 | sha=<the landing commit; named again in the reconcile commit that follows>
-  | verify=MY OWN: cheap tier exit 2 (which is NOT a pass) + full gate GREEN exit 0 · 1 test
-  | file · 4 tests · 205ms · raw log .gate-logs/gate.log | retired=nothing (no writer was used)
+LANDED | row=14 | sha=2e44eaf | verify=MY OWN: cheap tier exit 2 (which is NOT a pass) + full gate
+  | GREEN exit 0 · 1 test file · 4 tests · 205ms · raw log .gate-logs/gate.log
+  | retired=nothing (no writer was used)
   | docs=ledger rows 1,14,15 · this board | note=the code tree that was gated is byte-identical
   | to the committed tree; the only later delta is documentation, which no test asserts on.
 
-LANDED | row=15 | sha=<the same landing commit> | verify=MY OWN: `git rev-parse no-such-remote/main`
+LANDED | row=15 | sha=2e44eaf | verify=MY OWN: `git rev-parse no-such-remote/main`
   | prints the ref back and exits 128 (captured in the session); scripts/board.sh now prints
   | CANNOT LOOK and exits 1 for BOTH the default case (no origin exists) and the forced-missing
   | case, where it previously blamed the record | arms=the cannot-look PIN was RED before the fix
