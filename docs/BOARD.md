@@ -66,20 +66,33 @@ reconciled: 5bf080a · 2026-09-28T13:20Z — the slice-18 (console destructive a
   quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight. Slices 12–18 are LANDED, VERIFIED and RETIRED. THE OWNER'S FOUR UI ASKS
-  |   ARE DONE AND LIVE: delete a key (including a revoked one), look inside a store (names, with a
-  |   server-side prefix filter) and delete an entry, empty a store and delete a store (both requiring
-  |   the store name TYPED and sent as the server's token). The console is served from disk per request,
-  |   so a reload shows it — no restart, and the live `/app.js` matches HEAD byte-for-byte.
+  | state=ONE writer in flight (row 84: a TEST-ONLY slice making the single-item confirmation
+  |   FALSIFIABLE — my own arm found that no pin can fail on a key/entry delete that skips its
+  |   confirmation; worktree worktrees/confirm-pin, branch feat/confirm-pin). Slices 12–18 are LANDED,
+  |   VERIFIED and RETIRED. THE OWNER'S FOUR UI ASKS ARE DONE AND LIVE: delete a key (including a
+  |   revoked one), look inside a store (names, prefix filtered ON THE SERVER) and delete an entry,
+  |   empty a store and delete a store (the last two need the store name TYPED). The console is served
+  |   from disk per request, so a reload shows it — no restart.
   |   LIVE at https://store.futuremagic.de/ on the migrated SQLite core (one database, WAL, keys and
   |   item bytes together); probe PASS.
-  |   NEXT: row 84 = a SMALL TEST-ONLY slice closing the gap my arm W found — no pin can fail on a
-  |   single-item destructive action that skips its confirmation.
+  |   NEXT after row 84: nothing queued — the owner has no open request.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
+
+IN-FLIGHT | row=84 | session=(dispatching now) | worktree=worktrees/confirm-pin |
+  | branch=feat/confirm-pin | base=origin/main — resolved by the writer and recorded in its landing
+  | state=THE ONE WRITER. Scope: TEST-ONLY, and it exists because my OWN arm at row 83 went green
+  |   where it should have gone red. The console's whole-store gate is falsifiable (V4 fails when the
+  |   token is pre-filled), but the SINGLE-ITEM two-step is not: V1/V3 assert the end state and never
+  |   that the FIRST click destroys nothing, so a build that deletes a key on one unguarded click
+  |   passes everything. This slice adds the missing assertion (intermediate state after the first
+  |   click, for BOTH controls that share `armGuard`: key Delete and entry Delete), plus the ONE arm
+  |   that proves the new pin FAILS when the guard's action runs on the first click — the exact defect
+  |   my harness injected. No product change is expected; if one is needed, that is a BLOCKED report.
+  |   Brief `docs/briefs/slice-19-confirm-pin.md`.
 
 (The row=82 `IN-FLIGHT` block is FOLDED by the LANDED row=82 record in `## Landed` — the
 writer's own record, added in the docs child of landing `5bf080a`. Its scope statement is
@@ -1121,7 +1134,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-83 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-84 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
