@@ -18,7 +18,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
@@ -34,6 +34,7 @@ import {
   sha256Hex,
 } from "./helpers/server.ts";
 import { REPO_ROOT, removeScratch, scratchDir } from "./helpers/child.ts";
+import { sourceFiles } from "./helpers/source.ts";
 
 afterEach(cleanupTestServers);
 afterAll(() => removeScratch("boot"));
@@ -157,17 +158,6 @@ function contentOf(dbPath: string, store: string, name: string): Uint8Array | nu
   } finally {
     db.close();
   }
-}
-
-/** Every `.ts` file under `src/`, sorted. */
-function sourceFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...sourceFiles(path));
-    else if (entry.name.endsWith(".ts")) out.push(path);
-  }
-  return out.sort();
 }
 
 describe("PIN Y1: the bytes live in the database (ledger row 79)", () => {

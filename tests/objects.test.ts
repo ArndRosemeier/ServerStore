@@ -12,6 +12,7 @@ import {
   OBJECT_LIST_PREFIX_SQL,
   objectPrefixRange,
 } from "../src/storage/kinds.ts";
+import { NAME_MAX_LENGTH } from "../src/core/validate.ts";
 import { createTestServer, cleanupTestServers, keyId, readError } from "./helpers/server.ts";
 
 afterEach(cleanupTestServers);
@@ -214,7 +215,7 @@ describe("the object-listing prefix filter (pins P1-P7, ledger row 61)", () => {
       "a/b", // a slash is not in the charset
       ".hidden", // a leading dot is refused by the ONE name rule
       "..", // a path segment, not a name
-      "a".repeat(65), // over the 64-character cap
+      "a".repeat(NAME_MAX_LENGTH + 1), // one past the ONE bound (`NAME_MAX_LENGTH`)
       "with space", // whitespace is not in the charset
       "-leading", // must start with a letter or digit
       "semi;colon", // punctuation outside the charset
@@ -414,7 +415,7 @@ describe("named boundary refusals (pin 8)", () => {
   test("PIN 8: an illegal store or object name is 400 invalid_name", async () => {
     const server = createTestServer();
     const key = server.mint({ stores: ["*"], perms: ["admin"] });
-    const names = ["UPPER", "with space", ".hidden", "..hidden", "-leading", "a".repeat(65), "semi;colon"];
+    const names = ["UPPER", "with space", ".hidden", "..hidden", "-leading", "a".repeat(NAME_MAX_LENGTH + 1), "semi;colon"];
     for (const name of names) {
       const put = await server.put(`/stores/master/objects/${encodeURIComponent(name)}`, "x", key);
       expect(put.status, `object name ${name}`).toBe(400);
@@ -426,9 +427,10 @@ describe("named boundary refusals (pin 8)", () => {
   });
 
   test("PIN 8: a dotted name that is NOT a traversal segment is a legal name", async () => {
-    // `dot.start` and `a..b` match the schema `[a-z0-9][a-z0-9._-]{0,63}` exactly, and
-    // no path layer interprets them: they are refused neither as names nor as paths.
-    // The refusal rule is about `..` AS A SEGMENT, not about the two characters.
+    // `dot.start` and `a..b` match the ONE name rule (up to `NAME_MAX_LENGTH` characters
+    // of `[a-z0-9._-]`) exactly, and no path layer interprets them: they are refused
+    // neither as names nor as paths. The refusal rule is about `..` AS A SEGMENT, not
+    // about the two characters.
     const server = createTestServer();
     const key = server.mint({ stores: ["*"], perms: ["admin"] });
     for (const name of ["dot.start", "a..b", "v1.2.3-beta_1"]) {

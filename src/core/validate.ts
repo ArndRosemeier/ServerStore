@@ -1,10 +1,17 @@
 /**
  * Boundary validation. Names are PARSED, never sanitised.
  *
- * The rule (brief §11): a name matching `[a-z0-9][a-z0-9._-]{0,63}` is accepted;
- * everything else — including `..`, a leading `/` or a leading `.`, uppercase, a
- * slash, a traversal segment — is REFUSED with a named 400 code. Nothing is
- * silently rewritten into a "safer" name; a refused name has no path at all.
+ * The rule is ONE piece of data, not four copies (ledger row 87b): the alphabet is
+ * {@link NAME_CHARSET}, the bound is {@link NAME_MAX_LENGTH}, and {@link NAME_PATTERN}
+ * is BUILT from both. A name inside that rule is accepted; everything else — `..`, a
+ * leading `/` or `.`, uppercase, a slash, a traversal segment, anything longer — is
+ * REFUSED with a named 400 code. Nothing is silently rewritten into a "safer" name; a
+ * refused name has no path at all.
+ *
+ * BOTH refusal messages quote {@link NAME_PATTERN}'s own `source` and the constant
+ * instead of retyping either, so changing the limit is ONE edit that cannot leave a
+ * stale pattern or a lying message behind (pinned by PIN Z6, which forbids the
+ * expanded bound appearing a second time under `src/`).
  *
  * Both store names and object names use this one parser, so a second naming rule
  * cannot drift in beside the first.
@@ -13,10 +20,27 @@
 import { StoreError } from "./errors.ts";
 import { ALL_STORES, PERMISSIONS, STORE_KINDS, type Permission, type StoreKind } from "./types.ts";
 
-/** 64 characters total: the leading char plus 0-63 more. */
-export const NAME_MAX_LENGTH = 64;
+/** The alphabet a name may CONTINUE with: lowercase letters, digits, `.`, `_`, `-`. */
+export const NAME_CHARSET = "[a-z0-9._-]";
 
-const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+/** The alphabet a name may START with — {@link NAME_CHARSET} without its punctuation. */
+const NAME_FIRST_CHARSET = "[a-z0-9]";
+
+/**
+ * The ONE number in the name rule: a name's maximum length, in characters. The pattern,
+ * both refusal messages and the tests all derive from it, and PIN Z6 asserts the value is
+ * not retyped anywhere else under `src/`. The ONE declared exemption is the binary-MiB
+ * factor in `src/server/config.ts` (the `SERVERSTORE_MAX_BYTES` default, the item cap of
+ * ledger row 86) — a DIFFERENT number that merely shares the digits, named by the pin
+ * rather than weakened. Do not quote the value here: a comment that restates it IS the
+ * second copy this rule exists to prevent.
+ */
+export const NAME_MAX_LENGTH = 1024;
+
+/** The ONE name rule, BUILT from the two pieces above and never retyped anywhere. */
+export const NAME_PATTERN = new RegExp(
+  `^${NAME_FIRST_CHARSET}${NAME_CHARSET}{0,${NAME_MAX_LENGTH - 1}}$`,
+);
 
 export type NameKind = "store name" | "object name" | "object name prefix" | "key id";
 
@@ -24,7 +48,7 @@ export type NameKind = "store name" | "object name" | "object name prefix" | "ke
  * Parse a name from the wire against the explicit schema. Throws 400 on refusal.
  *
  * The refused set is precise, and each refusal has a reason:
- *   - empty, non-string, over 64 chars, or outside `[a-z0-9][a-z0-9._-]{0,63}`;
+ *   - empty, non-string, over {@link NAME_MAX_LENGTH} chars, or outside {@link NAME_PATTERN};
  *   - `.` or `..` as the WHOLE name (path semantics, not a name);
  *   - a leading `/` (a path) or a leading `.` (hidden-file convention).
  *
@@ -48,7 +72,7 @@ export function parseName(raw: unknown, what: NameKind): string {
   if (!NAME_PATTERN.test(raw)) {
     throw new StoreError(
       "invalid_name",
-      `${what} must match [a-z0-9][a-z0-9._-]{0,63}; got ${JSON.stringify(raw)}`,
+      `${what} must match ${NAME_PATTERN.source}; got ${JSON.stringify(raw)}`,
     );
   }
   return raw;
@@ -68,11 +92,11 @@ export function parseObjectName(raw: unknown): string {
  * Parse the optional `prefix=` filter of the object listing (ledger row 61).
  *
  * **A prefix must ITSELF be a valid object name**, and that one rule is exactly the
- * right one: the legal-name language `[a-z0-9][a-z0-9._-]{0,63}` is **prefix-closed**
+ * right one: the legal-name language ({@link NAME_PATTERN}) is **prefix-closed**
  * (every prefix of a legal name is legal), so this parser ACCEPTS exactly the strings
  * that can match at least one stored name and REFUSES every string that can never
  * match one — empty or whitespace, uppercase, a `/`, a leading `.`, `.`/`..`, or more
- * than 64 characters — with the EXISTING `invalid_name` (400).
+ * than {@link NAME_MAX_LENGTH} characters — with the EXISTING `invalid_name` (400).
  *
  * It is deliberately {@link parseName}, not a second charset regex: a prefix rule that
  * drifted from the name rule would accept a string that names nothing (a silent empty

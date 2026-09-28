@@ -308,7 +308,7 @@ path before routing, so the API never reveals which routes exist — and `404`
 
 Store names and object names use the **same** rule:
 
-- `[a-z0-9][a-z0-9._-]{0,63}` — lowercase letters, digits, `.`, `_`, `-`; 1 to 64
+- `[a-z0-9][a-z0-9._-]{0,1023}` — lowercase letters, digits, `.`, `_`, `-`; 1 to 1024
   characters; must start with a letter or digit.
 - `.` or `..` as a whole name is refused, as is a leading `.` or `/`. A name that
   *contains* two dots (`a..b`) is legal.
@@ -316,11 +316,16 @@ Store names and object names use the **same** rule:
   as `400 invalid_name` before routing. Names are parsed, never sanitised into a
   different name.
 - An **object-listing `prefix`** obeys the **same** rule: a prefix must itself be a
-  legal object name (1–64 characters of `[a-z0-9._-]`, starting with a letter or
+  legal object name (1 to 1024 characters of `[a-z0-9._-]`, starting with a letter or
   digit). Every prefix of a legal name is legal, so nothing a stored name could start
   with is refused — and anything that could never match (empty, whitespace, uppercase,
-  a `/`, a leading `.`, `..`, over 64 characters) is `400 invalid_name` rather than a
+  a `/`, a leading `.`, `..`, over 1024 characters) is `400 invalid_name` rather than a
   silent empty list.
+- **One rule, so one bound:** store names, object names, the `prefix=` filter and key
+  ids are parsed by the same `parseName()`, so they share this charset AND this maximum
+  — a 1024-character **store** name is legal too, and there is deliberately no second,
+  shorter limit for any of them (a second limit is the drift the single parser exists to
+  prevent). The bound is ONE constant in the code, and PIN Z6 keeps it that way.
 
 A **`PUT` of an existing name overwrites** it (the response is `201` with the new
 `sha256`/`size`/`createdAt`). There is no create-only variant.

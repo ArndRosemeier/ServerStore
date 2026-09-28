@@ -133,10 +133,15 @@ re-run after an interruption resumes where it stopped. **Take the backup before 
 - **The file only grows, and space is reused inside it.** A delete frees pages for the next write
   (SQLite's freelist) but does not shrink the file on disk; `VACUUM` is what returns space to the
   filesystem, and it needs free space roughly equal to the database.
-- **Limits:** an entry's name is up to 64 characters from `[a-z0-9][a-z0-9._-]`, and a single
+- **Limits:** an entry's name is up to 1024 characters from `[a-z0-9][a-z0-9._-]`, and a single
   request body is capped by `SERVERSTORE_MAX_BYTES` (64 MiB by default) — a larger body is refused
   before anything is written. SQLite itself allows a single value up to 1,000,000,000 bytes
   (`MAX_LENGTH`), i.e. the service's own cap binds first by a wide margin.
+  The name bound is ONE constant (`NAME_MAX_LENGTH`, ledger row 87b) and it is the SAME rule for
+  store names, entry names, the `prefix=` filter and key ids — pinned by Z1–Z3, and by PIN Z6
+  (the number appears once under `src/`). A future NON-SQLite backend must decide what to do about
+  names longer than its own key limit: LMDB keys cap around 511 bytes, so a 1024-character name
+  would not fit there — the constraint is named here rather than left in a ledger row.
 
 ## How far does this actually scale? (measured on this box, 2026-09-28)
 

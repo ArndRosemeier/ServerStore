@@ -13,10 +13,17 @@
  *           status that code maps to) — and the table names nothing outside the
  *           vocabulary
  *   PIN A3: the doc's stated max-bytes default equals the code's
+ *   PIN Z4: the docs' stated NAME bound equals the code's `NAME_MAX_LENGTH` (ledger
+ *           rows 87/87b) — read from the exported constant, never a literal, so changing
+ *           the limit fails this pin until the PROSE moves with it: the docs are not a
+ *           fifth copy of the number
  *
  * The doc is parsed, not read by eye: `## Routes`, `## Errors` and `## Limits` each
  * hold one machine-readable table, and this file refuses LOUDLY (rather than passing
- * vacuously) if a section or a row it needs is missing.
+ * vacuously) if a section or a row it needs is missing. PIN Z4 reads the CURRENT docs
+ * only (`docs/API.md`, `docs/STORAGE.md`, `docs/SEAM-INDEX.md`); the ledger rows, board
+ * lines and briefs are HISTORY by design and are never scanned — a record rewritten to
+ * match the present is not a record.
  */
 
 import { readFileSync } from "node:fs";
@@ -25,6 +32,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { DEFAULT_MAX_BYTES } from "../src/server/config.ts";
 import { ERROR_CODES, StoreError } from "../src/core/errors.ts";
+import { NAME_MAX_LENGTH, NAME_PATTERN } from "../src/core/validate.ts";
 import { registeredRoutes } from "./helpers/server.ts";
 
 const REPO = resolvePath(fileURLToPath(new URL("../", import.meta.url)));
@@ -177,5 +185,55 @@ describe("the client contract (docs/API.md, pins A1-A3)", () => {
     expect(doc, "PIN P8: docs/API.md does not state that `prefix` is the ONE filter").toMatch(
       /`prefix` is the ONE filter/,
     );
+  });
+
+  test("PIN Z4: the docs state the NAME limit the code enforces", () => {
+    // Both the bound and the pattern come from the CODE, so this pin cannot become a
+    // fifth copy of either: change `NAME_MAX_LENGTH` and the prose must move with it.
+    const max = NAME_MAX_LENGTH;
+    const rule = NAME_PATTERN.source.replace(/^\^/, "").replace(/\$$/, "");
+
+    // `### Names`, not `## Names`: PIN Z4's section is a sub-heading of the API walkthrough.
+    const namesStart = doc.indexOf("\n### Names\n");
+    expect(namesStart, "PIN Z4: docs/API.md has no '### Names' section").toBeGreaterThanOrEqual(0);
+    const namesRest = doc.slice(namesStart + 1);
+    const namesEnd = namesRest.search(/\n#{2,3} /);
+    const names = namesEnd === -1 ? namesRest : namesRest.slice(0, namesEnd);
+
+    expect(names, "PIN Z4: the Names section does not state the code's own pattern").toContain(rule);
+    expect(names, `PIN Z4: the Names section does not state "1 to ${max}"`).toContain(`1 to ${max}`);
+    expect(names, `PIN Z4: the Names section states no "over ${max} characters" refusal`).toContain(
+      `over ${max} characters`,
+    );
+
+    // The current docs, and ONLY them: the ledger, the board and the briefs are history.
+    const current = new Map<string, string>([
+      ["docs/API.md", doc],
+      ["docs/STORAGE.md", readFileSync(resolvePath(REPO, "docs/STORAGE.md"), "utf8")],
+      ["docs/SEAM-INDEX.md", readFileSync(resolvePath(REPO, "docs/SEAM-INDEX.md"), "utf8")],
+    ]);
+    expect(
+      current.get("docs/STORAGE.md"),
+      `PIN Z4: docs/STORAGE.md's limits bullet does not state "up to ${max} characters"`,
+    ).toContain(`up to ${max} characters`);
+
+    // THE DRIFT GUARD: every name-bound claim in a CURRENT doc must be the bound the code
+    // enforces. A writer who bumps the constant and leaves the prose behind fails HERE.
+    const stale: string[] = [];
+    for (const [file, text] of current) {
+      for (const match of text.matchAll(/\[a-z0-9\]\[a-z0-9._-\]\{0,(\d+)\}/g)) {
+        if (Number(match[1]) !== max - 1) stale.push(`${file}: the pattern says {0,${match[1]}}`);
+      }
+      for (const match of text.matchAll(/(\d+)\s*(?:to|–|-)\s*(\d+)\s+chars?/g)) {
+        if (Number(match[2]) !== max) stale.push(`${file}: "${match[0].replace(/\s+/g, " ")}"`);
+      }
+      for (const match of text.matchAll(/(?:up to|over|at most)\s+(\d+)\s+chars?/g)) {
+        if (Number(match[1]) !== max) stale.push(`${file}: "${match[0].replace(/\s+/g, " ")}"`);
+      }
+    }
+    expect(
+      stale,
+      "PIN Z4: a CURRENT doc states a name bound the code does not enforce — move the prose with the constant",
+    ).toEqual([]);
   });
 });

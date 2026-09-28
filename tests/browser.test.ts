@@ -31,6 +31,9 @@
  *   PIN V6: the console's promises hold with the new controls — nothing persisted, and a
  *           failed destructive action never leaves a stale row looking like a success
  *   PIN V7: the 409 / 400 / 403 / 429 paths each render the SERVER's own message
+ *   PIN Z5: an entry whose name is EXACTLY `NAME_MAX_LENGTH` characters renders in the
+ *           real console without overflowing the page, and can be deleted through the UI
+ *           with the API read back (ledger row 88)
  *
  * THE TWO TRAPS THIS FILE EXISTS FOR, both named by the brief:
  *
@@ -64,6 +67,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { openDatabase } from "../src/core/db.ts";
 import { keyIdFromRaw, mintKey } from "../src/core/keys.ts";
 import type { Permission } from "../src/core/types.ts";
+import { NAME_MAX_LENGTH } from "../src/core/validate.ts";
 import { ensureMasterStore, createStore } from "../src/stores/registry.ts";
 import {
   BrowserMissingError,
@@ -110,6 +114,14 @@ const SCOPED_STORE = "guarded";
 
 /** V1's throwaway key, minted through the UI and then deleted through the UI. */
 const THROWAWAY_LABEL = "browser-test-throwaway";
+
+/**
+ * Z5's fixture: a store holding ONE entry whose name is at the name rule's bound
+ * (ledger row 88). The name is DERIVED from the constant — never typed as a literal —
+ * and it is what the console was never built for (64 was the maximum).
+ */
+const LONG_STORE = "long-names";
+const LONG_ENTRY = "n".repeat(NAME_MAX_LENGTH);
 
 const MASTER_LABEL = "browser-test-master";
 const MASTER_TWO_LABEL = "browser-test-master-rate-limited";
@@ -441,7 +453,7 @@ beforeAll(async () => {
   });
   // The stores come FIRST, through the registry: a key's scope is a foreign key into
   // `stores`, so a scoped fixture key cannot be minted before the store it names exists.
-  for (const name of [STORE, GUARDED_STORE, BLOCKED_STORE, BLOCKED_TWO_STORE]) {
+  for (const name of [STORE, GUARDED_STORE, BLOCKED_STORE, BLOCKED_TWO_STORE, LONG_STORE]) {
     createStoreInto(dataRoot, name);
   }
   // The keys the destructive pins need, all minted through the ONE mint path:
@@ -512,6 +524,8 @@ beforeAll(async () => {
   };
 
   for (const [name, body] of OBJECTS) await putObject(STORE, name, body);
+  // Z5's fixture: ONE entry at the name rule's bound, created over HTTP like every other.
+  await putObject(LONG_STORE, LONG_ENTRY, '{"long":1}');
   await putObject(GUARDED_STORE, GUARDED_ENTRY, '{"guard":1}');
   await putObject(BLOCKED_STORE, "b-1", '{"blocked":1}');
   await putObject(BLOCKED_TWO_STORE, "b2-1", '{"blocked":2}');
@@ -1315,6 +1329,81 @@ describe("the console's destructive actions, executed in a real browser (pins V1
       timeoutMs: 10_000,
     });
   }, 45_000);
+});
+
+/**
+ * PIN Z5 — the name rule's bound, seen in the place the limit was built for (ledger
+ * row 88). The entry list and the store rows were written when 64 was the maximum; this
+ * pin drives the REAL console with an entry at `NAME_MAX_LENGTH` characters and asserts
+ * the row renders without pushing the page sideways, that it can be reached, and that
+ * deleting it through the UI really destroys it (read back through the API).
+ *
+ * The LAYOUT claim is exactly one measurable thing — no horizontal page overflow while
+ * the long row is on screen — and NOT a screenshot: a scripted flow is not a claim about
+ * visual design (row 92's honest unknown, restated).
+ */
+describe("a name at the bound in a real browser (pin Z5)", () => {
+  test("PIN Z5: the console renders and deletes a NAME_MAX_LENGTH-character entry", async () => {
+    const page = harness?.console;
+    const apiUrl = harness?.apiUrl;
+    const master = harness?.masterKey;
+    expect(page).toBeDefined();
+    if (page === undefined || apiUrl === undefined || master === undefined) return;
+
+    // The fixture really is at the bound, and really is in the store before the UI runs.
+    expect(LONG_ENTRY).toHaveLength(NAME_MAX_LENGTH);
+    expect(await listedEntries(apiUrl, master, LONG_STORE)).toEqual([LONG_ENTRY]);
+
+    await page.clickElement(storeButtonExpression(LONG_STORE, "Open"), {
+      description: `the Open button on the "${LONG_STORE}" store row`,
+    });
+    await page.waitFor(
+      'document.getElementById("entries") !== null && document.getElementById("entries").hidden === false',
+      { description: "the entries pane to open for the long-name store" },
+    );
+    await waitForEntryNames(page, [LONG_ENTRY], "the long store's entries");
+
+    // THE LAYOUT HALF: with the row on screen the page must not overflow sideways, which
+    // is what a 1024-character unbreakable token did before the CSS rule (body's
+    // `overflow-wrap: anywhere`).
+    const width = await page.evaluate<{ scroll: number; client: number }>(
+      `({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth })`,
+    );
+    expect(
+      width.scroll,
+      `the page overflows horizontally with a ${NAME_MAX_LENGTH}-character name: ` +
+        `scrollWidth ${width.scroll} > clientWidth ${width.client}`,
+    ).toBeLessThanOrEqual(width.client);
+
+    // THE FLOW: the row is reachable and the delete is the SAME guarded two-step V3 pins
+    // (nothing on the first click, only Confirm destroys).
+    await page.clickElement(entryButtonExpression(LONG_ENTRY, "Delete"), {
+      description: `the Delete button on the ${NAME_MAX_LENGTH}-character entry`,
+    });
+    await assertArmedNotActed(page, {
+      containerExpression: entryRowExpression(LONG_ENTRY),
+      what: `the ${NAME_MAX_LENGTH}-character entry's Delete button`,
+      unchanged: async () => {
+        expect(
+          await listedEntries(apiUrl, master, LONG_STORE),
+          "the FIRST click already removed the long entry",
+        ).toContain(LONG_ENTRY);
+      },
+    });
+    await page.clickElement(confirmInExpression(entryRowExpression(LONG_ENTRY)), {
+      description: "the long entry's inline Confirm delete button",
+    });
+    await page.waitFor(`(${entryRowExpression(LONG_ENTRY)}) === null`, {
+      description: "the long entry to disappear from the refreshed list",
+    });
+
+    // THE EFFECT, through the API: the entry is gone.
+    expect(await listedEntries(apiUrl, master, LONG_STORE)).toEqual([]);
+    expect(
+      (await apiJson(apiUrl, master, `/stores/${LONG_STORE}/objects/${LONG_ENTRY}`)).status,
+      "the long entry is still readable after the UI delete",
+    ).toBe(404);
+  }, 30_000);
 });
 
 /**

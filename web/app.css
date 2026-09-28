@@ -21,6 +21,13 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* A name may be up to NAME_MAX_LENGTH characters (ledger row 88), so a single
+     unbreakable token must WRAP rather than push the page sideways. `anywhere` — not
+     `break-word` — is what lets a FLEX item shrink below its min-content width, and an
+     ellipsis would HIDE the name the owner has to read before confirming a delete.
+     Inherited by every text box, so this is the ONE declaration (the per-list copies it
+     replaces were written when 64 was the maximum). */
+  overflow-wrap: anywhere;
 }
 
 .bar {
@@ -168,7 +175,6 @@ legend {
   justify-content: space-between;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--line);
-  overflow-wrap: anywhere;
 }
 
 .list li:last-child {
@@ -225,7 +231,6 @@ legend {
   background: #3a1c1c;
   border: 1px solid var(--danger);
   color: #ffd9d9;
-  overflow-wrap: anywhere;
 }
 
 .status {
@@ -302,7 +307,6 @@ button.danger {
   justify-content: space-between;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--line);
-  overflow-wrap: anywhere;
 }
 
 .entry-list li:last-child {
