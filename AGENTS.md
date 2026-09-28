@@ -9,7 +9,9 @@ bound to **loopback**, behind the existing cloudflared tunnel — never `0.0.0.0
 Read `docs/DECISION-LEDGER.md` (why things are like this) and `docs/BOARD.md` (what is
 happening right now) before working on an area. When this project grows a **seam
 index** ("the one way to do X", layer map, gotchas, known debt), start every task
-there.
+there. For where the bytes actually live — the database, the blob files, what a delete
+reclaims and what it leaves behind — read `docs/STORAGE.md` (a one-page overview, not a
+contract).
 
 The full process — roles, the board, verification doctrine, the brief template — is
 in the shared doc `~/projects/Toolbox/docs/WAY-OF-WORKING.md`. Read it when you are
