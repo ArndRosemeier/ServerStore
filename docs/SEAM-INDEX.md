@@ -12,10 +12,11 @@ restated here — the test **is** the statement, and `docs/TESTING.md` names the
 request
   └─ path guard            src/server/app.ts          (raw target, before routing)
        └─ CORS step        src/server/app.ts          (BEFORE the key guard: a preflight needs a keyless 2xx)
-            └─ resolve key src/core/keys.ts           resolveKey() — loads the key AND its scope once
-                 └─ authorize   src/server/app.ts     Auth.authorize() / requireAdmin() / requireMasterAdmin()
-                      └─ dispatch to the store kind  src/storage/kinds.ts   handlerFor(kind)
-                           └─ storage                src/storage/fs.ts    bytes on disk
+            └─ rate limit  src/server/ratelimit.ts     (AFTER CORS, BEFORE the key guard: bounds an UNKEYED flood)
+                 └─ resolve key src/core/keys.ts      resolveKey() — loads the key AND its scope once
+                      └─ authorize   src/server/app.ts     Auth.authorize() / requireAdmin() / requireMasterAdmin()
+                           └─ dispatch to the store kind  src/storage/kinds.ts   handlerFor(kind)
+                                └─ storage                src/storage/fs.ts    bytes on disk
 ```
 
 **The CORS step is the ONE place a browser on another origin is answered, and it sits
@@ -26,6 +27,19 @@ can fix that, because a preflight needs a 2xx the ORIGIN owns. The step is middl
 not a route: it adds no entry to `createApp().routes`, so PIN A1's route table is
 unchanged. A disallowed origin is NOT refused there — CORS is a browser-READ control,
 and the key guard behind it remains the perimeter (ledger row 21).
+
+**The rate-limit step sits BETWEEN the CORS step and the key guard, and BOTH halves of
+that position are load-bearing** (ledger rows 64, 65). BEFORE the guard, because a limiter
+behind authentication bounds only callers who already hold a key, while the flood a public
+endpoint actually faces is the one with NO key — and the key comparison is the work worth
+protecting. AFTER CORS, because the CORS step is what sets `Access-Control-Allow-Origin` and
+`Access-Control-Expose-Headers` on the way out, which is how a browser can READ a `429`'s
+`Retry-After`. The step is middleware, not a route: `createApp().routes` is unchanged, so
+PIN A1's route table is unchanged. A refusal is answered THERE (`c.json` with the one error
+envelope), so it never reads the body and never reaches a handler — a 429 has no side
+effects, which PIN R2 proves with a refused `PUT`. The exemptions (`/healthz`, the three UI
+assets and CORS preflights) and the identity order live in ONE module,
+`src/server/ratelimit.ts`, and the exempt asset paths are DERIVED from `UI_ASSETS`.
 
 Everything the project will ever do is either **core** (a step above `dispatch`) or a
 **store kind** (a handler at `dispatch`). There is no third mechanism.
@@ -62,9 +76,10 @@ checked against the minter's at all (the minter holds `admin`, which implies the
 
 | Concern | The one place | Notes |
 | --- | --- | --- |
-| HTTP app, built from injected deps | `src/server/app.ts` `createApp({dataRoot, dbPath, now, maxBytes, corsOrigins})` | Tests drive it with `app.request()`; no port is bound outside `main.ts` |
-| The only env read | `src/server/config.ts` `resolveConfig()` | Called by `main.ts` and the admin CLI, never at module import time. It parses AND validates `SERVERSTORE_CORS_ORIGINS` (`parseCorsOrigins()`): a bare origin per entry, unset = `*`, and a value that could never match a request fails the BOOT loudly rather than silently matching nothing |
+| HTTP app, built from injected deps | `src/server/app.ts` `createApp({dataRoot, dbPath, now, maxBytes, corsOrigins, rateLimit})` | Tests drive it with `app.request()`; no port is bound outside `main.ts`. An app built WITHOUT `rateLimit` gets `DEFAULT_RATE_LIMIT` (600/60 s), never "unlimited" — the ONE fixture passes `0` explicitly. |
+| The only env read | `src/server/config.ts` `resolveConfig()` | Called by `main.ts` and the admin CLI, never at module import time. It parses AND validates `SERVERSTORE_CORS_ORIGINS` (`parseCorsOrigins()`): a bare origin per entry, unset = `*`, and a value that could never match a request fails the BOOT loudly rather than silently matching nothing. It parses AND validates `SERVERSTORE_RATE_LIMIT` (`parseRateLimit()`): unset = 600, `0` = disabled, and any other non-integer/negative value — including SET-but-EMPTY, which `Number("")` would silently read as "disabled" — fails the BOOT loudly. |
 | **The CORS policy** (which browser origins may read this API) | `src/server/config.ts` `parseCorsOrigins()` for the allowlist; the step itself is the `app.use("*", …)` registered in `src/server/app.ts` **before** `app.use("*", guard)` | ONE step, and the ORDER is its whole reason to exist (ledger rows 56, 57): a preflight is answered `204` there with NO key, while every other request walks the pipeline unchanged and gets its headers on the way out. The values a browser sees — `Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS`, `Allow-Headers: authorization, x-api-key, content-type` (`authorization` named EXPLICITLY, because the `*` wildcard does not cover it), `Expose-Headers: x-serverstore-sha256`, `Max-Age: 600` — are the four constants at the top of `app.ts`. `Access-Control-Allow-Credentials` is NEVER sent. The allowlist reaches the app as a DEPENDENCY (`corsOrigins`), never through `process.env`, so which origins a given app answers is always an explicit argument. Pinned O1–O6 (`tests/cors.test.ts`) and D7 (`tests/entrypoint.test.ts` — the spawned service proves `main.ts` WIRES the config). |
+| **The rate limiter** (volume, per client identity) | `src/server/ratelimit.ts` `createRateLimiter()` + `clientIdentity()`; the limit is parsed by `src/server/config.ts` `parseRateLimit()`; the middleware is the `app.use("*", …)` registered in `src/server/app.ts` **after** the CORS step and **before** `app.use("*", guard)` | ONE module carries the whole feature (ledger rows 64/65): a per-identity FIXED WINDOW driven by the app's INJECTED `now` (so a pin freezes the clock and drives the exact boundary — never synthetic load), `limit === 0` disables it, and the bucket table is HARD-CAPPED (`DEFAULT_MAX_BUCKETS` 4096) with an expired sweep plus least-recently-used eviction (a used bucket is re-inserted, so a flooding identity keeps its bucket and is still refused). **Identity** is `CF-Connecting-IP`, else the FIRST `X-Forwarded-For` hop, else one shared `local` — NEVER the socket address, which is always the tunnel; the bucket key is truncated to `MAX_IDENTITY_LENGTH` so the attacker-controlled header LENGTH cannot inflate the table either. **Never limited:** `/healthz`, the three UI assets (paths DERIVED from `UI_ASSETS`) and CORS preflights (`OPTIONS` + `Access-Control-Request-Method`). A refusal is `429 rate_limited` in the one envelope, plus `Retry-After` (an integer in `[1, window]`), answered before the guard so an unkeyed flood is bounded and a refused write has no side effect. `retry-after` is in `Access-Control-Expose-Headers` (`CORS_EXPOSE_HEADERS`), without which a browser could not read the back-off. In-memory and per process: a restart forgets the counters. Pinned R1–R8 (`tests/ratelimit.test.ts`). |
 | Binding a socket | `src/server/main.ts` | `127.0.0.1` only; the host is NOT configurable |
 | Metadata schema | `src/core/db.ts` `openDatabase()` | One file `<dataRoot>/serverstore.db`; idempotent `CREATE TABLE IF NOT EXISTS` |
 | What a key IS | `src/core/keys.ts` | mint, hash, resolve, touch, revoke; `ssk_<id>_<secret>` |
@@ -202,6 +217,19 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
     no legal name can contain it — so `< prefix+U+FFFF` selects exactly the names that
     start with the prefix. If the charset or the collation ever changes, this bound and
     P7's regex are the two things to re-derive together.
+17. **The rate-limit step must stay between the CORS step and the key guard — moving it
+    either way breaks a different half.** BELOW `app.use("*", guard)` it would bound only
+    callers who already hold a key, which is not the flood a public endpoint faces (the
+    unkeyed flood IS the threat), and a preflight would be answered `401` before the
+    limiter ever saw it. ABOVE the CORS step, a `429` would be returned before the CORS
+    step could add `Access-Control-Expose-Headers` — so a browser would see the refusal but
+    NOT be able to read `Retry-After`, which is the difference between a rate limit and a
+    client-side outage (ledger row 64f). Two more traps worth naming: **eviction must
+    prefer the COLDEST bucket** (plain insertion-order eviction would evict an actively
+    flooding identity between its own requests and silently stop limiting it — the reason
+    `check` re-inserts a used bucket), and **the identity must never be the peer socket
+    address**, because the unit binds loopback behind cloudflared, so the socket is the
+    tunnel for every caller on Earth. Do not "improve" either one.
 
 ## Known debt (and where it is recorded)
 

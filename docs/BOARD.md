@@ -73,20 +73,11 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
-IN-FLIGHT | row=65 | session=(dispatching now) | worktree=worktrees/rate-limit |
-  | branch=feat/rate-limit | base=origin/main — resolved by the writer and recorded in its landing
-  | state=THE ONE WRITER. Scope: RATE LIMITING (design = ledger row 64, which is the authority; brief
-  |   `docs/briefs/slice-14-rate-limit.md`). ONE new module `src/server/ratelimit.ts` (no npm
-  |   dependency, injected clock, `limit === 0` disables, HARD-CAPPED bucket table with eviction and a
-  |   sweep), wired in `src/server/app.ts` in FRONT of the key guard, applying to the API only —
-  |   `/healthz`, the three UI assets and CORS preflights are NEVER limited. Identity:
-  |   `CF-Connecting-IP`, else the first `X-Forwarded-For` hop, else one `local` bucket (the socket is
-  |   always the tunnel). New code `rate_limited` (429) with `Retry-After`, so `retry-after` joins
-  |   `Access-Control-Expose-Headers` and the two CORS pins that assert that header by EQUALITY must be
-  |   updated to the FULL set in the same commit. `SERVERSTORE_RATE_LIMIT` default 600 per 60 s, `0` =
-  |   disabled, malformed = a LOUD boot failure. Pins R1–R8; the ONE fixture disables the limiter so
-  |   the existing 127 pins stay green. NOT in scope: per-key buckets, persistence, `/metrics`, and any
-  |   change to the guard, CORS policy or storage.
+(The row=65 `IN-FLIGHT` block is FOLDED by the LANDED row=65 record in `## Landed` — a mechanical
+union; docs/BOARD.md is the only file the fold touched, and no other landing's record was altered.
+Its closing sentence said "no npm dependency", which is true of the landing; the JUSTIFICATION for
+that choice in ledger row 64 first read "the project is dependency-free by policy", which is FALSE
+and was corrected in a fix-forward commit by the dispatcher before this landing was written.)
 
 (The row=61 `IN-FLIGHT` block, dropped by the dispatcher at row 62 as superseded and stale: slice 13
 landed, was independently verified with three own arms, and its worktree worktrees/object-prefix,
@@ -731,7 +722,7 @@ QUEUE-CLOSED | row=26 | RESOLVED 2026-09-27: a claim is now the explicit key `re
   vocabulary table carries the rule and this board lists its own claims explicitly.
 QUEUE-CLOSED | row=27 | DONE 2026-09-27: the deployment slice LANDED, was independently verified by
   the dispatcher (row 29), and is INSTALLED — runbook steps 0-5: the unit is enabled and active on
-  127.0.0.1:8477 only, the LOCAL probe is PASS exit 0, one ingress line validates as rule #5 →
+  127.0.0.1:8477 only, the LOCAL probe is PASS exit 0, one ingress line validates as rule #6 →
   http://127.0.0.1:8477, DNS answers, and the tunnel restarted with every existing hostname back.
   What remains is not installation: see the row=31 line below.
 QUEUE-CLOSED | row=31 | RESOLVED 2026-09-27: the owner added the Access bypass for
@@ -969,7 +960,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-64 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-65 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -986,20 +977,95 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   corrected — the prefix tip is what the live service now runs, 63 = closed with NO code change (my
   |   "board.sh counts the service" claim RETRACTED: the phantom was my own shell self-matching
   |   `pgrep -af`, now TRAP t6), 64 = RATE LIMITING designed (before the guard, header identity,
-  |   bounded table, exemptions, exposed `Retry-After`, 600/60 s default) and dispatched as row 65)
+  |   bounded table, exemptions, exposed `Retry-After`, 600/60 s default) and dispatched as row 65,
+  |   65 = the limiter LANDED (`src/server/ratelimit.ts`, wired after CORS and before the key guard,
+  |   `rate_limited`/429 + `Retry-After`, `SERVERSTORE_RATE_LIMIT` default 600/60 s with `0` = off,
+  |   pins R1-R8, two writer arms A=window-never-rolls->R3 and B=cap-removed->R6 with R2 green) — the
+  |   dispatcher's independent verification is OWED)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
   | live=https://store.futuremagic.de — PUBLIC and reachable (Access BYPASSED for this hostname
   |   only; the key is the only perimeter). Running main@0cfba87 since 2026-09-27 22:56:34 CEST;
   |   data root /home/administrator/serverstore-data; logs `journalctl --user -u serverstore -f`;
-  |   ingress rule #5 in /etc/cloudflared/config.yml; restart + re-probe rule = GUARD g5 /
+  |   ingress rule #6 in /etc/cloudflared/config.yml (`apps.futuremagic.de` sits above it; the
+  |   number read "rule #5" until ledger row 64 corrected it); restart + re-probe = GUARD g5 /
   |   docs/DEPLOYMENT.md §8
 ```
 
 ## Landed
 
 ```
+LANDED | row=65 | sha=66a3295 (the writer's CODE tip on the FINAL REBASED tree: `src/server/ratelimit.ts`,
+  | `src/server/app.ts`, `src/server/config.ts`, `src/server/main.ts`, `src/core/errors.ts`,
+  | `tests/ratelimit.test.ts`, `tests/helpers/server.ts`, `tests/cors.test.ts` and `docs/API.md` — the
+  | doc rides in the CODE commit because pin R8 reads it; the docs commit carrying THIS line, ledger
+  | row 65, `docs/SEAM-INDEX.md`, `docs/TESTING.md`, `docs/DEPLOYMENT.md` and
+  | `checkpoints/ratelimit-differential.{sh,out}` is its child — a commit cannot name its own sha. The
+  | code was committed as `a40ca91`, rebased onto the dispatcher's row-64 correction (`ca3fdf4`) as
+  | `6f55c32`, and rebased again onto the row-66 board commit (`1fd87c9`) as `66a3295`; every replay
+  | has an EMPTY content delta on the code (`git diff --stat a40ca91 66a3295 -- src tests docs/API.md`
+  | is empty), so the differential transcript's CONTROL line naming `a40ca91` describes exactly the
+  | code that lands)
+  | RATE LIMITING: THE PUBLIC ENDPOINT IS NOW BOUNDED, AND THE BOUND IS IN FRONT OF THE KEY GUARD.
+  | Writer session `session-c5def7df-e6b5-4966-b412-de19422b4775` (a subagent of dispatcher session
+  | dcd6176e-b4b9-4759-b64d-4c90d3495dfa), worktree `worktrees/rate-limit`, branch `feat/rate-limit`,
+  | base origin/main **04e9dc0** (resolved with `git rev-parse --short origin/main`), REBASED onto
+  | origin/main `ca3fdf4` before the docs commit. The dispatcher's `IN-FLIGHT | row=65` block is
+  | FOLDED by this record (a mechanical union; docs/BOARD.md is the only file the fold touched).
+  |   what it is=ONE module, `src/server/ratelimit.ts`: a per-IDENTITY FIXED window over the app's
+  |   INJECTED `now`, `limit === 0` = disabled, and a HARD-CAPPED bucket table (`DEFAULT_MAX_BUCKETS`
+  |   4096) that sweeps expired buckets and evicts the LEAST RECENTLY USED one — `check` re-inserts a
+  |   bucket it serves, so a flooder stays HOT and is evicted last (a plain insertion-order eviction
+  |   would forget the flooder between its own requests and silently stop limiting it). The bucket key
+  |   is truncated to `MAX_IDENTITY_LENGTH` (64), so the header LENGTH cannot inflate the table
+  |   either. Identity: `CF-Connecting-IP`, else the FIRST `X-Forwarded-For` hop, else one shared
+  |   `local`; NEVER the socket address (loopback + tunnel = the socket is the tunnel). Wired in
+  |   `src/server/app.ts` AFTER the CORS step and BEFORE `app.use("*", guard)`: before the guard so an
+  |   UNKEYED flood is bounded and a 429 never reads a body or reaches a handler; after CORS so the 429
+  |   carries the exposed `Retry-After`. Exempt: `/healthz`, the three UI assets (paths DERIVED from
+  |   `UI_ASSETS`) and CORS preflights. New code `rate_limited` (429) in `ERROR_CODES`; `retry-after`
+  |   joined `Access-Control-Expose-Headers`, which CHANGED the two CORS equality pins to the FULL set
+  |   (`x-serverstore-sha256, retry-after`) — never relaxed to `toContain`.
+  |   config=`SERVERSTORE_RATE_LIMIT` (default 600 per 60 s, `0` disables, window NOT configurable in
+  |   v1); parsed by `config.ts parseRateLimit()`; a non-integer/negative/NaN/`600x` value — and
+  |   SET-but-EMPTY, which `Number("")` would read as DISABLED — fails the BOOT loudly.
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` -> exit 0 (GREEN) · 14 test files · 142
+  | tests · 2.41s · raw log `.gate-logs/gate.log`; no memory ceiling needed (GUARD g3 still open and
+  | still honest). The DISPATCHER's independent gate and its own arms are OWED.
+  | arms=checkpoints/ratelimit-differential.sh, the gate lock held across BOTH arms, sha256 printed
+  | before and after, restore from HEAD in an `EXIT INT TERM` trap, a control BEFORE and AFTER, raw
+  | transcript `checkpoints/ratelimit-differential.out` (key-shaped strings scrubbed — ledger row 21):
+  |   A the reset comparison NEUTRALISED so the window never rolls, src/server/ratelimit.ts
+  |     `810abb51…c2753` -> `e80048e5…c355a`, RED on `PIN R3: the window rolls` — `expected 429 to be
+  |     200`; R1/R2/R4–R8 stayed GREEN (the limiter still counts inside the window).
+  |   B the bucket cap REMOVED (`if (buckets.size >= maxBuckets) evictOldest()` -> `if (false) …`),
+  |     src/server/ratelimit.ts `810abb51…c2753` -> `9814f184…df0b7f`, RED on BOTH R6 tests (`expected
+  |     500 to be less than or equal to 8`; `expected 4596 to be less than or equal to 4096`) while
+  |     **PIN R2 stayed GREEN** — the arm isolates the BOUND, not the limiter.
+  |   Both controls GREEN (14 files · 142 tests), the file restored byte-identical, both arms cheap
+  |   exit=0 (no `error TS`), no VOID probe.
+  | brief_correction=THE BRIEF REPEATED A STALE DOC CLAIM: it says `docs/DEPLOYMENT.md` calls the
+  |   store's ingress "rule #5" and points at `docs/BOARD.md:964`. A grep of `docs/` finds `rule #5`
+  |   ONLY in `docs/BOARD.md` lines 734 and 993 (and ledger row 31); DEPLOYMENT did not repeat it, and
+  |   964 is not the line. The two BOARD places are corrected to `#6` (verified against
+  |   `/etc/cloudflared/config.yml`: six hostname rules, `apps.futuremagic.de` above `store`), and the
+  |   correct ordinal is ADDED to the DEPLOYMENT ingress section. Also: the brief's arm (a) says
+  |   "invert the reset comparison"; a LITERAL inversion rolls the window on EVERY request and reddens
+  |   R1/R2 too, so arm A NEUTRALISES the comparison (window never rolls) and reddens R3 alone.
+  | docs_amended=docs/DECISION-LEDGER.md (row 65), docs/SEAM-INDEX.md (pipeline, the limiter row,
+  |   gotcha 17), docs/TESTING.md (R1–R8, the 2-arm differential, the CORS-pin change and why it was
+  |   not relaxed, honest unknowns), docs/API.md (rate-limiting section, error table, Limits table,
+  |   route statuses, Non-goals), docs/DEPLOYMENT.md (env table + the ingress ordinal), docs/BOARD.md.
+  | copies=COPIES: 1 — checked, no duplication (grepped `rate.?limit`, `retry-after`, `bucket`,
+  |   `CF-Connecting-IP`, `x-forwarded-for` across src/ tests/ docs/: the limit is parsed in ONE place,
+  |   the table/identity/exemptions live in ONE module, the middleware is registered in ONE place, and
+  |   the exposed header value is the ONE constant `CORS_EXPOSE_HEADERS`).
+  | retire_owed=worktree `worktrees/rate-limit` and branch `feat/rate-limit` are the DISPATCHER's to
+  |   retire after it verifies this landing. NOT claimed retired here: the branch still exists (the
+  |   writer is on it), so the `retired_branch=` key must not be used (board.sh would correctly report
+  |   BOARD STALE).
+
 LANDED | row=57 | sha=bd55b7e (the VERIFIED CODE tip ON THE REBASED TREE: `src/server/config.ts`,
   | `src/server/app.ts`, `src/server/main.ts`, `tests/cors.test.ts`, `tests/entrypoint.test.ts`,
   | `tests/helpers/server.ts`, `checkpoints/cors-differential.sh`; the docs commit carrying THIS

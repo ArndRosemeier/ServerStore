@@ -93,6 +93,11 @@ Two properties matter:
   rule below `http_status:404` is dead configuration that looks correct.
 - **Add nothing else.** One hostname is the decision (ledger row 7: one subdomain, one
   master key). A second hostname is a second perimeter nobody has been asked to accept.
+- **The store is the SIXTH hostname rule in the live file**, not the fifth:
+  `apps.futuremagic.de` was added ABOVE it (checked in `/etc/cloudflared/config.yml`,
+  ledger row 64 — worth stating because "rule #5" was repeated in the board and here long
+  after it had stopped being true). What matters is the ORDER relative to
+  `http_status:404`, never the ordinal; the ordinal is only a way to point at the line.
 
 ## 4. Point DNS at the tunnel
 
@@ -184,6 +189,23 @@ survives every step above. Deleting it destroys every store and every key.
 | The tunnel config | `/etc/cloudflared/config.yml` (root-owned) |
 | The service logs | `journalctl --user -u serverstore -f` |
 | The port | `8477` (`SERVERSTORE_PORT` in the unit) |
+
+### Environment variables (what the unit may set)
+
+The unit sets `SERVERSTORE_DATA_ROOT` and `SERVERSTORE_PORT`. Everything else is
+OPTIONAL and unset on this host, so the defaults below are what the live service runs —
+all of them are parsed AND validated at boot by `src/server/config.ts`, and a malformed
+value fails the start loudly rather than falling back (`journalctl --user -u serverstore`).
+
+| Variable | Unset means | Notes |
+| --- | --- | --- |
+| `SERVERSTORE_MAX_BYTES` | `67108864` (64 MiB) | Request body cap, enforced on the stream. |
+| `SERVERSTORE_CORS_ORIGINS` | `*` (every origin) | Comma-separated bare origins; safe here because the API carries no cookies. |
+| `SERVERSTORE_RATE_LIMIT` | `600` | Requests per CLIENT identity per 60-second window. `0` disables rate limiting entirely (the operator kill-switch); a non-integer or negative value fails the boot. The window is not configurable. |
+| `SERVERSTORE_HOST` | — | **Deliberately absent**: the bind host is a constant (`127.0.0.1`), never configuration (GUARD g1, PIN D6). |
+
+The limiter is in-memory, so **restarting the service clears the counters**; that is the
+one operational consequence of this variable and it is stated in `docs/API.md`.
 
 ## Exit codes are the vocabulary
 

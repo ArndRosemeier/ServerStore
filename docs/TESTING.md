@@ -757,6 +757,98 @@ literal, and the transcript is from the fixed harness.
   as the empty string and is refused by P3's rule; the second is resolved by Hono to one
   value. Neither is asserted, and neither is documented.
 
+## The rate-limit pins (slice 14, R1–R8)
+
+Slice 14 (ledger rows 64/65) bounds request volume on a public endpoint whose only
+perimeter is a key. The ONE new module is `src/server/ratelimit.ts`; the ONE new
+middleware sits **after** the CORS step and **before** the key guard (that order is the
+feature — see `docs/SEAM-INDEX.md`). The behaviour half is driven through the real app on
+the ONE fixture set with a **small limit and the fixture's INJECTED clock**, so the
+boundary is proved deterministically and **no load is generated** against anything.
+
+**The ONE fixture constructs every app with the limiter DISABLED (`rateLimit: 0`)** —
+the operator kill-switch — so the 127 pins written before the limiter existed keep
+passing. That is explicit and per-app, NOT a weakened limiter constant: the limiter's own
+pins pass `rateLimit: 3` (or `2`/`1`/`600`) into the same fixture, and the module pins call
+`createRateLimiter` directly with an injected clock.
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| R1 | **under the limit, nothing changes** — the first `limit` authenticated requests are `200` with the SAME body an unlimited server returns, and **no rate-limit header is invented on a success** | `tests/ratelimit.test.ts` (`PIN R1`) |
+| R2 | the request after the limit is **`429 rate_limited` with `Retry-After`** (an integer ≥ 1, ≤ the window) and **NO side effect**: a refused `PUT` leaves the `objects` table empty and writes no blob. A SECOND test proves the refusal is **in front of the key guard** — an unkeyed call over the limit is `429`, not the `401` it would otherwise get | `tests/ratelimit.test.ts` (`PIN R2`) |
+| R3 | **the window rolls** — one second before the boundary the identity is still `429` with `Retry-After` at its floor (`1`); AT the boundary the same identity is served `200` again with no `Retry-After`; the back-off never exceeds the window | `tests/ratelimit.test.ts` (`PIN R3`) |
+| R4 | **identities are independent** — a second `CF-Connecting-IP` is unaffected; `X-Forwarded-For`'s FIRST hop is the identity, so a changed SECOND hop cannot evade; `CF-Connecting-IP` WINS when both are present; and the header order + the shared `local` fallback live in ONE function (`clientIdentity`) that never consults a socket address | `tests/ratelimit.test.ts` (`PIN R4`) |
+| R5 | **the exemptions are real** — `/healthz`, `/`, `/app.js`, `/app.css` and a CORS preflight all keep answering while the API identity is over its limit, and the API is STILL `429` afterwards (so these are exemptions, not a dead limiter). A second test covers the ONE path on which a preflight reaches the limiter — a DISALLOWED origin's preflight, which falls through the CORS step — and proves it gets the guard's `401`, never a `429` | `tests/ratelimit.test.ts` (`PIN R5`) |
+| R6 | **the table is BOUNDED** — with `maxBuckets: 8` and 500 distinct identities the live buckets never exceed the cap, AND a flooding identity interleaved with cold ones is STILL refused (**eviction must not silently disable the limit**; the flooding bucket is refreshed on every use, so eviction takes the cold buckets first). A second test floods `DEFAULT_MAX_BUCKETS + 500` identities against the DEFAULT cap and proves the truncation of an over-long identity key (an attacker-controlled header LENGTH cannot inflate the table) | `tests/ratelimit.test.ts` (`PIN R6`) |
+| R7 | **`SERVERSTORE_RATE_LIMIT=0` disables it completely** (700 unkeyed requests, none refused); the **bare default is 600 per 60 s** (`resolveConfig({}).rateLimit === 600`, and the 600th request passes while the 601st is `429`); and a **malformed value fails the BOOT loudly** (`abc`, `-1`, `1.5`, `""`, whitespace, `NaN`, `Infinity`, `600x` all make `resolveConfig` throw, while unset/`0`/`600`/`" 42 "` parse) | `tests/ratelimit.test.ts` (`PIN R7`) |
+| R8 | **the documented contract matches the code** — `docs/API.md`'s error table carries `rate_limited`/`429`, the Limits table carries `SERVERSTORE_RATE_LIMIT` with its default, every API route row lists `429` while `/healthz` and the three assets do NOT (the exemption is part of the contract), the response mentions `retry-after`, and the stale "no rate limit" sentences are GONE. PIN A1–A3 stay green in the same gate | `tests/ratelimit.test.ts` (`PIN R8`) |
+
+**The CORS pins were CHANGED in the same commit, deliberately and not relaxed.**
+`retry-after` joined `Access-Control-Expose-Headers` (row 64f) because `Retry-After` is
+**not** a CORS-safelisted response header: without exposing it, a browser sees the `429`
+but cannot read how long to wait. Two pins in `tests/cors.test.ts` (PIN O2, both halves)
+asserted that header by **EQUALITY** as `x-serverstore-sha256`; they now assert the FULL
+set, `x-serverstore-sha256, retry-after`. They were **not** relaxed to `toContain` — the
+complete set IS the claim, and a relaxed pin is how an unintended second header arrives
+unnoticed. No other CORS assertion changed.
+
+## The rate-limit differential (2 arms + two controls)
+
+Machinery: `checkpoints/ratelimit-differential.sh`. Raw transcript:
+`checkpoints/ratelimit-differential.out` (per-arm raw logs are `*.log`, so gitignored).
+
+Same shape as the earlier differentials — the slice is committed FIRST (the transcript's
+CONTROL line names the pre-rebase code tip `a40ca91`, which a rebase onto the dispatcher's
+row-64 correction replayed as `6f55c32` and the pre-push rebase onto the row-66 board commit
+replayed again as `66a3295` — each replay with an EMPTY content delta on the code
+(`git diff --stat a40ca91 66a3295 -- src tests docs/API.md` is empty), so the gate and the
+arms ran on exactly the code that lands), the lock `scripts/gate.sh` takes is held
+across every arm, the mutated file's sha256 is printed before and after, restore is
+`git checkout HEAD --` inside an `EXIT INT TERM` trap, and a control runs BEFORE **and**
+AFTER.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| A | **the window never rolls** — the reset comparison (`at >= existing.resetAt`) is neutralised, so a bucket that should have expired is treated as live forever | `src/server/ratelimit.ts` | `810abb51…c2753` → `e80048e5…c355a` | `PIN R3: the window rolls — the same identity is served again and Retry-After never exceeds the window` — `expected 429 to be 200`. **R1/R2/R4/R5/R6/R7/R8 all stayed GREEN**: the limiter still counts and refuses inside the window, so the arm isolates the WINDOW ROLL, not "the limiter is gone" |
+| B | **the bucket cap is REMOVED** (`if (buckets.size >= maxBuckets) evictOldest()` → `if (false) …`), so the table grows without limit while the counter still works | `src/server/ratelimit.ts` | `810abb51…c2753` → `9814f184…df0b7f` | BOTH R6 tests: `expected 500 to be less than or equal to 8` and `expected 4596 to be less than or equal to 4096`. **PIN R2 stayed GREEN**, which is exactly what isolates the BOUND rather than the limiter; R1/R3/R4/R5/R7/R8 stayed green too |
+| control | none — the committed tree `a40ca91` (replayed as `66a3295`), same lock held | — | — | **GREEN**: 14 files · 142 tests |
+| control | none — the restored tree, file back at its before hash | — | `810abb51…c2753` | **GREEN**: 14 files · 142 tests |
+
+- Every arm ran the cheap tier GREEN (`cheap exit=0`, no `error TS`) and the full tier RED
+  (`full exit=1`), and each arm's failure block names the pin above — so no arm is a probe
+  that "went red somewhere".
+- Both arms mutate the SAME file at DIFFERENT anchors; their after-hashes DIFFER
+  (`e80048e5…` vs `9814f184…`) and they redden DIFFERENT pins (R3 vs R6), so neither is a
+  duplicate arm. No hash was unchanged and the file was restored byte-identical.
+- The writer's own gate on the identical tree: `bash scripts/gate.sh` → **exit 0 GREEN ·
+  14 files · 142 tests · 2.41s** (raw log `.gate-logs/gate.log`).
+
+### Honest unknowns (this slice)
+
+- **In-memory means a restart forgets.** The counters live in this process only. A service
+  restart (a deploy, `GUARD g5`) resets every bucket to zero, so a patient attacker who
+  times a restart gets a fresh window. A persistent counter is deliberately NOT built
+  (row 64c), and nothing here claims otherwise.
+- **One process means no cross-process limit.** There is one service process; if a second
+  were ever started (it would fight over the same database), the two would each allow
+  `SERVERSTORE_RATE_LIMIT`. Nothing tests a multi-process deployment because none exists.
+- **The identity is only as trustworthy as the tunnel.** `CF-Connecting-IP`/the first
+  `X-Forwarded-For` hop are what cloudflared supplies; a process ON this box can spoof
+  either and evade the limit, which row 64b accepts explicitly (it could already reach
+  loopback). These pins drive the headers directly, so they prove the ORDER and the bucket
+  behaviour, **not** that cloudflared is the only ingress.
+- **No live load test, by rule.** The boundary is proved with the injected clock. The host
+  rule forbids synthetic load against `https://store.futuremagic.de`, so nothing here
+  verifies the deployed service's actual limit under real traffic — and nothing should.
+- **The `Retry-After` header's browser readability is a header assertion, not a browser
+  run.** R5 proves the header is on the `429` and PIN O2 proves `retry-after` is exposed;
+  the half that actually reads it in a page is unexercised, like every other browser half
+  in this project (the OWED headless-browser test).
+- **The bucket cap is a memory bound, not a measured one.** R6 asserts the COUNT stays at
+  the cap; it does not measure resident bytes. With `MAX_IDENTITY_LENGTH = 64` the keys are
+  bounded too, so worst case is ~4096 × 64 bytes of keys plus counts — asserted by
+  construction, not by a memory probe.
+
 ## The full gate
 
 `bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.

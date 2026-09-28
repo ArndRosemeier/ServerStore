@@ -1,0 +1,74 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (a40ca91) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/rate-limit/.diff-harness/control)
+  control GREEN:  Test Files  14 passed (14)       Tests  142 passed (142) 
+=== ARM A — the reset comparison neutralised: the WINDOW NEVER ROLLS ===
+  file:   src/server/ratelimit.ts
+  sha256: 810abb51948460c1d7d4d7d75ad3efab4fe216ca2e772650290494a613ec2753  (before)
+  sha256: e80048e593eb0849bdd478d9f8bce6baf403602ea25a07237addc89c80cc355a  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/rate-limit/.diff-harness/arm-a)
+     × PIN R3: the window rolls — the same identity is served again and Retry-After never exceeds the window 12ms
+   ✓ pin R4: identities are independent (2)
+     ✓ PIN R4: identities are independent — CF-Connecting-IP, then the FIRST X-Forwarded-For hop 9ms
+     ✓ PIN R4: the identity order and the `local` fallback live in ONE function, and never the socket address 1ms
+   ✓ pin R5: the exemptions are real (2)
+     ✓ PIN R5: the exemptions are real — /healthz, the three UI assets and a preflight answer while the API identity is over its limit 23ms
+     ✓ PIN R5: a preflight from a DISALLOWED origin is exempt too — it reaches the guard's 401, never a 429 5ms
+   ✓ pin R6: the table is BOUNDED (2)
+     ✓ PIN R6: many distinct identities stay at the cap while a flooding identity is STILL refused 6ms
+--
+ FAIL  tests/ratelimit.test.ts > pin R3: the window rolls > PIN R3: the window rolls — the same identity is served again and Retry-After never exceeds the window
+AssertionError: expected 429 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: src/server/ratelimit.ts back at HEAD; lock released
+=== ARM B — the bucket cap REMOVED: the table grows without limit ===
+  file:   src/server/ratelimit.ts
+  sha256: 810abb51948460c1d7d4d7d75ad3efab4fe216ca2e772650290494a613ec2753  (before)
+  sha256: 9814f184cdbeba328bd6ae6240d6a6536f1255f05f9a0d2a58222fa874df0b7f  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/rate-limit/.diff-harness/arm-b)
+     × PIN R6: many distinct identities stay at the cap while a flooding identity is STILL refused 15ms
+     × PIN R6: the DEFAULT cap bounds a flood, and an over-long identity cannot inflate the table 163ms
+   ✓ pin R7: SERVERSTORE_RATE_LIMIT (3)
+     ✓ PIN R7: SERVERSTORE_RATE_LIMIT=0 disables it completely 88ms
+     ✓ PIN R7: the bare default is 600 per 60 s — the 600th passes and the 601st is refused 60ms
+     ✓ PIN R7: a malformed value fails the BOOT loudly rather than defaulting 2ms
+   ✓ pin R8: the documented contract matches the code (2)
+     ✓ PIN R8: docs/API.md documents rate_limited/429, the env var, and the exemptions 2ms
+     ✓ PIN R8: the stale 'no rate limit' sentences are gone 0ms
+--
+ FAIL  tests/ratelimit.test.ts > pin R6: the table is BOUNDED > PIN R6: many distinct identities stay at the cap while a flooding identity is STILL refused
+AssertionError: expected 500 to be less than or equal to 8
+ ❯ tests/ratelimit.test.ts:256:33
+    254|     // Half one: MANY distinct identities never grow the table past th…
+    255|     for (let i = 0; i < 500; i++) limiter.check(`10.0.0.${i}`);
+    256|     expect(limiter.bucketCount).toBeLessThanOrEqual(8);
+     × PIN R6: the DEFAULT cap bounds a flood, and an over-long identity cannot inflate the table 163ms
+   ✓ pin R7: SERVERSTORE_RATE_LIMIT (3)
+     ✓ PIN R7: SERVERSTORE_RATE_LIMIT=0 disables it completely 88ms
+     ✓ PIN R7: the bare default is 600 per 60 s — the 600th passes and the 601st is refused 60ms
+     ✓ PIN R7: a malformed value fails the BOOT loudly rather than defaulting 2ms
+   ✓ pin R8: the documented contract matches the code (2)
+     ✓ PIN R8: docs/API.md documents rate_limited/429, the env var, and the exemptions 2ms
+     ✓ PIN R8: the stale 'no rate limit' sentences are gone 0ms
+ ✓ tests/entrypoint.test.ts (5 tests) 1089ms
+--
+ FAIL  tests/ratelimit.test.ts > pin R6: the table is BOUNDED > PIN R6: the DEFAULT cap bounds a flood, and an over-long identity cannot inflate the table
+AssertionError: expected 4596 to be less than or equal to 4096
+ ❯ tests/ratelimit.test.ts:280:33
+    278|     });
+    279|     for (let i = 0; i < DEFAULT_MAX_BUCKETS + 500; i++) limiter.check(…
+    280|     expect(limiter.bucketCount).toBeLessThanOrEqual(DEFAULT_MAX_BUCKET…
+RESTORED: src/server/ratelimit.ts back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/rate-limit/.diff-harness/control2)
+  control GREEN:  Test Files  14 passed (14)       Tests  142 passed (142) 
+  sha256: 810abb51948460c1d7d4d7d75ad3efab4fe216ca2e772650290494a613ec2753  (back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN R3 (the window never rolled); arm B RED on PIN R6 (the table grew past its cap) with R2 GREEN; both controls GREEN. No VOID probe.
+NOTE both arms mutate the SAME file (src/server/ratelimit.ts) at DIFFERENT anchors, so their after-hashes differ.
+logs: /home/administrator/projects/ServerStore/worktrees/rate-limit/.diff-harness/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/rate-limit/checkpoints/ratelimit-differential.out
+RESTORED: src/server/ratelimit.ts back at HEAD; lock released
