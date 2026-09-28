@@ -31,10 +31,16 @@ The owner's other project hit the 64-character name limit. His decision (row 87)
 
 ## What to change (and it is deliberately small)
 
-1. **`src/core/validate.ts` — the ONE rule.** `NAME_MAX_LENGTH` 64 → **1024**, the pattern
-   `[a-z0-9][a-z0-9._-]{0,63}` → **`[a-z0-9][a-z0-9._-]{0,1023}`**, the doc-comments that quote either
-   number, and the **refusal message** — which embeds the pattern and the maximum, so a message left
-   saying 64 while the parser accepts 1024 is a lie in the app's own error surface.
+1. **`src/core/validate.ts` — make the limit ONE piece of data, not four copies.** The owner's
+   correction (ledger row 87b) supersedes the original wording here: this must NOT be done by editing
+   the regex literal and the two messages. Today the number lives in the constant AND as `{0,63}` in the
+   pattern AND as a retyped pattern string in the charset message AND as `65` in the tests.
+   **The corrected shape:** name the alphabet and the maximum (`NAME_CHARSET`, `NAME_MAX_LENGTH` — the
+   length being the ONLY number), BUILD the pattern from them (`new RegExp(...)` over
+   `${NAME_MAX_LENGTH - 1}`), and have both refusal messages and any other surface read the pattern's own
+   SOURCE rather than retyping it. A future change to the limit must then be ONE edit that cannot leave
+   a stale pattern or a lying message behind. Tests derive their boundary from the constant
+   (`NAME_MAX_LENGTH + 1`), never `65`/`1025`.
    **The widening applies to store names, entry names, the `prefix=` filter and key ids AT ONCE**,
    because `parseName()` is the one parser on purpose. State that as a consequence in the docs (a
    1024-character STORE name is legal now) rather than adding a second, shorter limit for stores — a
@@ -68,10 +74,17 @@ The owner's other project hit the 64-character name limit. His decision (row 87)
    quotes the SAME pattern the parser enforces (read the pattern out of the message and check a
    name built from it, or assert the message against the exported constant — but a hard-coded "1024"
    in the test is not enough: drifting the CODE to 1024 and leaving the MESSAGE at 64 must fail).
-4. `PIN Z4: the docs state 1024` — `docs/API.md`'s charset line and limits sentence and
-   `docs/STORAGE.md`'s limits bullet say 1024, and no CURRENT doc still claims 64 (a doc pin, in the
-   spirit of PIN A2/A3; the HISTORICAL rows/board/briefs are exempt by design and must not be
-   "fixed" to make this pass).
+4. `PIN Z4: the docs track the CONSTANT` — `docs/API.md`'s charset line and limits sentence and
+   `docs/STORAGE.md`'s limits bullet state the limit the CODE enforces, asserted by reading the
+   exported constant rather than a literal, so a future change to the limit fails this pin until the
+   prose moves with it (a doc pin in the spirit of PIN A2/A3; the HISTORICAL rows/board/briefs are
+   exempt by design and must not be "fixed" to make this pass).
+   **AND THE PIN THAT CARRIES THE OWNER'S POINT — `PIN Z6: the bound lives in exactly ONE place under
+   `src/`** — a grep-level claim (in the spirit of PIN Y8): the numeric maximum must not appear a second
+   time as a literal anywhere under `src/` (no `{0,1023}` literal, no retyped pattern string, no second
+   constant), so "changing the limit is one constant" is a TESTED property and a future writer who
+   retypes the number fails the gate. State in the docs which occurrences are legitimately exempt (if
+   any) rather than weakening the pin.
 5. `PIN Z5: the console renders and still works with a 1024-character name` — in the REAL browser
    (the harness from rows 68/84): seed a 1024-character entry, open the store, see the row, and delete
    it through the UI with the API read back. The page must not overflow or break (assert the row is
