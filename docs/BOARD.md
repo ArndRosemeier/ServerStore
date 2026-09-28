@@ -64,13 +64,12 @@ reconciled: 0410a87 · 2026-09-28T13:45Z — the slice-19 (test-only) VERIFIED C
   quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight, and **NOTHING IS QUEUED** — the owner has no open request for the first
-  |   time since the store went live. Slices 12–19 are LANDED, VERIFIED and RETIRED. Everything he asked
-  |   for is live: the console's four destructive actions (delete a key including a revoked one, look
-  |   inside a store with a server-side prefix filter and delete an entry, empty a store, delete a store
-  |   — the last two needing the store name TYPED), on the migrated SQLite core (one database, WAL, keys
-  |   and item bytes together). The console is served from disk per request, so a reload shows it.
-  |   LIVE at https://store.futuremagic.de/; probe PASS.
+  | state=ONE writer in flight (row 88: NAMES UP TO 1024 CHARACTERS — the owner's decision after his
+  |   other project hit the 64-char cap; worktree worktrees/name-limit, branch feat/name-limit; design =
+  |   ledger row 87). The 64 MiB item cap is KEPT deliberately (row 86). Slices 12–19 are LANDED,
+  |   VERIFIED and RETIRED, and everything the owner asked for is live: the console's four destructive
+  |   actions on the migrated SQLite core (one database, WAL, keys and item bytes together), console
+  |   served from disk per request so a reload shows it. LIVE at https://store.futuremagic.de/.
   |   THE OWNER'S ONE OUTSTANDING ACTION: make a real key-bearing call (the dispatcher holds no key) —
   |   that also retires the pre-migration copy at
   |   `/home/administrator/serverstore-data.backup-pre-migration`.
@@ -79,6 +78,22 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
+
+IN-FLIGHT | row=88 | session=(dispatching now) | worktree=worktrees/name-limit |
+  | branch=feat/name-limit | base=origin/main — resolved by the writer and recorded in its landing
+  | state=THE ONE WRITER. Scope: the NAME LENGTH only (design = ledger row 87, brief
+  |   `docs/briefs/slice-20-name-limit.md`). `NAME_MAX_LENGTH` 64 → 1024 and the pattern
+  |   `{0,63}` → `{0,1023}` in `src/core/validate.ts`, plus the refusal MESSAGE (which embeds both and
+  |   would otherwise keep saying 64) and the doc-comments — ONE rule, so store names, entry names, the
+  |   `prefix=` filter and key ids widen TOGETHER; stated as a consequence, not smuggled. NO schema
+  |   change, NO migration (a widening: every stored name stays legal). `src/server/ratelimit.ts`'s
+  |   `MAX_IDENTITY_LENGTH = 64` is a DIFFERENT 64 and MUST NOT be touched. Docs that state the number
+  |   move with the code (`API.md` x3, `STORAGE.md`, a schema comment in the tests); the OLDER ledger
+  |   rows, board lines and briefs are HISTORY and stay as written. The console's entry/store rows were
+  |   built when 64 was the maximum, so CSS + a browser pin must prove a 1024-char name cannot break the
+  |   page. Pins Z1–Z5 (boundary BOTH ways, one rule for prefix and stores, the message tells the truth,
+  |   the docs say 1024, and the real browser renders + deletes a 1024-char entry). NOT in scope: the
+  |   64 MiB item cap, the charset, and any storage/schema change.
 
 (The row=84 `IN-FLIGHT` block is FOLDED by the LANDED row=84 record in `## Landed` — the
 writer's own record, added in the docs child of landing `0410a87`. Its scope statement is
@@ -975,7 +990,7 @@ QUEUE-CLOSED | row=78 | **STORAGE MODEL SETTLED BY THE OWNER (ledger row 78): SQ
   | one durable piece of that research is the WAL/`busy_timeout`/`BEGIN IMMEDIATE` finding (row 77)
   | plus the boundary it names: SQLite serializes WRITERS, so "concurrent writers or a second app
   | instance" is the requirement that would reopen this, and LMDB would not satisfy it either.
-QUEUE | row=87 (only if the other project needs it) | **TWO LIMITS REPORTED BY THE OWNER'S OTHER PROJECT**
+QUEUE-CLOSED | row=87 | **DECIDED: names up to 1024 chars, item cap KEPT at 64 MiB (ledger row 87), dispatched as row 88.** Original intake note follows: | **TWO LIMITS REPORTED BY THE OWNER'S OTHER PROJECT**
   |   (ledger row 86): names are capped at 64 characters and request bodies at 64 MiB — BOTH CONFIRMED in
   |   code, and both live (the unit sets no `SERVERSTORE_MAX_BYTES`, so 64 MiB is what the host enforces).
   |   The NAME LENGTH is policy (the constant is referenced only in `validate.ts`; entry names never were
@@ -1139,7 +1154,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-86 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-87 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
