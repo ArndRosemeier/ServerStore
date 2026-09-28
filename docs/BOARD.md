@@ -888,7 +888,19 @@ QUEUE | row=72 | **OPEN FORK, THE OWNER'S CHOICE (ledger row 72): items inside S
   second kind (`inline`) is an addition, not a rewrite. Named cost: two kinds to pin, and the kind seam
   must first absorb DELETE (today the route runs `DELETE FROM objects` directly). NOT dispatched: this is
   a product fork with a real cost either way, so it goes to the owner.
-QUEUE | row=74 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
+  EXTENDED (ledger row 74): the owner answered *"How about postgres?"*. MEASURED — Postgres is not
+  installed as a package, but Docker is up and a `postgres:16-alpine` container (`guac-db`, Guacamole)
+  has run for 10 days, so a store database costs a SECOND container rather than an install. Real gains:
+  MVCC (a big write blocks no reader), TOAST/`bytea` with streaming, `pg_dump`/PITR backups, queryable
+  items, multi-instance headroom. Real costs: the store is a HOST process so the container must publish
+  on LOOPBACK (`-p 127.0.0.1:5433:5432`, never 0.0.0.0); the DB password cannot live in the tracked
+  unit file (an `EnvironmentFile` outside the repo, itself to be backed up); a `pg` dependency, a
+  PG-dialect schema and a much heavier test harness (159 tests run in 2.3 s against in-process
+  `node:sqlite` today); a backup job and runbook; and a SECOND failure domain. REJECTED: pointing the
+  store at the existing `guac-db` (couples it to Guacamole's container, version and blast radius).
+  RECOMMENDED: the kind seam already IS a backend seam — add the SQLite `inline` kind now (zero new
+  services, removes the files), and add a Postgres kind when a concrete need appears.
+QUEUE | row=75 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
   FOR — delete a key, look inside a store (names only) and delete an entry, empty a store, delete a
   store. UI-ONLY: `GET /stores/{store}/objects` already lists entries (and takes `prefix=`), and
   `DELETE /stores/{store}/objects/{name}` already deletes one, so this slice adds the new routes from
@@ -1038,7 +1050,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-73 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-74 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
