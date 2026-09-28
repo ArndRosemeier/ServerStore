@@ -15,6 +15,7 @@ export const ERROR_CODES = [
   "unauthorized",
   "forbidden",
   "not_found",
+  "rate_limited",
   "store_exists",
   "name_taken",
   "unsupported_store_kind",
@@ -32,6 +33,10 @@ const STATUS: Record<ErrorCode, number> = {
   unauthorized: 401,
   forbidden: 403,
   not_found: 404,
+  // 429 — the limiter refused this client for now. The response carries `Retry-After`
+  // (ledger row 64f); it is the only code emitted from a middleware rather than a route,
+  // because the limiter runs in FRONT of the key guard (row 64a).
+  rate_limited: 429,
   store_exists: 409,
   name_taken: 409,
   unsupported_store_kind: 500,

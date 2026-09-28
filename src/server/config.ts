@@ -13,6 +13,21 @@ export const DEFAULT_PORT = 8477;
 export const DEFAULT_HOST = "127.0.0.1";
 export const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 
+/**
+ * The rate limiter's default: 600 requests per identity per window (ledger row 64g).
+ * A JUDGEMENT, not a measurement — roughly 10 req/s sustained, about 10× a turn-based
+ * client's plausible peak and well below what an attacker needs to matter. It is
+ * env-overridable, so the owner can change it without a code change.
+ */
+export const DEFAULT_RATE_LIMIT = 600;
+
+/**
+ * The window length, in milliseconds. NOT configurable in v1 (row 64g): one knob is
+ * enough for the threat, and a second one is a second state to pin. It lives HERE so
+ * "what is the window" has exactly one answer.
+ */
+export const RATE_LIMIT_WINDOW_MS = 60_000;
+
 /** The wildcard CORS policy: answer every origin. Safe here — no cookies (ledger 57). */
 export const CORS_WILDCARD = "*";
 
@@ -29,6 +44,13 @@ export interface Config {
    * running app answers is always an explicit argument.
    */
   readonly corsOrigins: readonly string[];
+  /**
+   * Requests allowed per client identity per {@link RATE_LIMIT_WINDOW_MS} window; `0`
+   * disables rate limiting entirely (the operator kill-switch, ledger row 64g). It
+   * reaches the app as a dependency — `createApp` never reads `process.env` — so a
+   * running app's limit is always an explicit argument.
+   */
+  readonly rateLimit: number;
 }
 
 function parsePositiveInt(raw: string | undefined, name: string, fallback: number): number {
@@ -109,6 +131,40 @@ export function parseCorsOrigins(raw: string | undefined): readonly string[] {
   return entries;
 }
 
+/**
+ * Parse `SERVERSTORE_RATE_LIMIT` — requests per identity per 60-second window, default
+ * {@link DEFAULT_RATE_LIMIT}, and `0` disables the limiter entirely (ledger row 64g).
+ *
+ * UNSET means the default. Anything else that is not a non-negative integer fails the
+ * BOOT loudly (AGENTS.md rule 1, the same boundary rule as every other setting), so a
+ * typo cannot silently become "unlimited".
+ *
+ * SET but EMPTY is deliberately a LOUD error, deviating from `parsePositiveInt`'s
+ * ""-means-default style for the same reason row 57 stretched it for the CORS
+ * allowlist: `SERVERSTORE_RATE_LIMIT=` is an operator's attempt to state a value, and
+ * `Number("")` is `0` — guessing would silently DISABLE the limiter, which is exactly
+ * the fallback this rule forbids. An absent variable is the only way to ask for the
+ * default.
+ */
+export function parseRateLimit(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_RATE_LIMIT;
+  const text = raw.trim();
+  if (text === "") {
+    throw new Error(
+      "SERVERSTORE_RATE_LIMIT is set but empty; unset it for the " +
+        `${DEFAULT_RATE_LIMIT}-per-60s default, or set 0 to disable rate limiting`,
+    );
+  }
+  const value = Number(text);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(
+      "SERVERSTORE_RATE_LIMIT must be a non-negative integer (requests per identity " +
+        `per 60s; 0 disables it); got ${JSON.stringify(raw)}`,
+    );
+  }
+  return value;
+}
+
 /** Read configuration from the environment. Called by `main.ts`, never at import time. */
 export function resolveConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const dataRoot = env.SERVERSTORE_DATA_ROOT ?? join(homedir(), "serverstore-data");
@@ -127,5 +183,6 @@ export function resolveConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: join(dataRoot, "serverstore.db"),
     maxBytes,
     corsOrigins: parseCorsOrigins(env.SERVERSTORE_CORS_ORIGINS),
+    rateLimit: parseRateLimit(env.SERVERSTORE_RATE_LIMIT),
   };
 }

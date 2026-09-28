@@ -33,7 +33,15 @@ import {
 } from "../core/validate.ts";
 import { ALL_STORES, type Permission, type AccessKeyRecord } from "../core/types.ts";
 import { UI_ASSETS, readUiAsset } from "./assets.ts";
-import { DEFAULT_MAX_BYTES, DEFAULT_HOST, DEFAULT_PORT, CORS_WILDCARD } from "./config.ts";
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_HOST,
+  DEFAULT_PORT,
+  DEFAULT_RATE_LIMIT,
+  RATE_LIMIT_WINDOW_MS,
+  CORS_WILDCARD,
+} from "./config.ts";
+import { clientIdentity, createRateLimiter } from "./ratelimit.ts";
 import { createStore, ensureMasterStore, listStores, requireStore } from "../stores/registry.ts";
 import { handlerFor } from "../storage/kinds.ts";
 
@@ -49,8 +57,25 @@ export { DEFAULT_HOST, DEFAULT_MAX_BYTES, DEFAULT_PORT };
  */
 const CORS_ALLOW_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_ALLOW_HEADERS = "authorization, x-api-key, content-type";
-const CORS_EXPOSE_HEADERS = "x-serverstore-sha256";
+/**
+ * `retry-after` is NOT a CORS-safelisted response header, so a browser can only read a
+ * 429's back-off instruction if it is exposed. It joins the list here, in the SAME
+ * commit that starts emitting it (ledger row 64f) — a limit whose `Retry-After` a
+ * browser cannot read is a client-side outage.
+ */
+const CORS_EXPOSE_HEADERS = "x-serverstore-sha256, retry-after";
 const CORS_MAX_AGE_SECONDS = 600;
+
+/**
+ * The paths the rate limiter NEVER limits (ledger row 64e): `/healthz` — what
+ * `scripts/probe-live.sh` and the operator watch — plus the three admin-console assets.
+ * The asset entries are DERIVED from {@link UI_ASSETS} rather than re-typed, so adding a
+ * fourth asset cannot silently leave a footprint that gets throttled.
+ */
+const RATE_LIMIT_EXEMPT_PATHS: ReadonlySet<string> = new Set([
+  "/healthz",
+  ...UI_ASSETS.map((asset) => asset.route),
+]);
 
 export interface AppDependencies {
   /** Root of every store's bytes. Lives OUTSIDE the repo (ledger row 13). */
@@ -68,6 +93,14 @@ export interface AppDependencies {
    * explicit header.
    */
   readonly corsOrigins?: readonly string[];
+  /**
+   * Requests allowed per client identity per 60-second window; `0` disables rate
+   * limiting entirely (ledger row 64g). The default is {@link DEFAULT_RATE_LIMIT}, the
+   * same value `resolveConfig()` yields for an unset `SERVERSTORE_RATE_LIMIT`, so an app
+   * built without the option is still limited — never silently unlimited. The ONE test
+   * fixture passes `0` explicitly, and the limiter's own pins pass a small limit.
+   */
+  readonly rateLimit?: number;
 }
 
 export interface AppContext {
@@ -266,10 +299,18 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     now: dependencies.now ?? (() => Date.now()),
     maxBytes: dependencies.maxBytes ?? DEFAULT_MAX_BYTES,
     corsOrigins: dependencies.corsOrigins ?? [CORS_WILDCARD],
+    rateLimit: dependencies.rateLimit ?? DEFAULT_RATE_LIMIT,
   };
   const db = openDatabase(deps.dbPath);
   ensureMasterStore(db, deps.now);
   const ctx: AppContext = { deps, db };
+  // ONE limiter per app, over the SAME injected clock the app uses, so a pin can freeze
+  // time and drive the exact window boundary (ledger row 64h).
+  const limiter = createRateLimiter({
+    limit: deps.rateLimit,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    now: deps.now,
+  });
 
   const app = new Hono<{ Variables: Variables }>();
 
@@ -351,6 +392,52 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     // origin, so the header would only fragment a cache for nothing.
     if (!wildcard) appendVary(c.res.headers, "Origin");
     c.res.headers.set("access-control-expose-headers", CORS_EXPOSE_HEADERS);
+  });
+
+  /**
+   * RATE LIMITING — registered AFTER the CORS step and BEFORE the key guard, and both
+   * halves of that position are the feature (ledger rows 64a/64e).
+   *
+   * BEFORE the guard, because a limiter behind authentication bounds only callers who
+   * already hold a key — the flood this endpoint actually faces is the one with NO key,
+   * and the guard (a key comparison per request) is precisely the work worth protecting.
+   * A refusal is answered HERE, so it never reads the body and never reaches a handler:
+   * a 429 has no side effects (pin R2 proves a refused PUT creates nothing).
+   *
+   * AFTER the CORS step, because the step is what lets a browser READ the refusal: it
+   * sets `Access-Control-Allow-Origin` and `Access-Control-Expose-Headers` on the way
+   * out, which is how `Retry-After` reaches a cross-origin client (row 64f).
+   *
+   * A request that is exempt — `/healthz`, the three console assets, or a CORS PREFLIGHT
+   * (`OPTIONS` + `Access-Control-Request-Method`) — is passed straight through. The
+   * preflight check is needed here even though the CORS step answers an ALLOWED origin's
+   * preflight first, because a DISALLOWED origin's preflight deliberately falls through
+   * to the normal pipeline: it must reach the guard's own 401, not a 429.
+   */
+  app.use("*", async (c, next) => {
+    const isPreflight =
+      c.req.method.toUpperCase() === "OPTIONS" &&
+      c.req.header("access-control-request-method") !== undefined;
+    if (isPreflight || RATE_LIMIT_EXEMPT_PATHS.has(rawPathname(c.req.raw))) {
+      await next();
+      return;
+    }
+
+    const decision = limiter.check(clientIdentity(c.req.raw));
+    if (!decision.allowed) {
+      // The ONE error surface (the envelope comes from `errorBody`, the status from the
+      // code's own mapping), plus the back-off instruction the client needs. Returned
+      // rather than thrown so the header is set explicitly and `next()` is never called.
+      const error = new StoreError(
+        "rate_limited",
+        `rate limit exceeded for this client (${deps.rateLimit} requests per ` +
+          `${RATE_LIMIT_WINDOW_MS / 1000}s); retry in ${decision.retryAfterSeconds}s`,
+      );
+      return c.json(errorBody(error.code, error.message), error.status as 429, {
+        "retry-after": String(decision.retryAfterSeconds),
+      });
+    }
+    await next();
   });
 
   const guard = async (c: Context<{ Variables: Variables }>, next: () => Promise<void>) => {

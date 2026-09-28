@@ -24,6 +24,10 @@ const app = createApp({
   // which origins this process answers is decided once, here, from `resolveConfig()`
   // (ledger row 57).
   corsOrigins: config.corsOrigins,
+  // The rate limit reaches the app the same way, as an explicit argument: 600 requests
+  // per identity per 60 s unless `SERVERSTORE_RATE_LIMIT` says otherwise (0 disables it,
+  // ledger row 64g).
+  rateLimit: config.rateLimit,
 });
 
 console.log(

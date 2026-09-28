@@ -46,6 +46,14 @@ export interface CreateServerOptions {
    */
   readonly corsOrigins?: readonly string[];
   /**
+   * Requests allowed per client identity per 60 s, `0` = disabled (ledger row 64g).
+   * The FIXTURE default is `0` — the operator kill-switch — so the 127 pins written
+   * before the limiter existed keep passing, and it is done by disabling the limiter
+   * EXPLICITLY rather than by weakening it: the limiter's own pins pass a small limit
+   * and drive it with the injected clock (`tests/ratelimit.test.ts`).
+   */
+  readonly rateLimit?: number;
+  /**
    * Stores to create in a LEGACY database before the migrated key rows that name
    * them. Only meaningful together with `legacyKeys`.
    */
@@ -102,6 +110,7 @@ function build(deps: {
   maxBytes: number;
   legacyKeys: readonly string[];
   corsOrigins?: readonly string[];
+  rateLimit?: number;
 }): TestServer {
   const app = createApp({
     dataRoot: deps.dataRoot,
@@ -109,6 +118,7 @@ function build(deps: {
     now: () => deps.clock.value,
     maxBytes: deps.maxBytes,
     corsOrigins: deps.corsOrigins,
+    rateLimit: deps.rateLimit,
   });
 
   const bearer = (key?: string): Record<string, string> | undefined =>
@@ -298,6 +308,9 @@ export function createTestServer(options: CreateServerOptions = {}): TestServer 
     maxBytes: options.maxBytes ?? 64 * 1024 * 1024,
     legacyKeys,
     corsOrigins: options.corsOrigins,
+    // DISABLED unless a test asks for a limit, so every pre-limiter pin is unaffected
+    // by construction (see CreateServerOptions.rateLimit).
+    rateLimit: options.rateLimit ?? 0,
   });
 }
 

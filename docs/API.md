@@ -108,8 +108,10 @@ preflight would be answered `401` and the browser would block the real request.
   an allowlist is in use, `*` when the policy is the wildcard. `Vary: Origin` is sent
   whenever the answer depends on the origin (i.e. under an allowlist), so a cache
   cannot serve one origin's answer to another.
-- **`Access-Control-Expose-Headers: x-serverstore-sha256`** is on responses, so a
-  browser can read an object's hash from a `GET …/objects/{name}`.
+- **`Access-Control-Expose-Headers: x-serverstore-sha256, retry-after`** is on responses,
+  so a browser can read an object's hash from a `GET …/objects/{name}` **and** a `429`'s
+  `Retry-After`. `Retry-After` is **not** a CORS-safelisted response header: without this
+  a browser sees the `429` but cannot read how long to wait (ledger row 64f).
 - **`Access-Control-Allow-Credentials` is NEVER sent, on any response.** There are no
   cookies in this API and there must never appear to be. Do not send `credentials:
   "include"` in `fetch` — there is nothing to authenticate with but your key.
@@ -133,6 +135,39 @@ const sha256 = response.headers.get("x-serverstore-sha256"); // readable: it is 
 
 No route was added for CORS: it is middleware in front of the router, so the route
 table below and the error vocabulary are unchanged (pins **A1–A3**).
+
+## Rate limiting
+
+The service bounds request volume **per client**, so one caller cannot exhaust the
+endpoint for everyone. It is on by default; there is nothing to configure on the client
+side except honouring a `429`.
+
+- **The limit is `SERVERSTORE_RATE_LIMIT` requests per client per 60-second window,
+  default `600`** (`0` disables rate limiting entirely — an operator kill-switch). It is
+  a **fixed window**: the first request after a window opens it, and the 601st request in
+  the same window is refused. The window length is not configurable.
+- **The identity is the client ADDRESS, taken from the tunnel's headers**: `CF-Connecting-IP`
+  first, otherwise the **first** hop of `X-Forwarded-For`, otherwise one shared `local`
+  bucket for a caller that presents neither. The socket address is deliberately not used
+  (the service listens on loopback behind the tunnel, so it would be the tunnel's own
+  address for every caller). A client behind a proxy that rewrites `X-Forwarded-For` is
+  therefore bucketed by the first entry it forwards, and **appending extra hops does not
+  evade the limit**.
+- **A refusal is `429 rate_limited`** in the usual envelope, plus a **`Retry-After`**
+  header (whole seconds, ≥ 1). It is decided **before** the key guard and **before the
+  body is read**, so it is also what an **unauthenticated** flood gets — and a refused
+  `PUT`/`POST` has **no side effect at all**.
+- **Never limited: `/healthz`, the three console assets (`/`, `/app.js`, `/app.css`) and
+  CORS preflights** (`OPTIONS` with `Access-Control-Request-Method`). The probe and the
+  operator's console must always answer, and limiting a preflight would break a browser
+  for no gain.
+- **It is in-memory and per process.** The counters live in this process only: **a
+  restart forgets them**, and there is no shared counter across processes (there is only
+  one process). See Non-goals: there is no **per-key** quota.
+
+A client should treat `429` as "slow down": wait the number of seconds in `Retry-After`
+(or a little longer), then retry. `Retry-After` is exposed to browsers through CORS (see
+above).
 
 ## Authentication
 
@@ -226,17 +261,17 @@ response bodies are JSON unless the row says otherwise.
 | `GET` | `/` | anyone — no key required | — | the admin console (HTML) | `200` |
 | `GET` | `/app.js` | anyone — no key required | — | the admin console's ES module (`text/javascript`) | `200` |
 | `GET` | `/app.css` | anyone — no key required | — | the admin console's stylesheet (`text/css`) | `200` |
-| `GET` | `/whoami` | any valid key — reports the CALLER | — | `{"id","label","stores","perms","expiresAt","lastUsedAt"}` | `200`, `401` |
-| `GET` | `/stores` | master admin key | — | `{"stores":[{"name","kind","createdAt"}]}` | `200`, `401`, `403` |
-| `POST` | `/stores` | master admin key | `{"name":"game","kind":"bytes"?}` | `{"store":{"name","kind","createdAt"}}` | `201`, `400`, `401`, `403`, `409` |
-| `POST` | `/keys` | an **`admin`** key — a store-scoped admin key only within its own set; an `admin` grant needs a master admin key and `["*"]` | `{"stores":[…],"perms":[…],"label"?,"expiresAt"?}` | `{"key":"ssk_…","id","prefix","stores","perms","expiresAt"}` | `201`, `400`, `401`, `403`, `404` |
-| `GET` | `/keys` | an **`admin`** key — a master admin sees every key, a store-scoped admin only keys inside its own set | — | `{"keys":[{"id","label","stores","prefix","perms","createdAt","expiresAt","lastUsedAt","revokedAt","updatedAt","updatedBy"}]}` | `200`, `401`, `403` |
-| `PATCH` | `/keys/{id}` | an **`admin`** key — a master admin may narrow or widen anything, a store-scoped admin only keys it could have minted | `{"label"?,"stores"?,"perms"?}` (any subset) | the updated entry, exactly as `GET /keys` lists it | `200`, `400`, `401`, `403`, `404` |
-| `POST` | `/keys/{id}/revoke` | an **`admin`** key — a master admin may revoke any key, a store-scoped admin only keys it could have minted; a key may always revoke itself | — (no body) | `{"id","revokedAt","changed"}` | `200`, `401`, `403`, `404` |
-| `GET` | `/stores/{store}/objects` | `read` or `admin` on `{store}` | optional `?prefix=` (query) | `{"objects":[{"store","name","sha256","size","createdAt"}]}` | `200`, `400`, `401`, `403`, `404` |
-| `PUT` | `/stores/{store}/objects/{name}` | `write` or `admin` on `{store}` | raw bytes (any `content-type`; ignored) | `{"store","name","sha256","size","createdAt"}` | `201`, `400`, `401`, `403`, `404`, `413` |
-| `GET` | `/stores/{store}/objects/{name}` | `read` or `admin` on `{store}` | — | raw bytes (+ `x-serverstore-sha256`) | `200`, `401`, `403`, `404` |
-| `DELETE` | `/stores/{store}/objects/{name}` | `delete` or `admin` on `{store}` | — | empty body | `204`, `401`, `403`, `404` |
+| `GET` | `/whoami` | any valid key — reports the CALLER | — | `{"id","label","stores","perms","expiresAt","lastUsedAt"}` | `200`, `401`, `429` |
+| `GET` | `/stores` | master admin key | — | `{"stores":[{"name","kind","createdAt"}]}` | `200`, `401`, `403`, `429` |
+| `POST` | `/stores` | master admin key | `{"name":"game","kind":"bytes"?}` | `{"store":{"name","kind","createdAt"}}` | `201`, `400`, `401`, `403`, `409`, `429` |
+| `POST` | `/keys` | an **`admin`** key — a store-scoped admin key only within its own set; an `admin` grant needs a master admin key and `["*"]` | `{"stores":[…],"perms":[…],"label"?,"expiresAt"?}` | `{"key":"ssk_…","id","prefix","stores","perms","expiresAt"}` | `201`, `400`, `401`, `403`, `404`, `429` |
+| `GET` | `/keys` | an **`admin`** key — a master admin sees every key, a store-scoped admin only keys inside its own set | — | `{"keys":[{"id","label","stores","prefix","perms","createdAt","expiresAt","lastUsedAt","revokedAt","updatedAt","updatedBy"}]}` | `200`, `401`, `403`, `429` |
+| `PATCH` | `/keys/{id}` | an **`admin`** key — a master admin may narrow or widen anything, a store-scoped admin only keys it could have minted | `{"label"?,"stores"?,"perms"?}` (any subset) | the updated entry, exactly as `GET /keys` lists it | `200`, `400`, `401`, `403`, `404`, `429` |
+| `POST` | `/keys/{id}/revoke` | an **`admin`** key — a master admin may revoke any key, a store-scoped admin only keys it could have minted; a key may always revoke itself | — (no body) | `{"id","revokedAt","changed"}` | `200`, `401`, `403`, `404`, `429` |
+| `GET` | `/stores/{store}/objects` | `read` or `admin` on `{store}` | optional `?prefix=` (query) | `{"objects":[{"store","name","sha256","size","createdAt"}]}` | `200`, `400`, `401`, `403`, `404`, `429` |
+| `PUT` | `/stores/{store}/objects/{name}` | `write` or `admin` on `{store}` | raw bytes (any `content-type`; ignored) | `{"store","name","sha256","size","createdAt"}` | `201`, `400`, `401`, `403`, `404`, `413`, `429` |
+| `GET` | `/stores/{store}/objects/{name}` | `read` or `admin` on `{store}` | — | raw bytes (+ `x-serverstore-sha256`) | `200`, `401`, `403`, `404`, `429` |
+| `DELETE` | `/stores/{store}/objects/{name}` | `delete` or `admin` on `{store}` | — | empty body | `204`, `401`, `403`, `404`, `429` |
 
 There is **no `405`**. An unknown path or an unsupported method on a known path answers
 **`401` `unauthorized` when the request carries no valid key** — the key guard matches EVERY
@@ -429,6 +464,7 @@ what a client should do about it:
 | `unauthorized` | `401` | No key, or the key is unknown/revoked/expired. Present a valid key; if you had one, it is gone — mint a replacement. |
 | `forbidden` | `403` | A valid key that is not permitted for this store, operation or scope. Use a key whose `stores` include this store and whose `perms` include the operation; retrying will not help. |
 | `not_found` | `404` | No such store, no such object, or no such route/method. Create the store, check the name, or fix the path. |
+| `rate_limited` | `429` | This client sent more than `SERVERSTORE_RATE_LIMIT` requests in the current 60-second window. Wait the `Retry-After` seconds and retry; the request was NOT processed (no side effect). |
 | `store_exists` | `409` | `POST /stores` with a name already in use. Pick another name (or treat it as success after `GET /stores`). |
 | `name_taken` | `409` | **Reserved.** No route emits this code today; it exists in the vocabulary. Treat it as "pick another name". |
 | `unsupported_store_kind` | `500` | The store's registered kind has no handler in the running process. Server-side; report it to the operator. |
@@ -440,6 +476,7 @@ what a client should do about it:
 | --- | --- | --- |
 | `SERVERSTORE_MAX_BYTES` | `67108864` bytes (64 MiB) | The maximum request body, enforced per request. It is an operator setting on the host, not a per-request field. |
 | `SERVERSTORE_CORS_ORIGINS` | unset → `*` | The comma-separated allowlist of browser origins whose cross-origin calls are answered. A bare origin per entry (`https://game.example.com`); unset means every origin, which is safe because the API carries no cookies (see CORS above). |
+| `SERVERSTORE_RATE_LIMIT` | `600` | Requests allowed **per client per 60-second window** (see Rate limiting). `0` disables rate limiting entirely. A non-integer or negative value fails the boot loudly. |
 
 - A body over the cap is refused with **`413 payload_too_large`**; it is **never
   truncated** and **never partially stored**.
@@ -451,7 +488,10 @@ what a client should do about it:
   next point.)
 - A `DELETE` removes the object's metadata row and **leaves the stored bytes on disk**.
   There is no garbage collection yet.
-- There is no rate limit and no documented request timeout at the application layer.
+- **Rate limiting is on by default** (see Rate limiting): `SERVERSTORE_RATE_LIMIT`
+  requests per client per 60-second window, `429 rate_limited` with `Retry-After` beyond
+  it, and `/healthz`/assets/preflights never limited. There is no documented request
+  timeout at the application layer.
 
 ## First five minutes (curl)
 
@@ -552,7 +592,10 @@ These are **not** implemented today. A client that assumes them will break:
    `If-Match`, version number or compare-and-swap. If two players must not clobber
    each other, serialise on one writer (or one key per object) in your client
    (ledger row 28).
-3. **No rate limiting** and no per-key quota. Nothing throttles a determined client.
+3. **No per-key quota.** The service rate limits by **client address** (see Rate
+   limiting), so one address cannot flood the endpoint — but there is no quota attached
+   to a KEY, so a leaked or runaway credential is bounded only by its holder's address.
+   A per-key bucket is deferred and named (ledger row 64c).
 4. **No identity beyond keys.** No registration, login, sessions, cookies, OAuth or
    users. A key pasted into a browser belongs to whoever reads it, and the server
    cannot tell two holders of the same key apart.

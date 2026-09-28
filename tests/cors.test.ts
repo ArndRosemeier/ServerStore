@@ -11,7 +11,8 @@
  * Pins (the NAME is the contract; `docs/TESTING.md` maps them):
  *   PIN O1: a preflight is answered 2xx WITHOUT a key, and names `authorization`
  *   PIN O2: a cross-origin request with a valid key returns the real body plus
- *           `Access-Control-Allow-Origin` (and exposes `x-serverstore-sha256`)
+ *           `Access-Control-Allow-Origin` (and exposes `x-serverstore-sha256` **and**
+ *           `retry-after` — the limiter's back-off header, ledger row 64f)
  *   PIN O3: an allowlist is honoured — a listed origin is echoed, an unlisted one gets
  *           no allow-origin header, and `Vary: Origin` is present either way
  *   PIN O4: credentials are never allowed — no `Access-Control-Allow-Credentials`
@@ -121,7 +122,12 @@ describe("pin O2: a cross-origin request with a valid key is readable", () => {
 
     const body = (await response.json()) as { stores: { name: string }[] };
     expect(body.stores.map((store) => store.name)).toContain("master");
-    expect(response.headers.get("access-control-expose-headers")).toBe("x-serverstore-sha256");
+    // The FULL set, by EQUALITY: `retry-after` joined it with the rate limiter (row 64f)
+    // because a browser cannot read a 429's back-off instruction otherwise. Never relax
+    // this to `toContain` — the complete set is the claim.
+    expect(response.headers.get("access-control-expose-headers")).toBe(
+      "x-serverstore-sha256, retry-after",
+    );
   });
 
   test("PIN O2: an object's `x-serverstore-sha256` is exposed to the cross-origin reader", async () => {
@@ -141,7 +147,9 @@ describe("pin O2: a cross-origin request with a valid key is readable", () => {
     expect(got.status).toBe(200);
     expect(got.headers.get("x-serverstore-sha256")).toMatch(/^[0-9a-f]{64}$/);
     expect(got.headers.get("access-control-allow-origin")).toBe("*");
-    expect(got.headers.get("access-control-expose-headers")).toBe("x-serverstore-sha256");
+    expect(got.headers.get("access-control-expose-headers")).toBe(
+      "x-serverstore-sha256, retry-after",
+    );
   });
 });
 
