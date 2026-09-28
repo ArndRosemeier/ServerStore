@@ -45,36 +45,41 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: c13219a · 2026-09-28T08:08Z — the slice-15 VERIFIED CODE tip (the headless-browser test;
-  it is TEST-ONLY, so the only files it touches are tests/, checkpoints/, .gitignore and the docs, and
-  the live unit is byte-for-byte unaffected). The docs commit carrying THIS marker is its child, so the
-  marker is the code tip and not itself — a commit cannot name its own sha. `bash scripts/board.sh`
-  must report this marker as an ancestor of origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED
-  tree: gate exit 0 GREEN · 15 files · 150 tests · 2.26s with the new file at 1632ms; plus THREE own
-  arms, none of them the writer's (J the console persists the key → B2 with U2 as its honest in-process
-  twin; L the CORS step answers a preflight 500 → B4 with the whole preflight family as collateral;
-  N the allowlist echoes ANY origin → B6 with O3/D7/R5 collateral), each with a control before and
-  after; plus chrome-process count 0 after EVERY run, including the failing arms; plus a self-match-free
-  path audit showing nothing referencing the retired worktree. `GUARD g5` does NOT apply: no `src/`,
-  `web/`, `deploy/`, `package.json` or `pnpm-lock.yaml` file changed, and the live unit kept its pid
-  and stayed active throughout. (History: this line read "66a3295" (slice 14), "695ba2e" (slice 13),
-  "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27) and "bec97e1" (row 26,
-  LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than quietly).)
+reconciled: f066f65 · 2026-09-28T11:49Z — the slice-16 (destructive lifecycle) VERIFIED CODE tip.
+  The docs commit carrying THIS marker is its child, so the marker is the code tip and not itself — a
+  commit cannot name its own sha. `bash scripts/board.sh` must report this marker as an ancestor of
+  origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 16 files ·
+  159 tests · 2.34s; plus THREE own arms, none of them the writer's (O the confirm token unchecked →
+  X6 ALONE; P the last-admin guard removed → X3 ALONE; Q emptying a store left the bytes on disk →
+  X4 ALONE), each with a control before and after; plus an END-TO-END run of the whole workflow on a
+  LOCAL SPAWN (mint → delete a key → whoami 401 → look inside → delete one entry with the blob files
+  observed 2→1 → wrong token 400 with nothing lost → empty with 0 blobs left → store delete REFUSED
+  409 naming the scoped key → clear it → store and directory GONE → 404); plus GUARD g5 on the LIVE
+  service (restarted 13:49:23 CEST, probe PASS exit 0, and the three new routes answer 401 rather
+  than 404). CORRECTION TO MY OWN METRIC, recorded rather than quietly dropped: a bare
+  `ps -eo comm= | grep -c '^chrome$'` counts the NEIGHBOURS on this shared box — a concurrent vitest
+  run in `~/projects/Imager` held 9-11 chrome processes during these arms while OUR runs held ZERO
+  (0 processes matching `ServerStore/.*browser-scratch`, and 0 matching `serverstore` in a
+  self-match-free /proc audit). The metric is now scoped to our own profile directory, and the "0"
+  figures quoted in rows 68/69 were measured when no neighbour happened to be running — true, but
+  luck as much as measurement. See TRAP t8. (History: this line read "c13219a" (slice 15), "66a3295"
+  (slice 14), "695ba2e" (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36),
+  "e1e363f" (row 27) and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error,
+  corrected rather than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=row 71 (the DESTRUCTIVE LIFECYCLE API) is LANDED by its writer, which gate-verified it
-  |   and ran its own two arms; the DISPATCHER'S independent verification (its own gate + its own
-  |   arms) is OWED, and only then is the worktree/branch retired. Slices 12 (CORS, row 58), 13
-  |   (the `prefix=` filter, row 62), 14 (rate limiting, row 66) and 15 (the headless-browser test,
-  |   row 69) are LANDED, VERIFIED and RETIRED. The browser test drives the installed Chrome INSIDE
-  |   THE GATE, so the console's Connect/Edit flow and the browser half of CORS are exercised on every
-  |   gate run (~1.6 s) — and it is what will verify the console slice (row 72) that follows this one.
-  |   LIVE at
-  |   https://store.futuremagic.de/ with the console, key editing (C2), CORS, the prefix filter and
-  |   the rate limiter (default 600 requests per identity per 60 s, no `SERVERSTORE_RATE_LIMIT` in the
-  |   unit); service restarted onto the limiter tip and re-probed; EXACTLY ONE live admin key. The
-  |   destructive routes are NOT live until the dispatcher restarts the unit onto this tip (GUARD g5).
-  |   A turn-based browser game from ANOTHER ORIGIN is UNBLOCKED and can read one namespace per request.
+  | state=NO writer in flight. Slices 12 (CORS, row 58), 13 (the `prefix=` filter, row 62), 14 (rate
+  |   limiting, row 66), 15 (the headless-browser test, row 69) and 16 (the destructive lifecycle,
+  |   row 73) are LANDED, VERIFIED and RETIRED. The browser test drives the installed Chrome INSIDE
+  |   THE GATE (~1.6 s), so the console's Connect/Edit flow and the browser half of CORS are exercised
+  |   on every gate run — and it is what will verify the console slice that follows.
+  |   LIVE at https://store.futuremagic.de/ with the console, key editing (C2), CORS, the prefix
+  |   filter, the rate limiter (600 per identity per minute) and NOW the destructive routes (delete a
+  |   key, empty a store, delete a store, plus byte reclamation); service restarted onto the
+  |   destructive tip at 13:49:23 CEST and re-probed; EXACTLY ONE live admin key.
+  |   WAITING ON THE OWNER: the storage-model fork (ledger row 72 / QUEUE row 72) — items inside
+  |   SQLite, one file per entry, or both per store. NEXT after that: the console for the four
+  |   destructive things (QUEUE row 74).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -883,7 +888,7 @@ QUEUE | row=72 | **OPEN FORK, THE OWNER'S CHOICE (ledger row 72): items inside S
   second kind (`inline`) is an addition, not a rewrite. Named cost: two kinds to pin, and the kind seam
   must first absorb DELETE (today the route runs `DELETE FROM objects` directly). NOT dispatched: this is
   a product fork with a real cost either way, so it goes to the owner.
-QUEUE | row=73 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
+QUEUE | row=74 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
   FOR — delete a key, look inside a store (names only) and delete an entry, empty a store, delete a
   store. UI-ONLY: `GET /stores/{store}/objects` already lists entries (and takes `prefix=`), and
   `DELETE /stores/{store}/objects/{name}` already deletes one, so this slice adds the new routes from
@@ -980,6 +985,18 @@ TRAP | t7 | **A differential arm mutates the MAIN tree — which is the LIVE UNI
   |   ACCEPTED rather than unnoticed. A successor who wants it gone can run the arms in a worktree and
   |   point the harness there (the lock is per-repo, so the arms would then not exclude a peer run —
   |   take the lock in the worktree too). Recorded because the risk is real and was never written down.
+TRAP | t8 | **A GLOBAL process count on a SHARED box measures the NEIGHBOURS.** The host rule's
+  |   browser audit is `ps -eo comm= | grep -c '^chrome$'`, and I quoted "0 after every run" in rows
+  |   68/69 as though it were OURS. It is not attributable: during the row-71 arms that same command
+  |   reported **9-11**, and every one of those processes belonged to a concurrent `vitest` run in
+  |   `~/projects/Imager` (different flags, different project, no `ServerStore` path in its argv).
+  |   Our own runs held **zero** — checked two ways: `ps -eo args | grep -c 'ServerStore/.*browser-scratch'`
+  |   and a self-match-free `/proc` audit for `serverstore` that excludes its own pid tree. RULE: scope
+  |   a process-metric to something only YOUR run can produce (its own profile/temp path or a pid you
+  |   hold), and treat a bare name count as evidence about the BOX, never about your run. The earlier
+  |   zeros were true measurements taken when no neighbour happened to be running; that is luck as well
+  |   as measurement, and the difference matters when the metric is what backs a "nothing outlives the
+  |   writer" claim.
 
 GUARD | g1 | Never bind to 0.0.0.0. Loopback + tunnel is how every service on this box is exposed
   | (precedent: apps-web.service).
@@ -1013,6 +1030,7 @@ retired_branch=feat/cors
 retired_branch=feat/object-prefix
 retired_branch=feat/rate-limit
 retired_branch=feat/browser-test
+retired_branch=feat/destructive
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -1020,7 +1038,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-72 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-73 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
