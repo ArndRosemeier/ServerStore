@@ -900,7 +900,17 @@ QUEUE | row=72 | **OPEN FORK, THE OWNER'S CHOICE (ledger row 72): items inside S
   store at the existing `guac-db` (couples it to Guacamole's container, version and blast radius).
   RECOMMENDED: the kind seam already IS a backend seam — add the SQLite `inline` kind now (zero new
   services, removes the files), and add a Postgres kind when a concrete need appears.
-QUEUE | row=75 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
+  FURTHER (ledger row 75): the owner asked for a LOCAL NON-SERVER Postgres, and it EXISTS —
+  `@electric-sql/pglite` 0.5.8 is real Postgres as WASM running INSIDE the Node process, persisting
+  to a directory, requiring NO host install, with `@electric-sql/pglite-tools` providing `pgDump` for
+  backups. It would be a third store kind (`pg`), tests stay in-process, and there is no port,
+  password, container or second failure domain. HONEST LIMITS, from its own docs: "PGlite only has a
+  single exclusive connection", so it is single-process (no multi-instance concurrency), it is
+  slower than native Postgres (WASM), pre-1.0, and limited to compiled-in extensions. The NATIVE
+  equivalent (private cluster: `initdb` + `pg_ctl`, `listen_addresses=''`, unix socket only) is real
+  Postgres with no TCP port but needs a host install plus lifecycle management we would own — more
+  machinery than PGlite for the same property.
+QUEUE | row=76 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
   FOR — delete a key, look inside a store (names only) and delete an entry, empty a store, delete a
   store. UI-ONLY: `GET /stores/{store}/objects` already lists entries (and takes `prefix=`), and
   `DELETE /stores/{store}/objects/{name}` already deletes one, so this slice adds the new routes from
@@ -1050,7 +1060,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-74 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-75 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
