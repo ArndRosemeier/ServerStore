@@ -45,34 +45,38 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: 0410a87 · 2026-09-28T13:45Z — the slice-19 (test-only) VERIFIED CODE tip; the docs child
-  naming it is `0f361b4`. The docs commit carrying THIS marker is its child, so the marker is the code
-  tip and not itself — a commit cannot name its own sha. `bash scripts/board.sh` must report this marker
-  as an ancestor of origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN
-  · 18 files · 179 tests · 4.25s with the browser file at 3785ms (cost FLAT — the pin rides existing
-  flows); plus TWO own arms, neither of them the writer's (he armed G the guard acting on the FIRST
-  click → V1 and V3 through the EFFECT half): X the confirmation affordance VANISHES the moment it is
-  created → V1 with V3/V5 as the same-seam family, proving the ANTI-VACUITY half ("nothing happened AND
-  nothing was offered" must not pass); Y ONLY the entry delete bypasses the guard while the key delete
-  keeps it → **V3 ALONE**, which is the coverage claim: the shared helper really is applied to BOTH
-  single-item controls, so a pin covering only keys would have passed. Controls GREEN before and after;
-  `web/app.js` restored byte-identical. `GUARD g5` does NOT apply (tests/checkpoints/docs only — verified
-  by `git diff --name-only`), and `probe-live.sh` → PASS exit 0. (History: this line read "5bf080a"
-  (slice 18), "620a71b" (slice 17), "f066f65" (slice 16), "c13219a" (slice 15), "66a3295" (slice 14),
-  "695ba2e" (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27)
-  and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
+reconciled: 26f9e46 · 2026-09-28T17:14Z — the slice-20 (names up to 1024, ONE constant) VERIFIED
+  CODE tip; the docs child naming it is `7e43f87`. The docs commit carrying THIS marker is its child,
+  so the marker is the code tip and not itself — a commit cannot name its own sha. `bash
+  scripts/board.sh` must report this marker as an ancestor of origin/main. verify=THE DISPATCHER'S OWN,
+  on the INTEGRATED tree: gate exit 0 GREEN · 19 files · 185 tests · 4.71s, browser file 4235ms; plus
+  THREE own arms, none of them the writer's (he armed A the enforcement hard-coded to 64 → Z1's accepted
+  half, B the length check removed → Z1's refusal half, C the constant reverted ALONE → Z1 stayed green
+  because the tests DERIVE from it, caught by Z4), each aimed at ONE way the number can creep back out
+  of its single home: **P** the refusal MESSAGE stops deriving (hard-codes a number the rule no longer
+  uses) → **PIN Z3 ALONE**; **Q** the PATTERN retypes the bound (`{0,1023}` written out) → **PIN Z6
+  ALONE**; **R** a DOC drifts from the constant → **PIN Z4 ALONE**. Controls GREEN before and after,
+  files restored byte-identical, no VOID arm. VERIFIED BY ME IN THE SOURCE, not only by the pin: `1024`
+  appears exactly TWICE under `src/` — the constant and `config.ts`'s `64 * 1024 * 1024` MiB factor (the
+  declared, grounded exemption, a DIFFERENT number sharing the digits) — and `1023` appears NOWHERE, so
+  the quantifier really is derived. `GUARD g5`: the unit was restarted onto this tip at **17:14:14 CEST**
+  (MainPID 426885) and `probe-live.sh` → **PASS exit 0**; the name rule itself needs a key-bearing call
+  to observe, which is the OWNER's. (History: this line read "0410a87" (slice 19), "5bf080a" (slice 18),
+  "620a71b" (slice 17), "f066f65" (slice 16), "c13219a" (slice 15), "66a3295" (slice 14), "695ba2e"
+  (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27) and
+  "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
   quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (row 88: NAMES UP TO 1024 CHARACTERS — the owner's decision after his
-  |   other project hit the 64-char cap; worktree worktrees/name-limit, branch feat/name-limit; design =
-  |   ledger row 87). The 64 MiB item cap is KEPT deliberately (row 86). Slices 12–19 are LANDED,
-  |   VERIFIED and RETIRED, and everything the owner asked for is live: the console's four destructive
-  |   actions on the migrated SQLite core (one database, WAL, keys and item bytes together), console
-  |   served from disk per request so a reload shows it. LIVE at https://store.futuremagic.de/.
-  |   THE OWNER'S ONE OUTSTANDING ACTION: make a real key-bearing call (the dispatcher holds no key) —
-  |   that also retires the pre-migration copy at
-  |   `/home/administrator/serverstore-data.backup-pre-migration`.
+  | state=NO writer in flight, and **NOTHING IS QUEUED**. Slices 12–20 are LANDED, VERIFIED and
+  |   RETIRED. LIVE at https://store.futuremagic.de/ on the migrated SQLite core (one database, WAL,
+  |   keys and item bytes together) with: the console's four destructive actions, the headless-browser
+  |   test in the gate, rate limiting, the prefix filter, CORS — and now names up to **1024 characters**
+  |   governed by ONE constant (`NAME_MAX_LENGTH`) that the pattern, both refusal messages and the docs'
+  |   pin derive from, with PIN Z6 making "it is one constant" a TESTED property. The item cap stays
+  |   64 MiB by the owner's decision (row 86).
+  |   THE OWNER'S ONE OUTSTANDING ACTION: a real key-bearing call (the dispatcher holds no key) — it also
+  |   retires the pre-migration copy at `/home/administrator/serverstore-data.backup-pre-migration`.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -1137,6 +1141,7 @@ retired_branch=feat/browser-test
 retired_branch=feat/sqlite-core
 retired_branch=feat/console-destructive
 retired_branch=feat/confirm-pin
+retired_branch=feat/name-limit
 retired_branch=feat/destructive
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
@@ -1145,7 +1150,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-87 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-89 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -1186,6 +1191,43 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=89 | sha=26f9e46 (the VERIFIED CODE tip; the slice-20 landing itself is row 88 below)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 19 files · 185 tests ·
+  | 4.71s, browser file 4235ms (Z5's long-name flow costs ~76ms over slice 19) — raw log
+  | `.gate-logs/dispatcher-gate-s20.log`.
+  | arms=`.gate-logs/dispatcher-arms-s20.sh`, transcript `.gate-logs/dispatcher-arms-s20.out`, the gate
+  | lock held across a control and ALL THREE arms, sha256 printed before and after, restore from HEAD in
+  | an `EXIT INT TERM` trap with the hashes asserted back, a control BEFORE and AFTER, `error TS` = VOID.
+  | The writer's arms cover the ENFORCEMENT (A hard-coded to 64 → Z1's accepted half; B the check removed
+  | → Z1's refusal half) and the meta-case (C the constant reverted ALONE → Z1 stays GREEN because the
+  | tests derive from it, caught by Z4 — the division of labour the owner's correction created, recorded
+  | rather than mourned). Mine take the three remaining ways the number can creep back out of its single
+  | home, one arm each:
+  |   P the refusal MESSAGE stops deriving, hard-coding a number the rule no longer uses
+  |     (`src/core/validate.ts` `b8de28c7…f04b` → `1f52813b…d0fc`) → **RED on PIN Z3 ALONE**.
+  |   Q the PATTERN retypes the bound (`{0,${NAME_MAX_LENGTH - 1}}` → `{0,1023}`) → **RED on PIN Z6
+  |     ALONE** (`b8de28c7…f04b` → `a277a4a2…d04f`), which is the owner's requirement turned into a
+  |     TESTED property rather than a convention.
+  |   R a current DOC drifts from the constant (`docs/API.md` "1 to 1024" → "1 to 1023",
+  |     `ad8baa18…fa61` → `1aa91d39…8bc5`) → **RED on PIN Z4 ALONE**.
+  |   both controls GREEN (19 files · 185 tests); every file back at its before-hash; no VOID arm in the
+  |   final run. **THE HARNESS'S OWN FIRST RUN WAS VOID AND IS RECORDED:** arm Q's first mutation was
+  |   written in perl, whose REPLACEMENT interpolates `${...}`, so the injected code was mangled into
+  |   `TS1003` and correctly refused as VOID; the arm now mutates only the quantifier and carries no `$`
+  |   in the replacement. My error, in machinery that exists to refuse exactly that.
+  | VERIFIED IN THE SOURCE, not only through the pins: `grep -rn 1024 src/` returns exactly TWO lines —
+  | `src/core/validate.ts`'s `NAME_MAX_LENGTH = 1024` (the ONE name bound) and `src/server/config.ts`'s
+  | `64 * 1024 * 1024` (the item cap's MiB factor, a DIFFERENT number that merely shares the digits, and
+  | the ONE exemption PIN Z6 declares and grounds rather than hides) — and `grep -rn 1023 src/` returns
+  | NOTHING, so the quantifier really is derived. Changing the name limit is now one edit.
+  | GUARD g5=the unit was restarted onto this tip at **17:14:14 CEST** (MainPID 426885) and
+  | `scripts/probe-live.sh https://store.futuremagic.de` → **PASS exit 0**. The name rule itself can only
+  | be observed through an authenticated call, which is the OWNER's step (the dispatcher holds no key).
+  | retired=worktree worktrees/name-limit · branch feat/name-limit (was 7e43f87, verified fully merged) ·
+  | writer session 4ee869a2… — salvage-checked BEFORE deletion. Host after: only `main` in
+  | `git worktree list`, lock free.
+  | docs=ledger row 89 · this board.
+
 LANDED | row=88 | sha=26f9e46 (the writer's CODE tip: `src/core/validate.ts`, the Z pins,
   | `tests/helpers/source.ts`, `web/app.css` and the three live docs; the docs child carrying THIS
   | line, ledger row 88, `docs/TESTING.md` and `checkpoints/name-limit-differential.out` is its child)
