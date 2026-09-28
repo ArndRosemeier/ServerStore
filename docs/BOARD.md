@@ -45,37 +45,35 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: 5bf080a · 2026-09-28T13:20Z — the slice-18 (console destructive actions) VERIFIED CODE
-  tip; the docs commits naming it are `c562bb3` and `81e901a`. The docs commit carrying THIS marker is
-  its child, so the marker is the code tip and not itself — a commit cannot name its own sha.
-  `bash scripts/board.sh` must report this marker as an ancestor of origin/main. verify=THE
-  DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 18 files · 179 tests · 4.10s, with
-  `tests/browser.test.ts (15 tests)` at **3656ms** (the console flows cost every gate run ~2.0s more
-  than slice 15's 8-pin file); plus THREE own arms, none of them the writer's (he armed A the
-  whole-store token PRE-FILLED → V4 alone, B the entry filter CLIENT-SIDE → V2 with V7 as its declared
-  twin): U a FAILED destructive action reported as SUCCESS → V5 with V6/V7 as the failure-reporting
-  family; V the affected pane NOT refreshed → V1 with V3/V5 (the stale-row rule lives in the pins that
-  assert the pane after acting, NOT in V6 — my first aim was wrong); W the single-item action run
-  WITHOUT its confirmation → **GREEN everywhere: the confirmation gate for a single key/entry delete
-  is UNFALSIFIABLE, which is a real gap this slice must close, not a pass**; plus the LIVE check: the
-  served `/app.js` sha256 equals HEAD's (`56bd8f70…`) and contains the new seams, i.e. the console is
-  live with NO restart (assets are read per request), and `probe-live.sh` → PASS exit 0. (History: this
-  line read "620a71b" (slice 17), "f066f65" (slice 16), "c13219a" (slice 15), "66a3295" (slice 14),
+reconciled: 0410a87 · 2026-09-28T13:45Z — the slice-19 (test-only) VERIFIED CODE tip; the docs child
+  naming it is `0f361b4`. The docs commit carrying THIS marker is its child, so the marker is the code
+  tip and not itself — a commit cannot name its own sha. `bash scripts/board.sh` must report this marker
+  as an ancestor of origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN
+  · 18 files · 179 tests · 4.25s with the browser file at 3785ms (cost FLAT — the pin rides existing
+  flows); plus TWO own arms, neither of them the writer's (he armed G the guard acting on the FIRST
+  click → V1 and V3 through the EFFECT half): X the confirmation affordance VANISHES the moment it is
+  created → V1 with V3/V5 as the same-seam family, proving the ANTI-VACUITY half ("nothing happened AND
+  nothing was offered" must not pass); Y ONLY the entry delete bypasses the guard while the key delete
+  keeps it → **V3 ALONE**, which is the coverage claim: the shared helper really is applied to BOTH
+  single-item controls, so a pin covering only keys would have passed. Controls GREEN before and after;
+  `web/app.js` restored byte-identical. `GUARD g5` does NOT apply (tests/checkpoints/docs only — verified
+  by `git diff --name-only`), and `probe-live.sh` → PASS exit 0. (History: this line read "5bf080a"
+  (slice 18), "620a71b" (slice 17), "f066f65" (slice 16), "c13219a" (slice 15), "66a3295" (slice 14),
   "695ba2e" (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27)
   and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
   quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (row 84: a TEST-ONLY slice making the single-item confirmation
-  |   FALSIFIABLE — my own arm found that no pin can fail on a key/entry delete that skips its
-  |   confirmation; worktree worktrees/confirm-pin, branch feat/confirm-pin). Slices 12–18 are LANDED,
-  |   VERIFIED and RETIRED. THE OWNER'S FOUR UI ASKS ARE DONE AND LIVE: delete a key (including a
-  |   revoked one), look inside a store (names, prefix filtered ON THE SERVER) and delete an entry,
-  |   empty a store and delete a store (the last two need the store name TYPED). The console is served
-  |   from disk per request, so a reload shows it — no restart.
-  |   LIVE at https://store.futuremagic.de/ on the migrated SQLite core (one database, WAL, keys and
-  |   item bytes together); probe PASS.
-  |   NEXT after row 84: nothing queued — the owner has no open request.
+  | state=NO writer in flight, and **NOTHING IS QUEUED** — the owner has no open request for the first
+  |   time since the store went live. Slices 12–19 are LANDED, VERIFIED and RETIRED. Everything he asked
+  |   for is live: the console's four destructive actions (delete a key including a revoked one, look
+  |   inside a store with a server-side prefix filter and delete an entry, empty a store, delete a store
+  |   — the last two needing the store name TYPED), on the migrated SQLite core (one database, WAL, keys
+  |   and item bytes together). The console is served from disk per request, so a reload shows it.
+  |   LIVE at https://store.futuremagic.de/; probe PASS.
+  |   THE OWNER'S ONE OUTSTANDING ACTION: make a real key-bearing call (the dispatcher holds no key) —
+  |   that also retires the pre-migration copy at
+  |   `/home/administrator/serverstore-data.backup-pre-migration`.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -1121,6 +1119,7 @@ retired_branch=feat/rate-limit
 retired_branch=feat/browser-test
 retired_branch=feat/sqlite-core
 retired_branch=feat/console-destructive
+retired_branch=feat/confirm-pin
 retired_branch=feat/destructive
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
@@ -1129,7 +1128,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-84 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-85 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -1170,6 +1169,32 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=85 | sha=0410a87 (the VERIFIED CODE tip; the slice-19 landing itself is row 84 below.
+  | TEST-ONLY: `tests/checkpoints/docs` only, no product byte moved, so GUARD g5 does not apply)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 18 files · 179 tests ·
+  | 4.25s, browser file 3785ms — the pin rides EXISTING flows, so the gate cost is FLAT (raw log
+  | `.gate-logs/dispatcher-gate-s19.log`).
+  | arms=`.gate-logs/dispatcher-arms-s19.sh`, transcript `.gate-logs/dispatcher-arms-s19.out`, the gate
+  | lock held across a control and BOTH arms, sha256 printed before and after, restore from HEAD in an
+  | `EXIT INT TERM` trap with the hash asserted back, a control BEFORE and AFTER, `error TS` = VOID.
+  | The writer's arm G (the one this slice exists for) already proves the EFFECT half: a guard that acts
+  | on the FIRST click reds V1 and V3. Mine prove the other two ways the new pin could still be blind:
+  |   X the confirmation affordance VANISHES the moment it is created (`web/app.js` `56bd8f70…ed2c` →
+  |     `28f82ddc…70e2`) → **RED on PIN V1 with V3 and V5 as the same-seam family** — the ANTI-VACUITY
+  |     half works: a console where nothing happened AND nothing was offered cannot pass as "armed".
+  |   Y ONLY the entry delete bypasses the guard while the key delete keeps it (`56bd8f70…ed2c` →
+  |     `5ec6ca7b…d7d5`) → **RED on PIN V3 ALONE** — the COVERAGE claim: the ONE shared helper really is
+  |     applied to BOTH single-item controls, so a pin that covered only keys would have passed this arm.
+  |   both controls GREEN (18 files · 179 tests), `web/app.js` back at its before-hash.
+  | THE HOLE IS CLOSED: row 83 found that a single-item action running on the first click could not fail
+  | anything; V1 and V3 now assert, through ONE helper (`assertArmedNotActed`), that after the FIRST
+  | click NOTHING changed (read back through the API) AND the confirmation is ON SCREEN, and only the
+  | CONFIRM click acts — and the arm proves the assertion fails on exactly the defect that motivated it.
+  | retired=worktree worktrees/confirm-pin · branch feat/confirm-pin (was 0f361b4, verified fully merged)
+  | · writer session ff795c01… — salvage-checked BEFORE deletion (tracked-clean worktree, tip ==
+  | origin/main). Host after: only `main` in `git worktree list`, lock free, probe PASS exit 0.
+  | docs=ledger row 85 · this board.
+
 LANDED | row=84 | sha=0410a87 (the WRITER'S TEST-ONLY tip: `tests/browser.test.ts` and
   | `checkpoints/confirm-pin-differential.sh`; the docs commit carrying THIS line, ledger row 84,
   | `docs/TESTING.md` and the transcript `checkpoints/confirm-pin-differential.out` is its child)
