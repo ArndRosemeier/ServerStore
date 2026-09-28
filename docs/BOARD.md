@@ -79,21 +79,12 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
-IN-FLIGHT | row=88 | session=(dispatching now) | worktree=worktrees/name-limit |
-  | branch=feat/name-limit | base=origin/main — resolved by the writer and recorded in its landing
-  | state=THE ONE WRITER. Scope: the NAME LENGTH only (design = ledger row 87, brief
-  |   `docs/briefs/slice-20-name-limit.md`). `NAME_MAX_LENGTH` 64 → 1024 and the pattern
-  |   `{0,63}` → `{0,1023}` in `src/core/validate.ts`, plus the refusal MESSAGE (which embeds both and
-  |   would otherwise keep saying 64) and the doc-comments — ONE rule, so store names, entry names, the
-  |   `prefix=` filter and key ids widen TOGETHER; stated as a consequence, not smuggled. NO schema
-  |   change, NO migration (a widening: every stored name stays legal). `src/server/ratelimit.ts`'s
-  |   `MAX_IDENTITY_LENGTH = 64` is a DIFFERENT 64 and MUST NOT be touched. Docs that state the number
-  |   move with the code (`API.md` x3, `STORAGE.md`, a schema comment in the tests); the OLDER ledger
-  |   rows, board lines and briefs are HISTORY and stay as written. The console's entry/store rows were
-  |   built when 64 was the maximum, so CSS + a browser pin must prove a 1024-char name cannot break the
-  |   page. Pins Z1–Z5 (boundary BOTH ways, one rule for prefix and stores, the message tells the truth,
-  |   the docs say 1024, and the real browser renders + deletes a 1024-char entry). NOT in scope: the
-  |   64 MiB item cap, the charset, and any storage/schema change.
+(The row=88 `IN-FLIGHT` block is FOLDED by the LANDED row=88 record in `## Landed` — the
+writer's own record, added in the docs child of landing `26f9e46`. Its scope was CORRECTED
+MID-FLIGHT by the owner (ledger row 87b): the change is not "edit the constant, the pattern
+and the message" but "make the limit ONE constant and BUILD the pattern and both messages
+from it", with a NEW `PIN Z6` forbidding the number appearing twice under `src/`. The pin
+set is `Z1–Z4, Z6` in the code/doc tests and `Z5` in the real browser.)
 
 (The row=84 `IN-FLIGHT` block is FOLDED by the LANDED row=84 record in `## Landed` — the
 writer's own record, added in the docs child of landing `0410a87`. Its scope statement is
@@ -1195,6 +1186,68 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=88 | sha=26f9e46 (the writer's CODE tip: `src/core/validate.ts`, the Z pins,
+  | `tests/helpers/source.ts`, `web/app.css` and the three live docs; the docs child carrying THIS
+  | line, ledger row 88, `docs/TESTING.md` and `checkpoints/name-limit-differential.out` is its child)
+  | base=origin/main resolved at dispatch as `848cc1a`; the owner's correction landed as `b61c8e4`
+  |   (row 87b) and the worktree was rebased onto it BEFORE the first edit.
+  | verify=THE WRITER'S OWN, in-turn, foreground, on the committed tree: `bash scripts/gate.sh` →
+  |   exit 0 GREEN · 19 files · 185 tests · 4.33s, with `tests/browser.test.ts (16 tests)` at 3861ms —
+  |   the Z5 flow costs ~76ms over slice 19's 3785ms because it reuses the page, the spawn and the
+  |   store-open flow and adds only one store and one entry (raw log `.gate-logs/writer-gate-s20.log`).
+  |   This is the WRITER'S verification; the DISPATCHER'S independent gate + arms are OWED.
+  | scope=THE NAME BOUND IS ONE CONSTANT (the owner's correction, row 87b). `NAME_CHARSET` +
+  |   `NAME_MAX_LENGTH` are the two NAMED pieces, `NAME_PATTERN` is BUILT from them
+  |   (`new RegExp(…{0,${NAME_MAX_LENGTH - 1}}…)`), and BOTH refusal messages read
+  |   `NAME_PATTERN.source` / the constant — one edit changes the limit and cannot leave a stale
+  |   pattern or a lying message. The widening covers store names, entry names, the `prefix=` filter
+  |   and key ids TOGETHER (one parser, stated as a consequence); NO schema change, NO migration;
+  |   `src/server/ratelimit.ts`'s DIFFERENT 64 is untouched (that file is not in the landing). New pins
+  |   Z1/Z2/Z3/Z6 (`tests/name-limit.test.ts`), Z4 (`tests/api-doc.test.ts`), Z5
+  |   (`tests/browser.test.ts`); every test boundary is DERIVED from the constant, never typed.
+  |   `web/app.css` declares `overflow-wrap: anywhere` ONCE on `body` (three per-list copies folded);
+  |   `tests/helpers/source.ts` folds the recursive `.ts` walker Y8 and Z6 share.
+  | arms=`checkpoints/name-limit-differential.sh`, transcript `checkpoints/name-limit-differential.out`,
+  |   per-arm logs `.diff-harness-name-limit/` (*.log, gitignored), the gate lock held across a control
+  |   and EVERY arm, `src/core/validate.ts`'s sha256 printed before and after each injection
+  |   (`b8de28c7…f04b` throughout), restore from `HEAD` in an `EXIT INT TERM` trap with the hash
+  |   asserted back, `error TS` = VOID, a control BEFORE and AFTER (both GREEN, 19 files · 185 tests):
+  |   A TOO STRICT — the length check hard-codes 64 while the constant and pattern stay at the bound
+  |     (`b8de28c7…f04b` → `338ff23e…b541`) → RED on PIN Z1's ACCEPTED half (`the name at the bound
+  |     was refused`), Z2/Z3 as DECLARED TWINS, Z6 GREEN, and the browser file failing collaterally in
+  |     `beforeAll` because its Z5 fixture PUTs an entry AT the bound (named, not hidden).
+  |   B TOO LOOSE — the length check removed and the pattern reduced to the charset
+  |     (`b8de28c7…f04b` → `2f6e46ef…775b`) → RED on PIN Z1's REFUSAL half (`a name one character
+  |     past the bound was accepted`) with the ACCEPTED half green (proved by that message), Z3/Z6 as
+  |     DECLARED TWINS, the two over-cap name assertions in `tests/objects.test.ts` as honest
+  |     collateral, and the browser file GREEN (4023ms).
+  |   C THE BRIEF'S LITERAL ARM, MEASURED — `NAME_MAX_LENGTH = 64` and nothing else
+  |     (`b8de28c7…f04b` → `2f007765…c2d0`) → Z1 stayed GREEN: under row 87b the tests derive their
+  |     boundary from the constant, so changing the constant alone cannot redden them. It is caught by
+  |     PIN Z4 instead, with Z6 as collateral (the value 64 occurs incidentally across `src/`'s
+  |     comments). A TARGETED non-browser probe, not a gate run.
+  | THE BRIEF WAS WRONG IN ONE PLACE (reported, not worked around): its arm (a) "set NAME_MAX_LENGTH
+  |   back to 64 → Z1/Z2 must go RED on the accepted-1024 half" was written for the pre-correction
+  |   design where the tests hard-coded 1024. ARM C measures that; the brief's two DIRECTIONS were kept
+  |   by re-aiming ARM A at the enforcement (a hard-coded 64 in the length check).
+  | chrome=0 our processes after every run (scoped `ServerStore/*browser-scratch`, captured with `ps`
+  |   to a FILE and grepped in a SEPARATE call with a doubly-bracketed pattern);
+  |   `ps -eo comm= | grep -c '^chrome$'` → 0. The brief's literal pattern self-matches its own shell
+  |   when the same argv also carries a real ServerStore path — measured 1, recorded (trap t8).
+  | docs=ledger row 88 · `docs/TESTING.md` (Z1–Z6 + the differential + honest unknowns) · `docs/API.md`
+  |   · `docs/STORAGE.md` · `docs/SEAM-INDEX.md` (the name-rule row, the prefix row, trap 19) · this board.
+  | COPIES: 4→1 — the name bound is ONE constant (`NAME_MAX_LENGTH`) that the built pattern and both
+  |   messages derive from (grepped `src/` for the expanded `{0,63}`/`{0,1023}` literals, the retyped
+  |   pattern text `[a-z0-9][a-z0-9._-]`, and a second `NAME_MAX_LENGTH` declaration).
+  |   COPIES: 2→1 — `tests/helpers/source.ts` is the ONE recursive `.ts` walker, read by BOTH PIN Y8
+  |   and PIN Z6.
+  | unproven=Z5's layout claim is ONE measurable thing (no horizontal page overflow with the long row
+  |   on screen), not a screenshot and not a visual-design claim, and one browser engine runs; only the
+  |   ENTRY row is browser-driven at the bound (a long STORE row is API-pinned and covered by the same
+  |   inherited CSS rule, but not rendered by a pin); no length-related performance claim is made; the
+  |   non-SQLite portability constraint is a NOTE (LMDB keys cap around 511 bytes), not a pin.
+  |   Retirement of the worktree and branch is the DISPATCHER'S.
+
 LANDED | row=85 | sha=0410a87 (the VERIFIED CODE tip; the slice-19 landing itself is row 84 below.
   | TEST-ONLY: `tests/checkpoints/docs` only, no product byte moved, so GUARD g5 does not apply)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 18 files · 179 tests ·

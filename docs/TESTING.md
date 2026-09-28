@@ -42,6 +42,12 @@ Each pin's NAME is the contract. `tests/` maps to them as follows.
 | D4 | **SIGTERM stops the service and leaves no child behind** (no `0A` socket, child reaped) | `tests/entrypoint.test.ts` (`PIN D4`) |
 | D5 | The unit file **passes `systemd-analyze verify`** | `tests/deploy.test.ts` (`PIN D5`) |
 | D6 | The unit file **does not make the bind host configurable** | `tests/deploy.test.ts` (`PIN D6`) |
+| Z1 | The name boundary holds in **BOTH directions**: a name of EXACTLY `NAME_MAX_LENGTH` round-trips (PUT → GET byte-identical → DELETE) and one character more is `400 invalid_name` with nothing written | `tests/name-limit.test.ts` (`PIN Z1`) |
+| Z2 | It is **ONE rule**: the `prefix=` filter and a STORE name widen with it — accepted at the bound, refused one past | `tests/name-limit.test.ts` (`PIN Z2`) |
+| Z3 | The **refusal message tells the truth**: it states the CONSTANT and quotes the pattern the parser enforces (the bound is read OUT of the message and the parser driven at bound ±1) | `tests/name-limit.test.ts` (`PIN Z3`) |
+| Z4 | The **CURRENT docs** state the name limit the CODE enforces — compared against the exported constant, never a literal; the ledger/board/briefs are history and are never scanned | `tests/api-doc.test.ts` (`PIN Z4`) |
+| Z5 | The **REAL browser** renders a `NAME_MAX_LENGTH`-character entry without horizontal overflow and deletes it through the UI, with the API read back | `tests/browser.test.ts` (`PIN Z5`) |
+| Z6 | The bound lives in **exactly ONE place** under `src/`: the value is not retyped, the quantifier is not expanded, the pattern text is not copied | `tests/name-limit.test.ts` (`PIN Z6`) |
 | — | The process itself (gate vocabulary, the lock refusing a concurrent run, the reconciler saying CANNOT LOOK) | `tests/gate.test.ts` |
 | — | The SOURCE TREE runs under strip-only Node (this is what `pnpm run serve` executes) | `tests/runtime.test.ts` |
 
@@ -1272,6 +1278,107 @@ net.
 - **The live data root was not touched and is not migrated by this landing.** Y2 builds its own
   scratch old-layout roots; the dispatcher takes the three-file backup and restarts the unit, and
   only that boot migrates `/home/administrator/serverstore-data`.
+
+## The name-bound pins (slice 20, Z1–Z6, ledger rows 87/87b/88)
+
+The owner's other project hit the 64-character name cap; he decided names may be up to
+1024 characters and kept the 64 MiB item cap (row 87). **Then he corrected the SHAPE of
+the change (row 87b): the limit should be one constant, and the fact that it was not —
+the regex literal, the retyped message and the test literals each restated the number —
+means the constant had never been the single source.** So `src/core/validate.ts` now names
+`NAME_CHARSET` (the alphabet) and `NAME_MAX_LENGTH` (the ONE number), BUILDS `NAME_PATTERN`
+from them (`new RegExp(…{0,${NAME_MAX_LENGTH - 1}}…)`), and both refusal messages read
+`NAME_PATTERN.source` / the constant: changing the limit is ONE edit that cannot leave a
+stale pattern or a lying message behind. Because `parseName()` is deliberately the one
+parser, the bound is the same for **store names, entry names, the `prefix=` filter and key
+ids** — a `NAME_MAX_LENGTH`-character STORE name is legal by design, and there is no second,
+shorter limit for stores.
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| Z1 | a name of EXACTLY `NAME_MAX_LENGTH` is PUT, read back byte-identical, and DELETEd; a name of `NAME_MAX_LENGTH + 1` is `400 invalid_name` with **nothing written** (the row count and the blob list are unchanged) | `tests/name-limit.test.ts` (`PIN Z1`) |
+| Z2 | the `prefix=` filter accepts a `NAME_MAX_LENGTH`-character prefix (`200 {"objects":[]}`) and refuses `+1`; a `NAME_MAX_LENGTH`-character STORE name is created and listed, `+1` refused | `tests/name-limit.test.ts` (`PIN Z2`) |
+| Z3 | the length refusal states the constant; the charset refusal quotes `NAME_PATTERN.source`; the bound is parsed OUT of the message, the message's own pattern is compiled and driven at bound/bound+1, and the PARSER is driven at the same two points — so a code drifted upward while the message stays behind fails on `bound + 1` | `tests/name-limit.test.ts` (`PIN Z3`) |
+| Z4 | `docs/API.md`'s Names section carries the code's own pattern, `1 to <constant>` and `over <constant> characters`; `docs/STORAGE.md`'s limits bullet says `up to <constant> characters`; and EVERY name-bound claim in the three CURRENT docs is checked against the constant (a `{0,N}` with `N !== NAME_MAX_LENGTH - 1`, or an `up to/over/at most N chars`, fails). History is exempt by construction — the scan reads only `docs/API.md`, `docs/STORAGE.md`, `docs/SEAM-INDEX.md` | `tests/api-doc.test.ts` (`PIN Z4`) |
+| Z5 | the REAL console (spawned entrypoint + installed Chrome) opens a store holding one `NAME_MAX_LENGTH`-character entry, the row is rendered, `document.documentElement.scrollWidth <= clientWidth` with that row ON SCREEN, the guarded Delete is driven (nothing on the first click), and the entry is gone through the API afterwards | `tests/browser.test.ts` (`PIN Z5`) |
+| Z6 | grep-level, in the spirit of Y8: under `src/` the value appears exactly once (its declaration in `validate.ts`); no file carries the expanded quantifier or the retyped pattern text; `NAME_MAX_LENGTH` is declared once; the pattern derives (`NAME_MAX_LENGTH - 1`); a refusal reads `NAME_PATTERN.source` | `tests/name-limit.test.ts` (`PIN Z6`) |
+
+**The ONE declared exemption in Z6, named rather than hidden:** `src/server/config.ts`
+holds `DEFAULT_MAX_BYTES`'s binary-MiB factor, which shares the digits with the bound but
+is a DIFFERENT number (the item cap, row 86). It is exempt as a FILE — an unrelated edit to
+the item cap must not be able to redden a pin about the NAME bound — and the pin also
+asserts the exempt file really is `DEFAULT_MAX_BYTES`, so the exemption is grounded and not
+a hole. Everything else under `src/` must carry the value zero times.
+
+**The tests derive every boundary from the constant** (`NAME_MAX_LENGTH` /
+`NAME_MAX_LENGTH + 1`); no test types `1024` or `1025`. The two older over-cap cases
+(`tests/objects.test.ts` P4's unmatchable prefix and PIN 8's illegal names) were moved from
+the literal `65` to `NAME_MAX_LENGTH + 1` in the same landing.
+
+**The recursion the pins needed was folded, not copied:** the recursive `.ts` walker PIN
+Y8 already had (`tests/sqlite-core.test.ts`) is now `tests/helpers/source.ts`, read by BOTH
+Y8 and Z6 — one walker, so a file list cannot drift between the two encapsulation pins.
+
+## The name-limit differential (TWO arms in opposite directions + one measured probe + two controls)
+
+Machinery: `checkpoints/name-limit-differential.sh`. Raw transcript:
+`checkpoints/name-limit-differential.out` (per-arm logs under `.diff-harness-name-limit/`,
+`*.log`, so gitignored). The slice is COMMITTED FIRST (the CONTROL line names the code tip
+`26f9e46`), the lock `scripts/gate.sh` takes is held across the control and EVERY arm,
+`src/core/validate.ts`'s sha256 is printed before and after each injection, the restore is
+`git checkout HEAD --` inside an `EXIT INT TERM` trap with the hash asserted back,
+`error TS` = VOID, and a control runs BEFORE and AFTER. The before-hash of every arm is the
+same file:
+
+`src/core/validate.ts` before and after control: `b8de28c7…f04b`.
+
+| Arm | Injected defect | sha256 before → after | Went RED on |
+| --- | --- | --- | --- |
+| A — TOO STRICT | the LENGTH CHECK hard-codes `64` while `NAME_MAX_LENGTH` and the built pattern stay at the bound | `b8de28c7…f04b` → `338ff23e…b541` | **`PIN Z1` on its ACCEPTED half** — `the name at the bound was refused` — so the parser is stricter than its own constant. **Z2 and Z3 are DECLARED TWINS** (one rule, and the smaller number reaches the message), Z6 stayed GREEN, and `tests/browser.test.ts` failed collaterally in `beforeAll`: its Z5 fixture PUTs an entry AT the bound, which this arm refuses at setup (named, not hidden) |
+| B — TOO LOOSE | the length check is REMOVED and the pattern keeps only the charset (`{0,NAME_MAX_LENGTH-1}` → `*`), so nothing enforces a maximum | `b8de28c7…f04b` → `2f6e46ef…775b` | **`PIN Z1` on its REFUSAL half** — `a name one character past the bound was accepted` — with its ACCEPTED half proved GREEN by that very message (the run got past PUT/GET/DELETE at the bound and failed only on `+1`). **Z3 and Z6 are DECLARED TWINS** (no maximum is stated any more; the pattern no longer derives from the constant), the two over-cap name assertions in `tests/objects.test.ts` fell as honest collateral, and the browser file stayed GREEN (`16 tests 4023ms`), because a 1024-character name is still accepted by a charset-only rule |
+| C — THE BRIEF'S LITERAL ARM, measured | `NAME_MAX_LENGTH = 64` and NOTHING else | `b8de28c7…f04b` → `2f007765…c2d0` | **`PIN Z1` stayed GREEN.** Under row 87b the tests derive their boundary from the constant, so changing the constant alone cannot redden them — the test's boundary moves with it. What catches it is **`PIN Z4`** (the docs still state the bound the constant used to be), with Z6 as collateral (the value `64` occurs incidentally all over `src/`'s comments, which is exactly what that pin reports). This arm is a TARGETED non-browser probe (`tests/name-limit.test.ts`, `tests/api-doc.test.ts`, `tests/objects.test.ts`), not a gate run |
+| control | none — the committed tree | — | **GREEN**: 19 files · 185 tests; `tests/browser.test.ts (16 tests) 3922ms` |
+| control | none — the restored tree, `validate.ts` back at its before-hash | `b8de28c7…f04b` | **GREEN**: 19 files · 185 tests; `tests/browser.test.ts (16 tests) 4140ms` |
+
+- **THE BRIEF WAS WRONG IN ONE PLACE, and it is reported rather than worked around:** its
+  arm (a) — *"set `NAME_MAX_LENGTH` back to 64 (leaving the pattern alone) → Z1 (or Z2) must
+  go RED on the accepted-1024 half"* — was written for the pre-correction design in which
+  the tests hard-coded `1024`. Under row 87b they derive it, so that arm is VOID by
+  construction; ARM C MEASURES that instead of assuming it. The brief's two DIRECTIONS were
+  kept by re-aiming ARM A at the enforcement (a hard-coded `64` in the length check), which
+  reddens Z1's accepted half exactly as the brief demanded.
+- **BOTH directions are therefore pinned by a real injection:** Z1 fails if the parser is
+  stricter than the constant (A) and if it is looser (B), and in B the accepted half is
+  independently known green.
+- **Nothing outlived any run:** `ps -eo comm= | grep -c '^chrome$'` → `0`, and a scoped
+  count restricted to `ServerStore/*browser-scratch` → `0`, taken from a `ps` snapshot FILE
+  in a SEPARATE call with a doubly-bracketed pattern. The brief's literal
+  `ServerStore/.*browser-scratch` form self-matched its own shell in this session (measured
+  `1`) because the same argv also carried a real `ServerStore/` path — the same trap t8
+  class, recorded rather than repeated.
+- **No VOID probe:** no cheap-tier log in any arm carried `error TS`; the lock was held
+  across every arm and released; `validate.ts` was restored byte-identical after each.
+
+### Honest unknowns (this slice)
+
+- **Z5's layout claim is ONE measurable thing** — no horizontal page overflow while the
+  long row is on screen — and explicitly **not** a screenshot or a visual-design claim; a
+  scripted flow is not a layout claim and one browser engine is all that runs.
+- **Only the ENTRY row is browser-driven at the bound.** A `NAME_MAX_LENGTH`-character
+  STORE name is pinned at the API (Z2) and is covered by the same inherited CSS rule
+  (`body { overflow-wrap: anywhere }`), but no browser pin renders a 1024-character store
+  row. Stated, not implied.
+- **No length-related performance claim is made.** A 1024-character name in a URL is far
+  inside HTTP limits (a browser/curl line is ~8 KB and cloudflared/nginx defaults are
+  larger), and the prefix range query is a range on the primary key either way; nothing here
+  measures a long-name workload.
+- **The non-SQLite portability constraint is a NOTE, not a pin.** A future backend must
+  decide what to do about names longer than its own key limit (LMDB keys cap around 511
+  bytes) — written into `docs/SEAM-INDEX.md` and `docs/STORAGE.md` where the next reader
+  looks, not tested.
+- **`src/server/ratelimit.ts`'s `MAX_IDENTITY_LENGTH = 64` is untouched** and is proved
+  untouched by the diff (that file is not in the landing) rather than by a new pin; its own
+  R1–R8 pins stay green in the same gate.
 
 ## The full gate
 

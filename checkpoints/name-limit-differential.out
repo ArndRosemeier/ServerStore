@@ -1,0 +1,85 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+validate.ts before anything: b8de28c721f4545a00f87864d8fc095c314b070519ead424c0194bed9d53f04b
+chrome-count control (t8): scoped+bracketed=0  brief's-literal=1
+  the literal command counts the grep THAT IS RUNNING IT (its pattern is in that argv); the bracketed one cannot.
+=== CONTROL — the committed tree (26f9e46) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/name-limit/.diff-harness-name-limit/control)
+  control GREEN:  Test Files  19 passed (19)       Tests  185 passed (185) 
+ ✓ tests/browser.test.ts (16 tests) 3922ms
+=== ARM A (TOO STRICT) — the length check hard-codes 64 while the constant stays at the bound ===
+  file:   src/core/validate.ts
+  sha256: b8de28c721f4545a00f87864d8fc095c314b070519ead424c0194bed9d53f04b  (before)
+  sha256: 338ff23e195ae5b5f3e1ae52dfbe62731bb93c8494b9f9df77b12d8eb2edb541  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/name-limit/.diff-harness-name-limit/arm-a)
+     × PIN Z1: the boundary holds in BOTH directions 64ms
+     × PIN Z2: it is ONE rule, so the prefix filter and STORE names widen with it 5ms
+     × PIN Z3: the refusal message tells the truth 7ms
+   ✓ PIN Z6: the name bound lives in exactly ONE place (ledger rows 87/87b) (1)
+     ✓ PIN Z6: the numeric maximum is not retyped anywhere under src/ 5ms
+ ✓ tests/core.test.ts (6 tests) 96ms
+ ❯ tests/browser.test.ts (16 tests | 16 skipped) 832ms
+   ↓ the console and CORS, executed in a real browser (pins B1-B8) (8)
+     ↓ PIN B1: the console's JavaScript RUNS in a real browser, with no page error
+     ↓ PIN B2: a master key typed into the console AUTHENTICATES through the UI
+     ↓ PIN B3: the console's EDIT flow really PATCHes
+     ↓ PIN B4: a real browser on ANOTHER ORIGIN completes an authorized fetch
+     ↓ PIN B5: that browser can READ the exposed x-serverstore-sha256
+  ARM A reddened Z1 on the ACCEPTED half (a name AT the bound was refused).
+  DECLARED TWIN (measured): PIN Z2: it is ONE rule, so the prefix filter and STORE names widen with it -> RED (it is the same parser)
+  DECLARED TWIN (measured): PIN Z3: the refusal message tells the truth -> RED (the message states the smaller number)
+ ❯ tests/browser.test.ts (16 tests | 16 skipped) 832ms
+ FAIL  tests/browser.test.ts [ tests/browser.test.ts ]
+ ❯ putObject tests/browser.test.ts:523:76
+  browser file collateral: its Z5 fixture PUTs an entry AT the bound, so ARM A refuses it at setup (named, not hidden).
+RESTORED: src/core/validate.ts back at HEAD; lock released
+=== ARM B (TOO LOOSE) — the length check is gone and the pattern keeps only the charset ===
+  file:   src/core/validate.ts
+  sha256: b8de28c721f4545a00f87864d8fc095c314b070519ead424c0194bed9d53f04b  (before)
+  sha256: 2f6e46ef6be9346b19cb58e76d9aed23a2d86766909843401058253b822f775b  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/name-limit/.diff-harness-name-limit/arm-b)
+     × PIN Z1: the boundary holds in BOTH directions 59ms
+     × PIN Z2: it is ONE rule, so the prefix filter and STORE names widen with it 7ms
+     × PIN Z3: the refusal message tells the truth 8ms
+   ❯ PIN Z6: the name bound lives in exactly ONE place (ledger rows 87/87b) (1)
+     × PIN Z6: the numeric maximum is not retyped anywhere under src/ 7ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET whose row has no content fails loudly, not with empty bytes
+[serverstore] internal error: object "gone.txt" in store "master" has no content in the database; the boot import did not cover it
+
+ ✓ tests/destructive.test.ts (9 tests) 148ms
+ ✓ tests/keys.test.ts (25 tests) 279ms
+ ✓ tests/gate.test.ts (7 tests) 415ms
+ ❯ tests/objects.test.ts (23 tests | 2 failed) 361ms
+   ✓ the object round-trip (pin 4) (8)
+  ARM B reddened Z1 on the REFUSAL half (a name one character past the bound was accepted).
+  ...and its ACCEPTED half is proved GREEN by the failing message above: the run got PAST the
+  PUT/GET/DELETE at the bound and failed only on the +1 refusal.
+  DECLARED TWIN (measured): PIN Z3: the refusal message tells the truth -> RED (no maximum is stated any more)
+  DECLARED TWIN (measured): PIN Z6: the numeric maximum is not retyped anywhere under src/ -> RED (the pattern no longer derives from the constant)
+ ✓ tests/browser.test.ts (16 tests) 4023ms
+RESTORED: src/core/validate.ts back at HEAD; lock released
+=== ARM C (the brief's literal arm) — NAME_MAX_LENGTH set to 64 and NOTHING else ===
+  file:   src/core/validate.ts
+  sha256: b8de28c721f4545a00f87864d8fc095c314b070519ead424c0194bed9d53f04b  (before)
+  sha256: 2f0077656e41f88e08c6afd1f6dd9112fc0a77898c2afb399bb62c026074c2d0  (after injection)
+  ARM C: targeted exit=1 (log: /home/administrator/projects/ServerStore/worktrees/name-limit/.diff-harness-name-limit/arm-c/targeted.log)
+  MEASURED: PIN Z1: the boundary holds in BOTH directions stayed GREEN — the test DERIVES its boundary from the constant, so
+  changing the constant alone cannot redden it (this is the brief's arm as written, and it
+  is why the arm was re-aimed at Z1 in ARM A).
+  MEASURED: PIN Z4: the docs state the NAME limit the code enforces -> RED — the docs still state the bound the constant used to be.
+  COLLATERAL (measured): PIN Z6: the numeric maximum is not retyped anywhere under src/ -> RED — the value 64 occurs incidentally all over `src/`'s comments (row 64x).
+RESTORED: src/core/validate.ts back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/name-limit/.diff-harness-name-limit/control2)
+  control GREEN:  Test Files  19 passed (19)       Tests  185 passed (185) 
+ ✓ tests/browser.test.ts (16 tests) 4140ms
+  sha256: b8de28c721f4545a00f87864d8fc095c314b070519ead424c0194bed9d53f04b  (src/core/validate.ts back to its before hash)
+
+DIFFERENTIAL COMPLETE: ARM A (TOO STRICT) went RED on PIN Z1's ACCEPTED half (Z2/Z3 twins);
+ARM B (TOO LOOSE) went RED on PIN Z1's REFUSAL half with the accepted half green (Z3/Z6 twins);
+ARM C measured the brief's literal wording: changing ONLY the constant leaves Z1 GREEN and is caught
+by PIN Z4. Both controls GREEN, so the pins are not merely always-red. Our own chrome processes
+after every run: 0 (count scoped to ServerStore/*browser-scratch with a bracketed pattern that cannot
+match its own argv; the brief's literal command self-matches, measured above). No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/name-limit/.diff-harness-name-limit/{control,arm-a,arm-b,arm-c,control2}/*.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/name-limit/checkpoints/name-limit-differential.out
+RESTORED: src/core/validate.ts back at HEAD; lock released
