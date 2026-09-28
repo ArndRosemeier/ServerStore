@@ -45,10 +45,13 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: bd55b7e · 2026-09-27T22:13Z — the CORS (D1/row 57) VERIFIED CODE tip ON THE REBASED
-  TREE. The docs commit carrying THIS marker is its child, so the marker is the code tip and not
-  itself — a commit cannot name its own sha (the tree that commit carries is `e39b5aa`, the row-57
-  record). `bash scripts/board.sh` must report this marker as an ancestor of origin/main. verify=THE
+reconciled: bd55b7e · 2026-09-28T07:15Z — the CORS (D1/row 57) VERIFIED CODE tip ON THE REBASED
+  TREE, re-checked against reality at the row-61 dispatch (this session sat idle ~9 hours between
+  the row-58 landing and the owner's object-lookup question; the marker is unchanged because no code
+  landed in between, and the LIVE database, git and the service clock were re-measured, not
+  remembered). The docs commit carrying THIS marker is its child, so the marker is the code tip and
+  not itself — a commit cannot name its own sha. `bash scripts/board.sh` must report this marker as
+  an ancestor of origin/main. verify=THE
   DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 13 files · 119 tests · 2.24s; plus
   the LIVE perimeter (GUARD g5: pulled, restarted, probe PASS exit 0, and a live preflight answers
   204 with the headers a browser needs while `allow-credentials` appears 0 times); plus two own arms
@@ -58,20 +61,31 @@ reconciled: bd55b7e · 2026-09-27T22:13Z — the CORS (D1/row 57) VERIFIED CODE 
   LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight — slice 12 (D1: CORS) is LANDED, VERIFIED by the dispatcher and
-  |   RETIRED (row 58 below). LIVE at https://store.futuremagic.de/ with the console, key editing
-  |   (C2) and CORS; service on main@e39b5aa (CORS code tip bd55b7e), re-probed after the restart;
-  |   EXACTLY ONE live admin key. A turn-based browser game being built from ANOTHER ORIGIN is now
-  |   UNBLOCKED and has NOTHING further to wait for from this project; the store ships no
-  |   `SERVERSTORE_CORS_ORIGINS`, so every origin is answered (safe: no cookies/ambient credentials).
-  |   NEXT: the owner's OBJECT-LOOKUP fork (row 59) — his choice, then either a `prefix=` filter on
-  |   the list route (recommended) or server-assigned ids; then rate limiting, then the OWED
-  |   headless-browser test.
+  | state=ONE writer in flight (row 61: the `prefix=` object filter, worktree worktrees/object-prefix,
+  |   branch feat/object-prefix). Slice 12 (D1: CORS) is LANDED, VERIFIED and RETIRED (row 58).
+  |   LIVE at https://store.futuremagic.de/ with the console, key editing (C2) and CORS; service on
+  |   main@e39b5aa (CORS code tip bd55b7e), re-probed after the restart; EXACTLY ONE live admin key.
+  |   A turn-based browser game is being built from ANOTHER ORIGIN and is UNBLOCKED; it holds 3 test
+  |   objects in store `colossus` under `g.<game>.*` names, which it will rename kind-first now that
+  |   the owner chose (A) (ledger row 60).
+  |   NEXT after row 61: rate limiting, then the OWED headless-browser test.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
+
+IN-FLIGHT | row=61 | session=(dispatching now) | worktree=worktrees/object-prefix |
+  | branch=feat/object-prefix | base=origin/main — resolved by the writer and recorded in its landing
+  | state=THE ONE WRITER. Scope: a `prefix=` filter on `GET /stores/:store/objects` — a RANGE query
+  |   on the objects primary key inside `StoreKindHandler.list` (never `LIKE`/`substr`: not scanning is
+  |   the point), the prefix validated by the EXISTING `parseName` rule with `what` = "object name
+  |   prefix" (the legal-name language is prefix-closed, so ONE rule refuses exactly the strings that
+  |   can never match — code `invalid_name`, 400), `200 {"objects":[]}` when a valid prefix matches
+  |   nothing, the UNCHANGED full listing when `prefix` is absent, and no new route/error code/schema.
+  |   Pins P1-P8, of which P7 holds an `EXPLAIN QUERY PLAN` that must show NO `SCAN objects`. Brief
+  |   `docs/briefs/slice-13-object-prefix.md`, ledger row 61. NOT in scope: `since=`/`limit`/`ETag`,
+  |   server-assigned ids, lookup by `sha256`, and any change to a point read.
 
 LANDED | row=46 | sha=7cc3afe (the VERIFIED CODE tip: `src/core/keys.ts`, `src/server/app.ts`,
   | `tests/keys.test.ts`, plus `docs/API.md` and `docs/SEAM-INDEX.md`; the docs commit carrying
@@ -655,7 +669,8 @@ QUEUE-CLOSED | row=56 | LANDED as row 57 (writer's own gate GREEN · 13 files ·
   the no-new-feature design for turn-based play is per-player OBJECTS whose room state each client
   derives, and real enforcement would need one store per player (already enforced) or per-store
   permissions (row 41's deferred extension).
-QUEUE | row=59 | **OWNER ASK, AWAITING HIS CHOICE ON THE FORK (ledger row 59): reading ONE entry
+QUEUE-CLOSED | row=59 | **FORK CLOSED — the owner chose (A) on his game agent's recommendation and it
+  is DISPATCHED as row 61 (ledger row 60).** reading ONE entry
   already works (`GET /stores/{store}/objects/{name}`); entries are identified by their NAME (`PRIMARY
   KEY(store, name)`, `[a-z0-9][a-z0-9._-]{0,63}`), NOT by a server-assigned id; the real gap is that
   `GET /stores/{store}/objects` takes NO query parameter and returns the WHOLE store, so a client
@@ -666,15 +681,30 @@ QUEUE | row=59 | **OWNER ASK, AWAITING HIS CHOICE ON THE FORK (ledger row 59): r
   one request returns the room. (B) server-assigned ids via a new `POST …/objects` — a second
   identity kind: needs an `id` column + unique index, costs idempotent PUT-by-name unless both
   exist, and buys a game nothing a prefix does not. (C) lookup by `sha256` — rejected: the hash
-  addresses CONTENT, so it is useless as "the same entry after an update". NOT dispatched until he
-  chooses. Deferred unchanged: `since=`/`ETag` (row 28), blob GC.
-QUEUE | row=60 | RATE LIMITING on the public endpoint — the only queued item that PROTECTS the
+  addresses CONTENT, so it is useless as "the same entry after an update". His agent's naming plan
+  (`game.<id>`, `player.<id>.<tag>`, `snap.<id>.<turn>.<seq>.<tag>`) is GAME-side and was VERIFIED
+  free: a read-only query of the LIVE database returned exactly 3 objects, all in store `colossus`,
+  longest name 33 of 64 chars (ledger row 60). DISPATCHED as row 61 — brief
+  `docs/briefs/slice-13-object-prefix.md`: a range filter on the primary key validated by the EXISTING
+  name rule with `what` = "object name prefix" (the legal-name language is prefix-closed), `200 []` for
+  a match-nothing prefix, `400 invalid_name` for one that can never match, no schema change.
+  Deferred unchanged: `since=`/`limit`/`ETag` (row 28), server-assigned ids (option B), lookup by
+  `sha256` (option C), blob GC.
+QUEUE | row=62 | SMALL, DISPATCHER-OWNED, RIGHT AFTER row 61 LANDS (do not touch `scripts/` while a
+  writer is appending its own row to the docs): `scripts/board.sh`'s host audit reports
+  "suites: 1 matching process(es)" on a QUIET box, because `SUITE_PATTERN` matches the LIVE SERVICE
+  itself — the unit's `ExecStart` is `node --experimental-strip-types …/src/server/main.ts`
+  (observed PID 4168711, uptime 9h). The count is the guard the dispatcher uses before starting an
+  expensive run, so a permanent phantom is a real (if benign) defect: fix the pattern so it cannot
+  match the service's own argv, and prove it with a self-match check (`ps -eo comm=` by executable
+  name, never a `pgrep -f` from a shell whose own argv contains the pattern).
+QUEUE | row=63 | RATE LIMITING on the public endpoint — the only queued item that PROTECTS the
   surface rather than extending it (rows 28 and 43 both name it), and more pressing now that the API
-  answers cross-origin browsers. Then the OWED HEADLESS-BROWSER test, which closes the same gap for
-  both the console (rows 49/54) and CORS (rows 57/58): nothing automated drives a real browser, and a
-  browser is a process TREE whose kill belongs in a trap. Also deferred by owner decision, not
-  forgotten: per-store permissions (`key_stores` + perms) — only if a game needs ONE mutable shared
-  room object; editing `expiresAt`; edit history.
+  answers cross-origin browsers. Then the OWED HEADLESS-BROWSER test (row=64), which closes the same
+  gap for both the console (rows 49/54) and CORS (rows 57/58): nothing automated drives a real
+  browser, and a browser is a process TREE whose kill belongs in a trap. Also deferred by owner
+  decision, not forgotten: per-store permissions (`key_stores` + perms) — only if a game needs ONE
+  mutable shared room object; editing `expiresAt`; edit history.
 QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
   the two the live store needs NOW, because the live database holds THREE master admin keys (two
   unused, created before the service existed) and revocation is currently operator-only. Then C
@@ -779,7 +809,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-59 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-60 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -788,7 +818,9 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   key guard, so a preflight is answered 2xx without a key, 58 = CORS VERIFIED against the LIVE
   |   perimeter with own arms, retired, and the game unblocked, 59 = the object-lookup intake: a
   |   point read EXISTS, entries are NAMED not id'd, the gap is a FILTERED listing — fork to the
-  |   owner)
+  |   owner, 60 = the owner chose (A) `prefix=` and his game's kind-first renaming was VERIFIED free
+  |   against the live database; the prefix rule fixed there too (a prefix must be a valid name —
+  |   the name language is prefix-closed); row 61 is in flight)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
