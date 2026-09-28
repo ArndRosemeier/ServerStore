@@ -840,12 +840,15 @@ QUEUE-CLOSED | row=64 | **RATE LIMITING: DESIGNED (ledger row 64) and DISPATCHED
   bucket is DEFERRED and named.
 QUEUE | row=66 | NEXT AFTER RATE LIMITING: the OWED HEADLESS-BROWSER test, which closes the same gap
   for both the console (rows 49/54) and CORS (rows 57/58): nothing automated drives a real browser.
-  GROUNDED, so the fork is real rather than guessed: **`/usr/bin/google-chrome` is ALREADY installed
-  on this box** and there is no Playwright/Puppeteer browser cache, so the choice is (a) drive that
-  Chrome directly over the DevTools protocol with Node's built-in `WebSocket` and NO npm dependency, or
-  (b) add a driver dependency (`playwright-core`/`puppeteer-core`) pointed at the installed binary —
-  the dispatcher takes this fork to the owner before dispatching, and either way: the browser is a
-  process TREE, its kill belongs in a `trap`, and the run must be bounded and in-turn.
+  TWO things are settled rather than guessed: (1) **the owner chose to DRIVE THE INSTALLED
+  `/usr/bin/google-chrome` DIRECTLY over the DevTools protocol with Node's built-in `WebSocket` and NO
+  new dependency**, rejecting `playwright-core` (a new dev dependency in a repo that serves this API)
+  and Playwright's own Chromium (~170 MB, duplicating a browser already on the box); (2) it STARTS
+  ONLY AFTER row 65 lands, because both slices touch `tests/helpers/server.ts` — a shared file means
+  SERIALIZE, and this is proven by reading the writer's worktree rather than predicted. It must be
+  BOUNDED and in-turn: the browser is a process TREE, its kill belongs in a `trap`, scratch lives under
+  the worktree (never `/tmp`), and the run ends with a count that cannot self-match
+  (`ps -eo comm= | grep -c '^chrome$'` → 0).
   Also deferred by owner decision, not forgotten: per-store permissions (`key_stores` + perms) — only
   if a game needs ONE mutable shared room object; editing `expiresAt`; edit history.
 QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
