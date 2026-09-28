@@ -45,31 +45,27 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: 66a3295 · 2026-09-28T07:51Z — the slice-14 (rate limiting) VERIFIED CODE tip. The docs
-  commit carrying THIS marker is its child, so the marker is the code tip and not itself — a commit
-  cannot name its own sha. `bash scripts/board.sh` must report this marker as an ancestor of
-  origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 14 files ·
-  142 tests · 2.26s; plus THREE own arms, none of them the writer's (G the identity collapses to one
-  bucket → R4 ALONE; H the exemption list ignored → R5 ALONE; I a malformed/empty
-  `SERVERSTORE_RATE_LIMIT` silently disabling the limiter → R7 ALONE), each with a control before and
-  after; plus a BOUNDED live-mechanism check on a LOCAL SPAWN of the real entrypoint with a limit of 2
-  (2×401 → 429 with `retry-after: 60` and the exposed header, a second identity independent, the
-  first `X-Forwarded-For` hop the identity, `/healthz` + all three assets + both preflights exempt,
-  `0` = kill-switch, an empty value failing the boot loudly) and, for the disallowed-origin case, a
-  second spawn under an explicit allowlist (listed 204, disallowed 401 — the guard's own refusal, never
-  a 429, while the same identity is still 429 on the API); plus GUARD g5 on the LIVE service
-  (restarted 09:51:16 CEST, probe PASS exit 0, and the live preflight now carries
-  `access-control-expose-headers: x-serverstore-sha256, retry-after`). (History: this line read
-  "695ba2e" (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27)
-  and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
-  quietly).)
+reconciled: c13219a · 2026-09-28T08:08Z — the slice-15 VERIFIED CODE tip (the headless-browser test;
+  it is TEST-ONLY, so the only files it touches are tests/, checkpoints/, .gitignore and the docs, and
+  the live unit is byte-for-byte unaffected). The docs commit carrying THIS marker is its child, so the
+  marker is the code tip and not itself — a commit cannot name its own sha. `bash scripts/board.sh`
+  must report this marker as an ancestor of origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED
+  tree: gate exit 0 GREEN · 15 files · 150 tests · 2.26s with the new file at 1632ms; plus THREE own
+  arms, none of them the writer's (J the console persists the key → B2 with U2 as its honest in-process
+  twin; L the CORS step answers a preflight 500 → B4 with the whole preflight family as collateral;
+  N the allowlist echoes ANY origin → B6 with O3/D7/R5 collateral), each with a control before and
+  after; plus chrome-process count 0 after EVERY run, including the failing arms; plus a self-match-free
+  path audit showing nothing referencing the retired worktree. `GUARD g5` does NOT apply: no `src/`,
+  `web/`, `deploy/`, `package.json` or `pnpm-lock.yaml` file changed, and the live unit kept its pid
+  and stayed active throughout. (History: this line read "66a3295" (slice 14), "695ba2e" (slice 13),
+  "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27) and "bec97e1" (row 26,
+  LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (row 68: the OWED headless-browser test, worktree
-  |   worktrees/browser-test, branch feat/browser-test; design fixed in ledger row 67 — the owner
-  |   chose to drive the installed `/usr/bin/google-chrome` over the DevTools protocol with Node's
-  |   built-in `WebSocket` and NO new dependency). Slices 12 (CORS, row 58), 13 (the `prefix=` filter,
-  |   row 62) and 14 (rate limiting, row 66) are LANDED, VERIFIED and RETIRED. LIVE at
+  | state=NO writer in flight. Slices 12 (CORS, row 58), 13 (the `prefix=` filter, row 62), 14 (rate
+  |   limiting, row 66) and 15 (the headless-browser test, row 69) are LANDED, VERIFIED and RETIRED.
+  |   The browser test now drives the installed Chrome INSIDE THE GATE, so the console's Connect/Edit
+  |   flow and the browser half of CORS are exercised on every gate run (it costs ~1.6 s). LIVE at
   |   https://store.futuremagic.de/ with the console, key editing (C2), CORS, the prefix filter and
   |   the rate limiter (default 600 requests per identity per 60 s, no `SERVERSTORE_RATE_LIMIT` in the
   |   unit); service restarted onto the limiter tip and re-probed; EXACTLY ONE live admin key. A
@@ -944,6 +940,15 @@ TRAP | t6 | **A `pgrep`-based guard is inflated by the SHELL THAT READS IT**, an
   |   service's PID from systemd), reproduce a suspected self-match by MAKING one on purpose, and
   |   never diagnose a guard from a pattern that is also literal text in the reading shell — the same
   |   family as the host rule about pattern-kills.
+TRAP | t7 | **A differential arm mutates the MAIN tree — which is the LIVE UNIT'S `WorkingDirectory`.**
+  |   Every dispatcher harness here (`dispatcher-arms-s1{2,3,4,5}.sh`) injects a defect into
+  |   `src/`/`web/` IN PLACE, runs the suite, and restores from `HEAD` with the hash asserted back. The
+  |   unit's `ExecStart` loads the MAIN checkout's `src/server/main.ts`, so for the seconds an arm is
+  |   live, the file the service WOULD boot is the mutated one. `Restart=on-failure` means nothing
+  |   restarts on its own, the windows are ~2-3 s, and the restore is hash-verified — so this is
+  |   ACCEPTED rather than unnoticed. A successor who wants it gone can run the arms in a worktree and
+  |   point the harness there (the lock is per-repo, so the arms would then not exclude a peer run —
+  |   take the lock in the worktree too). Recorded because the risk is real and was never written down.
 
 GUARD | g1 | Never bind to 0.0.0.0. Loopback + tunnel is how every service on this box is exposed
   | (precedent: apps-web.service).
@@ -976,6 +981,7 @@ retired_branch=feat/key-edit
 retired_branch=feat/cors
 retired_branch=feat/object-prefix
 retired_branch=feat/rate-limit
+retired_branch=feat/browser-test
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -983,7 +989,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-67 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-69 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -1024,6 +1030,73 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=69 | sha=c13219a (the VERIFIED CODE tip — the headless-browser test; TEST-ONLY, so the
+  | slice-15 landing itself is row 68 below and the live unit is byte-for-byte unaffected)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 15 files · 150 tests ·
+  | 2.26s, with `tests/browser.test.ts (8 tests)` at **1632ms** — that is the browser test's price on
+  | every gate run, stated rather than discovered later (raw log `.gate-logs/dispatcher-gate-s15.log`).
+  | arms=`.gate-logs/dispatcher-arms-s15.sh`, transcript `.gate-logs/dispatcher-arms-s15.out`, the gate
+  | lock held across a control and ALL THREE arms, sha256 printed before and after each mutation,
+  | restore from HEAD in an `EXIT INT TERM` trap with the hash asserted back, a control BEFORE and
+  | AFTER, `error TS` = VOID, and the CHROME COUNT after every single run. Arms, none of them the
+  | writer's (the writer armed A the console's Edit affordance removed → B3 on the seam's own 5 s
+  | deadline, B the exposed header set dropped → B5 with PIN O2 as the named in-process twin):
+  |   J the console PERSISTS the key (`localStorage` beside the ONE assignment, `web/app.js`
+  |     `ea2462f5…db0f` → `3c885a5e…fabe`) → **RED on PIN B2 AND PIN U2**. Those two are the honest
+  |     twins of ONE promise — C1's "the key lives in memory only" — measured statically (U2) and now in
+  |     the browser it is about (B2), which is exactly the redundancy the browser test was owed.
+  |   L the CORS step answers a preflight **500** instead of 204 (`src/server/app.ts` `e62df5e8…12a7` →
+  |     `e02b4447…1c87`) → **RED on PIN B4**, with B5, B6, D7, O1, O3 and R5 as EXPECTED COLLATERAL:
+  |     every assertion about a browser-visible preflight must fall when preflights break, and the
+  |     in-process twins (O1/O3), the spawned-entrypoint pin (D7) and the exemption pin (R5, whose
+  |     disallowed-origin half expects the guard's 401) all stand on that one mechanism. The NAMED pin
+  |     fell, so the arm is attributable; an arm that breaks a shared mechanism SHOULD light up its
+  |     family, and each falling pin above is accounted for rather than waved at.
+  |   N the allowlist ECHOES ANY ORIGIN (`: deps.corsOrigins.includes(origin)` → `: true`,
+  |     `e62df5e8…12a7` → `afa36df0…68a0`) → **RED on PIN B6** with D7, O3 and R5 as the same kind of
+  |     honest collateral: the browser stops BLOCKING a disallowed origin, which is the half of CORS
+  |     that only a browser can show, and the in-process allowlist pins fall with it.
+  |   both controls GREEN (15 files · 150 tests); every mutated file back at its before-hash; **chrome
+  |   processes after EVERY run: 0 — including the three failing arms**, the strongest evidence in this
+  |   landing that the process-tree kill is on the FAILURE path and not only the happy one; and a
+  |   self-match-free audit afterwards (`.gate-logs/path-audit.py`, which excludes its own pid tree)
+  |   found 0 processes referencing the retired worktree.
+  | THE HARNESS'S OWN FIRST RUN WAS VOID AND IS RECORDED: arm L's first anchor (`if (false && …)`) broke
+  | the TYPECHECK (`TS2322`, a lost narrowing) so it was correctly refused as VOID, arm N's anchor had
+  | two spaces too many so the mutation did not apply, and that path called `fail()` and ABORTED the run.
+  | Both fixed: L now injects a real regression the browser SEES (a 500 preflight), N's indent matches,
+  | and an arm that does not apply is RECORDED with the run continuing instead of killing the transcript.
+  | My own errors, in the machinery that exists to catch exactly this.
+  | THE BRIEF'S OWN FLAW, reported by the writer and RATIFIED here: my rule "an arm that reddens a pin it
+  | did not name is VOID" is UNSATISFIABLE for the arm the same brief demanded — `tests/cors.test.ts`
+  | PIN O2 asserts the SAME `Access-Control-Expose-Headers` contract in process, so NO mutation of
+  | `app.ts` can redden B5 alone. The honest form, now used: an arm must redden its NAMED pin, and every
+  | OTHER pin that falls must be attributable to the same mechanism and named. That is the third
+  | dispatcher-specified pin rule that was wrong in three slices (row 62's P7, then this), and the pattern
+  | is now clear enough to state: **a pin that shares a contract with an older pin needs its overlap
+  | DECLARED in the brief, not discovered by an arm.**
+  | COPIES claim VERIFIED BY ME: **`COPIES: 2→1`** — `tests/helpers/entrypoint.ts` is the ONE
+  | process-level test seam (free port + entrypoint spawn + boot poll + reap), shared by the D pins and
+  | the B pins, and `tests/helpers/browser.ts` is the ONE place a browser is launched, driven and its
+  | process TREE killed (`CHROME_PATH` defined once; `detached: true` + `process.kill(-pid, …)` in one
+  | place) — grepped `src/server/main.ts`, `google-chrome`, `puppeteer`, `playwright`, `process.kill(-`
+  | across `tests/`, `src/`, `scripts/`. Also verified: NO `skip`/`todo`/`skipIf` anywhere in the browser
+  | file or its helper (PIN B8 asserts the missing-browser failure instead, and only pin NAMES mention
+  | skipping); `.browser-scratch/` is gitignored (`/.browser-scratch/`) and held only **4.0 KB after six
+  | runs**, i.e. the profile is cleaned per run rather than accumulating; and the spawned test service is
+  | given `SERVERSTORE_RATE_LIMIT=0` (the trap the brief named) so no browser pin can fail for a limiter
+  | reason.
+  | GUARD g5 DOES NOT APPLY: `git diff --name-only 18f8fe5..c13219a` touches `tests/`, `checkpoints/`,
+  | `.gitignore` and docs only — no `src/`, `web/`, `deploy/`, `package.json`, `pnpm-lock.yaml` or
+  | `scripts/` file — so the live unit was NOT restarted and still holds MainPID 131596, active
+  | throughout (verified before and after the arms).
+  | retired=worktree worktrees/browser-test · branch feat/browser-test (was 9ffc871, verified fully
+  | merged with `git branch --merged main`) · writer session 7d6c556a… — salvage-checked BEFORE deletion
+  | (tracked-clean worktree, tip == origin/main). Host after: only `main` in `git worktree list`, no
+  | `feat/browser-test` in `git branch -a`, lock free, 0 chrome processes, 0 processes referencing the
+  | worktree.
+  | docs=ledger row 69 · this board.
+
 LANDED | row=68 | sha=c13219a (the TEST-ONLY CODE tip: `tests/helpers/browser.ts`,
   | `tests/browser.test.ts`, `tests/helpers/entrypoint.ts`, the `tests/entrypoint.test.ts`
   | refactor onto it, and the `.gitignore` scratch line. The docs record commit carrying the
