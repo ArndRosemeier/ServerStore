@@ -19,7 +19,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { openDatabase } from "../core/db.ts";
 import { errorBody, StoreError, toStoreError, type ErrorCode } from "../core/errors.ts";
-import { describeStores, editKey, findKeyById, listKeys, mintKey, resolveKey, revokeKey, touchKey } from "../core/keys.ts";
+import { describeStores, countLiveAdminKeys, deleteKey, editKey, findKeyById, isLiveAdminKey, keysHoldingStore, listKeys, mintKey, resolveKey, revokeKey, touchKey } from "../core/keys.ts";
 import {
   assertNoTraversalSegments,
   DEFAULT_LABEL,
@@ -42,8 +42,9 @@ import {
   CORS_WILDCARD,
 } from "./config.ts";
 import { clientIdentity, createRateLimiter } from "./ratelimit.ts";
-import { createStore, ensureMasterStore, listStores, requireStore } from "../stores/registry.ts";
+import { createStore, deleteStore, ensureMasterStore, listStores, requireStore } from "../stores/registry.ts";
 import { handlerFor } from "../storage/kinds.ts";
+import { removeStoreDir } from "../storage/fs.ts";
 
 export { DEFAULT_HOST, DEFAULT_MAX_BYTES, DEFAULT_PORT };
 
@@ -202,6 +203,31 @@ class Auth {
 interface Variables {
   ctx: AppContext;
   auth: Auth;
+}
+
+/**
+ * THE confirm-token rule of the two BULK destructive routes (ledger row 70(d)).
+ *
+ * `?confirm=<store>` must equal the store's name EXACTLY. It is the ONE rule behind
+ * `DELETE /stores/:store/objects` and `DELETE /stores/:store`, written once so the two
+ * cannot drift: a missing, empty or different token is `400 bad_request` — an EXISTING
+ * code, no new vocabulary — and NOTHING is deleted. A dialog protects a mis-click but not
+ * a mis-aimed `curl`, and the blast radius here is a whole store, so the confirmation is
+ * SERVER-side. Deleting ONE object or ONE key needs no token: the UI confirms, and the
+ * blast radius is one item.
+ *
+ * The token is compared, never used to build a path — the store name comes from the
+ * parsed path parameter — so there is no second parser and nothing to sanitise.
+ */
+function requireConfirm(c: Context<{ Variables: Variables }>, store: string): void {
+  const token = c.req.query("confirm");
+  if (token === store) return;
+  throw new StoreError(
+    "bad_request",
+    token === undefined
+      ? `this operation destroys a whole store; send ?confirm=${store} to proceed`
+      : `confirm token ${JSON.stringify(token)} does not match the store name ${JSON.stringify(store)}`,
+  );
 }
 
 /**
@@ -763,6 +789,62 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     return c.json({ id, revokedAt: revoked.revokedAt, changed });
   });
 
+  // THE HARD DELETE (ledger row 70(a)): REVOKE'S BOUNDARY PLUS THE ROW. This is the
+  // owner's actual complaint — a revoked key clutters the inventory — so a REVOKED key
+  // IS deletable here, and deletion is what makes `revoke` unnecessary for a key that
+  // should simply be gone. WHO may delete is the SAME decision the revoke route makes,
+  // reached through the SAME `requireAdmin()` and the SAME ONE containment predicate
+  // (`Auth.holdsStores`), with the SAME self-deletion exception: the row below is a copy
+  // of revoke's scope branch on purpose, because "a key may always dispose of its own
+  // credential" is one rule and not two.
+  app.delete("/keys/:id", (c) => {
+    const auth = c.get("auth");
+    auth.requireAdmin("delete keys");
+    const id = c.req.param("id");
+    const target = findKeyById(ctx.db, id);
+    if (target === null) {
+      throw new StoreError("not_found", `no key with id ${JSON.stringify(id)}`);
+    }
+    // Self-deletion is allowed exactly as self-revocation is (row 46): it is the
+    // caller's OWN credential, so the scope rules below do not apply to it.
+    if (target.id !== auth.key.id && !auth.spansStores) {
+      if (!auth.holdsStores(target.stores)) {
+        throw new StoreError(
+          "forbidden",
+          `key is scoped to ${describeStores(auth.key.stores)}; ` +
+            `it may not delete a key scoped to ${describeStores(target.stores)}`,
+        );
+      }
+      if (target.perms.includes("admin")) {
+        throw new StoreError(
+          "forbidden",
+          `key is scoped to ${describeStores(auth.key.stores)}; ` +
+            `only a master admin key may delete a key holding 'admin'`,
+        );
+      }
+    }
+    // THE LAST LIVE ADMIN KEY CANNOT BE DELETED (row 70(b)) — the deliberate DIVERGENCE
+    // from `revoke`, which keeps its current behaviour: an operator who administers
+    // entirely through the console would otherwise lock himself out, and the only
+    // recovery is shell on the box. A REVOKED or EXPIRED admin key does not count (it
+    // cannot authenticate, so it cannot administer), and the check is against the
+    // population of LIVE admins, not against the target alone.
+    if (isLiveAdminKey(target, deps.now) && countLiveAdminKeys(ctx.db, deps.now) <= 1) {
+      throw new StoreError(
+        "conflict",
+        `key ${id} is the LAST live admin key; deleting it would leave the store ` +
+          `administrable only from the box (pnpm run admin:key). Mint or promote another ` +
+          `admin key first, or revoke this one instead`,
+      );
+    }
+    if (!deleteKey(ctx.db, id)) {
+      // Only reachable if the row vanished between the read above and the write; loud
+      // rather than a 200 for a deletion that did not happen (AGENTS.md rule 1).
+      throw new StoreError("internal", `key ${id} could not be deleted`);
+    }
+    return c.json({ id, deletedAt: new Date(deps.now()).toISOString() });
+  });
+
   // WHO AM I — the caller's own identity and scope, and NEVER a secret (ledger rows
   // 30, 41). `id` is the public lookup id already shown at mint time; the raw key,
   // its secret and its hash are not in this body and never will be.
@@ -829,20 +911,71 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     });
   });
 
-  app.delete("/stores/:store/objects/:name", (c) => {
+  app.delete("/stores/:store/objects/:name", async (c) => {
     const store = requireStore(ctx.db, c.req.param("store"));
     const name = parseObjectName(c.req.param("name"));
     c.get("auth").authorize(store.name, "delete");
-    // The row goes; the blob stays (GC is out of scope, brief §4). The existence
-    // check keeps a delete of a missing object a 404 rather than a silent success.
-    const found = ctx.db
-      .prepare("SELECT name FROM objects WHERE store = ? AND name = ?")
-      .get(store.name, name) as { name: string } | undefined;
-    if (found === undefined) {
+    // THE BLOB-VS-ROW DECISION IS THE KIND HANDLER'S (ledger row 70(e)), not this
+    // route's: the handler removes the row and reclaims the blob ONLY when no other row
+    // in the store names the same content address. The route's job is the boundary
+    // (`requireStore` → `authorize`) and the 404 for a name that was never there.
+    const removed = await handlerFor(store.kind).remove(ctx.db, deps.dataRoot, store.name, name);
+    if (!removed) {
       throw new StoreError("not_found", `no object ${JSON.stringify(name)} in store ${JSON.stringify(store.name)}`);
     }
-    ctx.db.prepare("DELETE FROM objects WHERE store = ? AND name = ?").run(store.name, name);
     return c.body(null, 204);
+  });
+
+  // EMPTY A STORE (ledger row 70(d)/(e)): every object row goes and its bytes are
+  // reclaimed, while the store itself and every key's scope stay exactly as they were —
+  // a key scoped to an empty store is perfectly valid. WHO may do it is the SAME `delete`
+  // permission that already gates deleting ONE entry (a scoped game admin may clean its
+  // own store); the ORDER is `requireStore` (404/`invalid_name`) → `authorize` (403) →
+  // the confirm token (400), so an unauthorized caller learns nothing about the token
+  // rule and a refusal has no side effect. IDEMPOTENT: an empty store answers 200 with 0.
+  app.delete("/stores/:store/objects", async (c) => {
+    const store = requireStore(ctx.db, c.req.param("store"));
+    c.get("auth").authorize(store.name, "delete");
+    requireConfirm(c, store.name);
+    const deleted = await handlerFor(store.kind).empty(ctx.db, deps.dataRoot, store.name);
+    return c.json({ store: store.name, deleted });
+  });
+
+  // DELETE A STORE (ledger row 70(c)/(d)/(f)): symmetric with `POST /stores`, so it takes
+  // a MASTER admin, and it carries the same server-side confirm token as emptying.
+  // REFUSED `409` while ANY key's scope NAMES the store, naming the blocking keys: the
+  // alternatives both destroy something the owner did not ask for. A cascade would
+  // silently MUTATE credentials (and a key scoped only to this store would be left with
+  // an EMPTY scope, which the model forbids), and deleting the referencing keys would
+  // kill credentials silently. The refusal makes the console show the blockers, and the
+  // hard-delete route in this same slice is how he clears them.
+  app.delete("/stores/:store", async (c) => {
+    const store = requireStore(ctx.db, c.req.param("store"));
+    const auth = c.get("auth");
+    auth.requireMasterAdmin();
+    requireConfirm(c, store.name);
+    const blockers = keysHoldingStore(ctx.db, store.name);
+    if (blockers.length > 0) {
+      throw new StoreError(
+        "conflict",
+        `store ${JSON.stringify(store.name)} is named by the scope of ` +
+          `${blockers.length} key(s): ` +
+          blockers.map((key) => `${key.id} (${key.label})`).join(", ") +
+          `; delete or re-scope ${blockers.length === 1 ? "that key" : "those keys"} first`,
+      );
+    }
+    // Object rows and bytes FIRST, then the registry row, then the directory: a crash
+    // in between leaves an EMPTY store (retryable) or orphan bytes (space), never a store
+    // row whose objects are gone or a scope row pointing at nothing.
+    await handlerFor(store.kind).empty(ctx.db, deps.dataRoot, store.name);
+    if (!deleteStore(ctx.db, store.name)) {
+      throw new StoreError(
+        "internal",
+        `store ${JSON.stringify(store.name)} vanished while it was being deleted`,
+      );
+    }
+    await removeStoreDir(deps.dataRoot, store.name);
+    return c.json({ name: store.name, deletedAt: new Date(deps.now()).toISOString() });
   });
 
   app.notFound((c) =>

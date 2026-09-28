@@ -18,6 +18,12 @@ export const ERROR_CODES = [
   "rate_limited",
   "store_exists",
   "name_taken",
+  // 409 — the request was understood and is well-formed, but the STATE forbids it: the
+  // last live admin key cannot be deleted, and a store cannot be deleted while a key's
+  // scope names it (ledger row 70(b)/(c)). Distinct from `store_exists` (a creation
+  // collision) on purpose: a client branches on the code, and "it already exists" is not
+  // "this is refused until something else changes".
+  "conflict",
   "unsupported_store_kind",
   "internal",
 ] as const;
@@ -39,6 +45,7 @@ const STATUS: Record<ErrorCode, number> = {
   rate_limited: 429,
   store_exists: 409,
   name_taken: 409,
+  conflict: 409,
   unsupported_store_kind: 500,
   internal: 500,
 };

@@ -10,8 +10,13 @@
  * a body that exceeded the cap, a stream that aborted, a crash — leaves a temp file
  * at worst, never a short blob at a hashed path.
  *
- * Not here yet, and said out loud: garbage collection. `deleteBlob` is never called
- * and a deleted object leaves its blob behind (brief §4, ledger row 19).
+ * RECLAMATION (ledger row 70(e)): `deleteBlob()` removes ONE object's blob and is called
+ * by the single-object delete ONLY when no other row in that store still names the same
+ * content address; `removeStoreBlobs()` removes a store's whole blob tree (the
+ * EMPTY-STORE path, where every row is already gone) and `removeStoreDir()` removes the
+ * store directory itself (the DELETE-STORE path). Every path under `stores/` is built
+ * here from a PARSED name, and every removal is scoped to ONE store's own directory — no
+ * caller joins a string onto the data root.
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -93,10 +98,45 @@ export async function readBlob(
 }
 
 /**
- * Remove a blob. Deliberately UNUSED in this slice: deletion removes the row and
- * leaves the blob for now (GC is out of scope, brief §4). Kept so the seam exists
- * and the omission is visible rather than accidental.
+ * The directory holding every blob of one store.
+ *
+ * The boundary of an EMPTY-STORE: blobs are content-addressed WITHIN a store, so this
+ * tree belongs to exactly one store and to no other.
+ */
+export function blobsRoot(dataRoot: string, store: string): string {
+  return join(storeDir(dataRoot, store), "blobs");
+}
+
+/**
+ * Remove a blob. Called by the single-object delete ONLY when no other row in the store
+ * still names this `sha256` (ledger row 70(e)) — content-addressed storage means two
+ * entries can share one blob, and deleting it under a survivor would corrupt it.
+ *
+ * `force` makes a second removal a no-op, which is what keeps the CALLER's correctness
+ * (the reference check) the thing under test rather than filesystem trivia.
  */
 export async function deleteBlob(dataRoot: string, store: string, sha256: string): Promise<void> {
   await rm(blobPath(dataRoot, store, sha256), { force: true });
+}
+
+/**
+ * Remove every blob of one store, leaving the store directory itself — the EMPTY-STORE
+ * path (ledger row 70(e)), valid only AFTER every object row of that store is gone: the
+ * whole tree is then unreferenced, and it can only ever hold this store's bytes.
+ *
+ * Rows first, bytes second, deliberately: a crash in between leaves orphan bytes (space
+ * to reclaim on a retry), never a row whose blob has vanished (an unreadable object).
+ */
+export async function removeStoreBlobs(dataRoot: string, store: string): Promise<void> {
+  await rm(blobsRoot(dataRoot, store), { recursive: true, force: true });
+}
+
+/**
+ * Remove a store's WHOLE directory — the DELETE-STORE path (ledger row 70(e)), valid
+ * only after the store's object rows are gone and its registry row is removed. It is
+ * scoped to `<dataRoot>/stores/<store>` and never touches the sibling store directories,
+ * because `store` reached here through the ONE name parser (`parseStoreName`).
+ */
+export async function removeStoreDir(dataRoot: string, store: string): Promise<void> {
+  await rm(storeDir(dataRoot, store), { recursive: true, force: true });
 }

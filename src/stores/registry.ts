@@ -75,6 +75,24 @@ export function getStore(db: DatabaseSync, name: string): Store {
   return rowToStore(row);
 }
 
+/**
+ * Remove a store's REGISTRY ROW — the last write of `DELETE /stores/:store` (ledger row
+ * 70(c)). The route owns the whole boundary (a master admin, the server-side confirm
+ * token, and the 409 while any key's scope names the store); this is the ONE place the
+ * `stores` row goes, beside `ensureMasterStore`/`createStore`, which are the ONE places
+ * it is written.
+ *
+ * It does NOT cascade anything: `key_stores.store REFERENCES stores(name)` with
+ * `PRAGMA foreign_keys = ON` makes a DELETE with a scope row still naming the store fail
+ * LOUDLY (an internal 500), which is the correct failure for a caller that skipped the
+ * route's refusal — never a silent rewrite of someone's credential. Object rows and bytes
+ * are removed by the store kind's `empty()` BEFORE this is called.
+ */
+export function deleteStore(db: DatabaseSync, name: string): boolean {
+  const result = db.prepare("DELETE FROM stores WHERE name = ?").run(name);
+  return result.changes > 0;
+}
+
 /** Resolve a requested store name to a registered store, or throw 404. */
 export function requireStore(db: DatabaseSync, rawName: unknown): Store {
   return getStore(db, parseStoreName(rawName));

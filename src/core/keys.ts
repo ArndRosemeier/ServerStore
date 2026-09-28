@@ -24,6 +24,13 @@
  * holder already has keeps working. The route decides who may edit and to what; what
  * a key HOLDS stays here.
  *
+ * `deleteKey()` is the HARD DELETE (ledger row 70(a)), beside `revokeKey()`: revoke sets
+ * a timestamp and keeps the credential visible in the inventory, delete removes the row
+ * (and, by the schema's `ON DELETE CASCADE`, its scope). `isLiveAdminKey()` /
+ * `countLiveAdminKeys()` are the ONE predicate behind the "last live admin key cannot be
+ * deleted" rule, and `keysHoldingStore()` is the referrer set that blocks deleting a
+ * store a key's scope names.
+ *
  * The scope is loaded HERE, once per resolved key, together with the row (no N+1 in
  * `authorize`, which only ever reads the record it was handed).
  */
@@ -288,13 +295,7 @@ export function resolveKey(
   }
 
   if (row.revoked_at !== null) return null;
-  if (row.expires_at !== null) {
-    const expires = Date.parse(row.expires_at);
-    if (Number.isNaN(expires)) {
-      throw new StoreError("internal", `key ${id} has an unparseable expires_at`);
-    }
-    if (now() >= expires) return null;
-  }
+  if (isExpired(row.expires_at, now, id)) return null;
 
   // The scope is loaded ONCE, here, with the key — `authorize()` never queries.
   return rowToRecord(db, row);
@@ -313,11 +314,120 @@ export function touchKey(db: DatabaseSync, id: string, now: () => number): strin
   return usedAt;
 }
 
+/**
+ * Is a stored ISO-8601 expiry in the past at `now()`?
+ *
+ * THE expiry rule, and the only one (ledger row 70(b)): `resolveKey` (is this key still
+ * usable?) and `isLiveAdminKey` (does this key still count as an administrator?) must
+ * not disagree about what "expired" means. An absent expiry never expires. A stored
+ * timestamp that cannot be parsed is a LOUD internal failure, never a silent reading in
+ * either direction (AGENTS.md rule 1).
+ */
+function isExpired(expiresAt: string | null, now: () => number, id: string): boolean {
+  if (expiresAt === null) return false;
+  const expires = Date.parse(expiresAt);
+  if (Number.isNaN(expires)) {
+    throw new StoreError("internal", `key ${id} has an unparseable expires_at`);
+  }
+  return now() >= expires;
+}
+
+/**
+ * Is this key a LIVE ADMIN key — holding `admin`, not revoked and not expired?
+ *
+ * THE predicate behind the "last admin key cannot be deleted" rule (ledger row 70(b)).
+ * A REVOKED or EXPIRED admin key is not an administrator: it cannot authenticate, so it
+ * cannot administer anything, and counting it would let the operator delete the last key
+ * that actually works. The fields it reads are on every record, so the route can ask the
+ * question about the key it already loaded, and `countLiveAdminKeys` asks the same
+ * question of every stored row through this ONE predicate.
+ */
+export function isLiveAdminKey(
+  key: Pick<AccessKeyRecord, "id" | "perms" | "revokedAt" | "expiresAt">,
+  now: () => number,
+): boolean {
+  if (!key.perms.includes("admin")) return false;
+  if (key.revokedAt !== null) return false;
+  return !isExpired(key.expiresAt, now, key.id);
+}
+
+/**
+ * How many keys can still administer the store — the population the LAST-ADMIN rule
+ * protects (ledger row 70(b)).
+ *
+ * One query over `access_keys`, every row judged by {@link isLiveAdminKey}, so this
+ * count and the route's check on the TARGET cannot drift. No scope is loaded: the rule is
+ * about administrators, not about what they may touch, and the population is the
+ * operator's keys (the same small set `listKeys()` reads whole).
+ */
+export function countLiveAdminKeys(db: DatabaseSync, now: () => number): number {
+  const rows = db
+    .prepare("SELECT id, perms, revoked_at, expires_at FROM access_keys")
+    .all() as unknown as {
+    id: string;
+    perms: string;
+    revoked_at: string | null;
+    expires_at: string | null;
+  }[];
+  return rows.filter((row) =>
+    isLiveAdminKey(
+      {
+        id: row.id,
+        perms: parseStoredPermissions(row.perms),
+        revokedAt: row.revoked_at,
+        expiresAt: row.expires_at,
+      },
+      now,
+    ),
+  ).length;
+}
+
+/**
+ * The keys whose SCOPE NAMES `store` — exactly the `key_stores` rows that block deleting
+ * it (ledger row 70(c)).
+ *
+ * This is the referrer set of the `key_stores.store REFERENCES stores(name)` foreign key,
+ * which is why the store-delete route refuses (409) rather than cascading: with
+ * `PRAGMA foreign_keys = ON` the DELETE would fail anyway, and a silent cascade would
+ * mutate credentials — a key scoped only to this store would be left with an EMPTY scope,
+ * which the model forbids (`loadStores` refuses it). A `["*"]` master scope is not here:
+ * it does not NAME the store, and a store deleted and re-created is still spanned by it.
+ */
+export function keysHoldingStore(
+  db: DatabaseSync,
+  store: string,
+): { id: string; label: string }[] {
+  return db
+    .prepare(
+      `SELECT k.id AS id, k.label AS label
+         FROM key_stores ks
+         JOIN access_keys k ON k.id = ks.key_id
+        WHERE ks.store = ?
+        ORDER BY k.id`,
+    )
+    .all(store) as unknown as { id: string; label: string }[];
+}
+
 /** Revoke a key. Rotation is mint-new + revoke-old (ledger row 6). */
 export function revokeKey(db: DatabaseSync, id: string, now: () => number): boolean {
   const result = db
     .prepare("UPDATE access_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
     .run(new Date(now()).toISOString(), id);
+  return result.changes > 0;
+}
+
+/**
+ * HARD-DELETE a key row — the write seam of `DELETE /keys/:id` (ledger row 70(a)).
+ *
+ * The route decides WHO may delete and whether the last live administrator would be
+ * destroyed; this is the one place the row goes. Its `key_stores` rows go WITH it through
+ * `ON DELETE CASCADE` (the schema declares it), so no scope row can outlive its key, and
+ * a later re-mint cannot inherit one. A deleted key stops authenticating on the NEXT
+ * request because `resolveKey` finds no row at all — the same no-cache fact revocation
+ * relies on. Returns whether a row was actually removed.
+ */
+export function deleteKey(db: DatabaseSync, id: string): boolean {
+  const result = db.prepare("DELETE FROM access_keys WHERE id = ?").run(id);
   return result.changes > 0;
 }
 

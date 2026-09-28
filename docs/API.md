@@ -204,8 +204,9 @@ or a log line — it would end up in access logs and browser history.
   | `GET /stores/{store}/objects`, `GET …/objects/{name}` | `read` or `admin` |
   | `PUT …/objects/{name}` | `write` or `admin` |
   | `DELETE …/objects/{name}` | `delete` or `admin` |
-  | `GET /stores`, `POST /stores` | a **master admin** key: scope `["*"]` **and** `admin` |
-  | `GET /keys`, `POST /keys/{id}/revoke`, `PATCH /keys/{id}` | an **`admin`** key — see "Who may list and revoke" and "Who may edit" |
+  | `DELETE /stores/{store}/objects` (empty the store) | `delete` or `admin` on `{store}` |
+  | `GET /stores`, `POST /stores`, `DELETE /stores/{store}` | a **master admin** key: scope `["*"]` **and** `admin` |
+  | `GET /keys`, `POST /keys/{id}/revoke`, `PATCH /keys/{id}`, `DELETE /keys/{id}` | an **`admin`** key — see "Who may list and revoke", "Who may edit" and "Who may delete" |
 
 - **A key's scope is a SET of stores.** At mint time you name the stores the key may
   touch (`"stores": ["game", "notes"]`), or `["*"]` for **every store** — the master
@@ -249,6 +250,20 @@ or a log line — it would end up in access logs and browser history.
   narrow or widen anything; only a master may **grant** `admin`, and only with scope
   `["*"]`. **A revoked key cannot be edited** (`403`): revocation is terminal. An edit
   that succeeds stamps `updatedAt`/`updatedBy` (see `GET /keys`).
+- **Who may DELETE a key, and the LAST-ADMIN rule.** `DELETE /keys/{id}` is
+  **revoke's boundary plus the row**: it needs a key that holds `admin`, a **master
+  admin** may delete any key, a **store-scoped admin** may delete only a key it could
+  have minted (scope inside its own set, and never a key holding `admin`), and **a key
+  may always delete itself**. A **revoked** key is deletable — that is the point: a
+  revoked key is still a credential row cluttering the inventory. The one place it
+  DIVERGES from `POST /keys/{id}/revoke` is the **last live admin key**: deleting it is
+  refused `409 conflict`, because an operator who administers through this API alone
+  would otherwise be locked out and the only recovery is shell on the box. "Live" means
+  holding `admin`, **not revoked and not expired** — a revoked or expired admin key does
+  not count, and a non-admin key is never counted. **`revoke` deliberately keeps its
+  current behaviour** (it may still revoke the last admin key, as documented below): the
+  asymmetry is a decision, not an oversight, and closing it would change a boundary that
+  is already pinned.
 
 ## Routes
 
@@ -268,10 +283,13 @@ response bodies are JSON unless the row says otherwise.
 | `GET` | `/keys` | an **`admin`** key — a master admin sees every key, a store-scoped admin only keys inside its own set | — | `{"keys":[{"id","label","stores","prefix","perms","createdAt","expiresAt","lastUsedAt","revokedAt","updatedAt","updatedBy"}]}` | `200`, `401`, `403`, `429` |
 | `PATCH` | `/keys/{id}` | an **`admin`** key — a master admin may narrow or widen anything, a store-scoped admin only keys it could have minted | `{"label"?,"stores"?,"perms"?}` (any subset) | the updated entry, exactly as `GET /keys` lists it | `200`, `400`, `401`, `403`, `404`, `429` |
 | `POST` | `/keys/{id}/revoke` | an **`admin`** key — a master admin may revoke any key, a store-scoped admin only keys it could have minted; a key may always revoke itself | — (no body) | `{"id","revokedAt","changed"}` | `200`, `401`, `403`, `404`, `429` |
+| `DELETE` | `/keys/{id}` | an **`admin`** key — a master admin may delete any key, a store-scoped admin only keys it could have minted; a key may always delete itself; the LAST live admin key is refused | — (no body) | `{"id","deletedAt"}` | `200`, `401`, `403`, `404`, `409`, `429` |
 | `GET` | `/stores/{store}/objects` | `read` or `admin` on `{store}` | optional `?prefix=` (query) | `{"objects":[{"store","name","sha256","size","createdAt"}]}` | `200`, `400`, `401`, `403`, `404`, `429` |
 | `PUT` | `/stores/{store}/objects/{name}` | `write` or `admin` on `{store}` | raw bytes (any `content-type`; ignored) | `{"store","name","sha256","size","createdAt"}` | `201`, `400`, `401`, `403`, `404`, `413`, `429` |
 | `GET` | `/stores/{store}/objects/{name}` | `read` or `admin` on `{store}` | — | raw bytes (+ `x-serverstore-sha256`) | `200`, `401`, `403`, `404`, `429` |
+| `DELETE` | `/stores/{store}/objects` | `delete` or `admin` on `{store}` — **empties the store** | `?confirm={store}` (query, required) | `{"store","deleted"}` | `200`, `400`, `401`, `403`, `404`, `429` |
 | `DELETE` | `/stores/{store}/objects/{name}` | `delete` or `admin` on `{store}` | — | empty body | `204`, `401`, `403`, `404`, `429` |
+| `DELETE` | `/stores/{store}` | a **master admin** key | `?confirm={store}` (query, required) | `{"name","deletedAt"}` | `200`, `400`, `401`, `403`, `404`, `409`, `429` |
 
 There is **no `405`**. An unknown path or an unsupported method on a known path answers
 **`401` `unauthorized` when the request carries no valid key** — the key guard matches EVERY
@@ -417,6 +435,26 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
   that key is `401`, with no cache and no restart. Plan for it — revoking the last admin
   key leaves the store administrable only by a key minted from the box
   (`pnpm run admin:key`). **No key material is in the response.**
+- **`DELETE /keys/{id}`** — **delete a key for good.** It is `POST …/revoke`'s boundary
+  plus the row: **admin-only**, no body, and `{"id","deletedAt"}` on success. A **master
+  admin** may delete any key (including another master's); a **store-scoped admin** may
+  delete only a key it could have minted (scope inside its own set and not a key holding
+  `admin`, both `403`); **a key may always delete itself**; a non-admin key is `403`. An
+  unknown `id` is `404`. A **revoked** key is deletable — this is the route that clears
+  the clutter revocation leaves behind. It takes effect on the **next request**: the
+  deleted key answers `401`, with no cache and no restart.
+  - **The one divergence from `revoke`: the LAST live admin key cannot be deleted.**
+    With exactly one key that holds `admin`, is not revoked and is not expired, the route
+    refuses `409 conflict` and names the reason — an operator who administers through
+    this API alone would otherwise be locked out, and the only recovery is shell on the
+    box (`pnpm run admin:key`). A **revoked or expired** admin key does not count, and
+    neither does a non-admin key. With two live admin keys either may be deleted. **This
+    is a deliberate asymmetry**: `POST …/revoke` still revokes the last admin key (it is
+    the caller's own credential and that behaviour is pinned), so a caller who needs to
+    dispose of the last admin key must revoke it, not delete it.
+  - **What the response means:** `deletedAt` is the server's timestamp for this deletion.
+    The key row, its scope rows and its stored hash are gone; nothing else changes. There
+    is **no undo** — a deleted key cannot be recovered, only re-minted.
 - **`GET /stores/{store}/objects`** — the objects in the store, ordered by name.
   Fields: `store`, `name`, `sha256` (the content address), `size` (bytes),
   `createdAt`.
@@ -439,8 +477,44 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
   `content-type: application/octet-stream`, `content-length`, and
   `x-serverstore-sha256` (the same sha256 the PUT response reported; verify it if you
   care about integrity end to end).
+- **`DELETE /stores/{store}/objects`** — **empty a store** (with a server-side
+  confirmation). Every entry of `{store}` is removed and its bytes are reclaimed; the
+  store itself, its kind, and every key's scope are **untouched** — a key scoped to an
+  empty store is perfectly valid, and this route never rewrites a credential. It needs
+  **`delete` or `admin` on `{store}`** — the same permission that already gates deleting
+  one entry — and it is **idempotent**: emptying an already-empty store is `200` with
+  `{"store","deleted":0}`. The `200` body is `{"store","deleted"}`, where `deleted` is
+  the number of entries removed.
+  - **`?confirm={store}` is REQUIRED and is checked on the server.** It must equal the
+    store's name exactly. A missing, empty or different token is **`400 bad_request`**
+    and **NOTHING is deleted** — not one row, not one byte. A confirmation dialog
+    protects a mis-click but not a mis-aimed `curl`, and the blast radius here is a whole
+    store, so the token is not a UI courtesy. An **unknown store** is `404`, and a key
+    without `delete` is `403`, both checked before the token.
 - **`DELETE /stores/{store}/objects/{name}`** — `204` with an empty body. Deleting a
-  name that does not exist is `404`. **The bytes are not reclaimed** (see Non-goals).
+  name that does not exist is `404`. The entry's metadata row is removed **and its bytes
+  are reclaimed** — but **only when no other entry in that store still names the same
+  content address**. Storage is content-addressed, so two names written with identical
+  bytes share **one** file; deleting one of them leaves the file alone so the survivor
+  still reads correctly, and deleting the last one removes it (see the Non-goals and
+  `docs/STORAGE.md`).
+- **`DELETE /stores/{store}`** — **delete a store** (with a server-side confirmation).
+  It requires a **master admin** key — symmetric with `POST /stores` — and
+  **`?confirm={store}`**, checked exactly as above (`400 bad_request` and nothing
+  deleted on a missing or mismatched token). On success it answers `200` with
+  `{"name","deletedAt"}`: the store's registry row, every entry row and the store's
+  whole directory are gone, and a later `GET /stores/{store}/objects` is `404`.
+  - **It REFUSES `409 conflict` while ANY key's scope names the store**, and the message
+    names the blocking keys (id and label). This is deliberate: the store name is a
+    foreign-key target of every key scope that names it, so the alternatives are to
+    **cascade** the scope rows away — silently mutating credentials, and leaving a key
+    that was scoped only to this store with an **empty** scope, which the model forbids —
+    or to delete the referencing keys, silently killing credentials. Instead the caller
+    sees the blockers, and clears them with `DELETE /keys/{id}` (or `PATCH /keys/{id}` to
+    re-scope) first. A `["*"]` master key does **not** block the delete: it names no
+    store, and a store created again later is still spanned by it.
+  - The order is intentional and worth knowing: unknown store `404` → non-master `403` →
+    bad confirm token `400` → blocked by a key scope `409`.
 
 ## Errors
 
@@ -467,6 +541,7 @@ what a client should do about it:
 | `rate_limited` | `429` | This client sent more than `SERVERSTORE_RATE_LIMIT` requests in the current 60-second window. Wait the `Retry-After` seconds and retry; the request was NOT processed (no side effect). |
 | `store_exists` | `409` | `POST /stores` with a name already in use. Pick another name (or treat it as success after `GET /stores`). |
 | `name_taken` | `409` | **Reserved.** No route emits this code today; it exists in the vocabulary. Treat it as "pick another name". |
+| `conflict` | `409` | The request is well-formed, but the current **state** forbids it: deleting the **last live admin key** (`DELETE /keys/{id}`), or deleting a store while a **key's scope names it** (`DELETE /stores/{store}`). The message names what is blocking. **Do not retry it unchanged** — change the state first (mint or promote another admin key; delete or re-scope the blocking keys). |
 | `unsupported_store_kind` | `500` | The store's registered kind has no handler in the running process. Server-side; report it to the operator. |
 | `internal` | `500` | An unexpected server-side failure. Do not assume the write did or did not happen — re-`GET` the object to find out, then retry or report. |
 
@@ -483,11 +558,18 @@ what a client should do about it:
 - **A failing request writes nothing.** Bytes and the metadata row are written only
   after the whole body has been read and the name/authorisation checks have passed, so
   a `400`, `403`, `404` or `413` leaves the store exactly as it was — and a refused
-  `PATCH /keys/{id}` leaves the key, its scope rows and its audit stamp unchanged. (A
-  blob from an *earlier successful* PUT of the same bytes may still be on disk — see the
-  next point.)
-- A `DELETE` removes the object's metadata row and **leaves the stored bytes on disk**.
-  There is no garbage collection yet.
+  `PATCH /keys/{id}` leaves the key, its scope rows and its audit stamp unchanged. This
+  includes a **bad or missing `confirm` token on a bulk delete** (`400`): it is checked
+  before anything is removed, so not one row and not one byte goes. (A blob from an
+  *earlier successful* PUT of the same bytes may still be on disk — see the next point.)
+- A `DELETE` removes the object's metadata row and **reclaims its bytes when no other
+  entry in that store names the same content** — storage is content-addressed, so two
+  names can share one file and deleting one must leave it for the survivor.
+  `DELETE /stores/{store}/objects` reclaims the store's whole blob tree, and
+  `DELETE /stores/{store}` removes its directory. **Still NOT reclaimed:** files orphaned
+  by **overwriting** an existing name — a `PUT` replaces the row and the previous
+  content's file stays — so a frequently rewritten store can still grow. No sweep exists
+  for that yet (see `docs/STORAGE.md`, and the Non-goals below).
 - **Rate limiting is on by default** (see Rate limiting): `SERVERSTORE_RATE_LIMIT`
   requests per client per 60-second window, `429 rate_limited` with `Retry-After` beyond
   it, and `/healthz`/assets/preflights never limited. There is no documented request
@@ -578,15 +660,35 @@ curl -s -X PATCH "$BASE/keys/<id>" -H "Authorization: Bearer $ADMIN_KEY" \
 # {"id":"<id>","label":"key for Tom","stores":["game","notes"],"prefix":"ssk_…",
 #  "perms":["read","write"],"createdAt":"…","expiresAt":null,"lastUsedAt":"…",
 #  "revokedAt":null,"updatedAt":"2026-09-27T21:10:00.000Z","updatedBy":"<your key id>"}
+
+# 11. Delete a key for good (admin only; effective on the NEXT request). A revoked key
+#     is deletable too — this is how the inventory is cleared. The LAST live admin key
+#     is refused 409.
+curl -s -X DELETE "$BASE/keys/<id>" -H "Authorization: Bearer $ADMIN_KEY"
+# {"id":"<id>","deletedAt":"2026-09-27T21:20:00.000Z"}
+
+# 12. Empty a store — every entry and its bytes go. The confirm token is REQUIRED and
+#     must equal the store name; a wrong one is 400 and deletes nothing. Idempotent.
+curl -s -X DELETE "$BASE/stores/game/objects?confirm=game" \
+  -H "Authorization: Bearer $ADMIN_KEY"
+# {"store":"game","deleted":12}
+
+# 13. Delete a store — master admin only, same confirm token. Refused 409 while any
+#     key's scope names the store (the message lists the blocking keys).
+curl -s -X DELETE "$BASE/stores/game?confirm=game" -H "Authorization: Bearer $ADMIN_KEY"
+# {"name":"game","deletedAt":"2026-09-27T21:25:00.000Z"}
 ```
 
 ## Non-goals (read this before you design around it)
 
 These are **not** implemented today. A client that assumes them will break:
 
-1. **No garbage collection.** `DELETE` removes the row and leaves the blob on disk.
-   Deleted data still occupies space (and, being content-addressed, an identical PUT
-   later reuses it).
+1. **No ORPHAN SWEEP.** Deleting an entry, emptying a store and deleting a store all
+   reclaim the bytes they can (an entry's file only when no other entry in that store
+   shares its content). But files orphaned by **overwriting** an existing name are **not**
+   reclaimed: `PUT` replaces the row and the previous content's file stays. There is no
+   garbage-collector process and no `POST /gc`-style route; a store rewritten in place can
+   still grow, and only an explicit delete reclaims anything.
 2. **No concurrency control.** A `PUT` is an unconditional overwrite. Two writers
    racing one name lose one update (last write wins); there is **no** `ETag`,
    `If-Match`, version number or compare-and-swap. If two players must not clobber

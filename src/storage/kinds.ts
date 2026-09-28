@@ -13,7 +13,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { StoreError } from "../core/errors.ts";
 import type { StoreKind } from "../core/types.ts";
-import { readBlob, writeBlob } from "./fs.ts";
+import { deleteBlob, readBlob, removeStoreBlobs, writeBlob } from "./fs.ts";
 
 export interface StoredObject {
   readonly store: string;
@@ -54,6 +54,28 @@ export interface StoreKindHandler {
     bytes: Uint8Array,
     now: () => number,
   ): Promise<ObjectMetadata>;
+  /**
+   * Delete ONE object and reclaim its bytes — the seam where the SHARING TRAP is
+   * handled (ledger row 70(e)). Returns whether a row was removed; the route turns
+   * `false` into a 404 and never deletes a blob for a name that was not there.
+   *
+   * Content-addressed storage means the SAME `sha256` can back two names in one store,
+   * so the blob goes ONLY when no remaining row names it. That decision lives HERE, in
+   * the kind handler, and not in the route: it is a fact about how this kind stores
+   * bytes, and a second kind (or a second delete route) must inherit it rather than
+   * re-derive it.
+   */
+  remove(db: DatabaseSync, dataRoot: string, store: string, name: string): Promise<boolean>;
+  /**
+   * Delete EVERY object of a store and reclaim its whole blob tree — the EMPTY-STORE
+   * seam. Returns the number of rows removed, so the route can report an idempotent
+   * `0` for an already-empty store.
+   *
+   * Rows first, then bytes: after the DELETE no row of this store can reference a blob,
+   * so removing the store's own tree cannot corrupt another store's data, and a crash in
+   * between leaves orphan bytes rather than an unreadable row.
+   */
+  empty(db: DatabaseSync, dataRoot: string, store: string): Promise<number>;
 }
 
 interface ObjectRow {
@@ -169,6 +191,31 @@ const bytesHandler: StoreKindHandler = {
                                               created_at = excluded.created_at`,
     ).run(store, name, sha256, bytes.byteLength, createdAt);
     return { sha256, size: bytes.byteLength, createdAt };
+  },
+
+  async remove(db, dataRoot, store, name) {
+    const row = db
+      .prepare("SELECT sha256 FROM objects WHERE store = ? AND name = ?")
+      .get(store, name) as { sha256: string } | undefined;
+    if (row === undefined) return false;
+    // THE SHARING CHECK, and it is a check on the ROW SET, not on the file: two names
+    // that were PUT with identical bytes share one blob, so the blob may be removed only
+    // when this store has no OTHER row naming the same content address. (`name <> ?`
+    // excludes the row about to go; SQLite's `LIMIT 1` stops at the first survivor.)
+    const shared = db
+      .prepare("SELECT 1 AS one FROM objects WHERE store = ? AND sha256 = ? AND name <> ? LIMIT 1")
+      .get(store, row.sha256, name);
+    db.prepare("DELETE FROM objects WHERE store = ? AND name = ?").run(store, name);
+    if (shared === undefined) await deleteBlob(dataRoot, store, row.sha256);
+    return true;
+  },
+
+  async empty(db, dataRoot, store) {
+    const result = db.prepare("DELETE FROM objects WHERE store = ?").run(store);
+    // AFTER the DELETE, so no surviving row can reference anything in the tree this
+    // removes — and the tree is this store's own (`<dataRoot>/stores/<store>/blobs`).
+    await removeStoreBlobs(dataRoot, store);
+    return Number(result.changes);
   },
 };
 

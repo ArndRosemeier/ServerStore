@@ -100,17 +100,18 @@ describe("the object round-trip (pin 4)", () => {
     expect((await readError(response)).code).toBe("internal");
   });
 
-  test("DELETE removes the row and leaves the blob (GC is out of scope, stated)", async () => {
+  test("DELETE removes the row and reclaims the UNSHARED blob (the shared case is pin X7)", async () => {
     const server = createTestServer();
     const key = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.put("/stores/master/objects/temp.txt", PAYLOAD, key);
-    const blobs = server.listBlobFiles();
+    expect(server.listBlobFiles()).toHaveLength(1);
 
     const del = await server.del("/stores/master/objects/temp.txt", key);
     expect(del.status).toBe(204);
     expect((await server.get("/stores/master/objects/temp.txt", key)).status).toBe(404);
-    // The blob remains, deliberately — this is the documented omission, not a bug.
-    expect(server.listBlobFiles()).toEqual(blobs);
+    // The blob goes too: no other row names this content address. The SHARED case — where
+    // the file must SURVIVE — is pinned by X7 (`tests/destructive.test.ts`).
+    expect(server.listBlobFiles()).toEqual([]);
   });
 
   test("the object listing is scoped to its store and sorted by name", async () => {
