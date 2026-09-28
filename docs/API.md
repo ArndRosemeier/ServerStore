@@ -55,13 +55,17 @@ service (exit 1) from a probe that could not run (exit 2).
 
 The service also serves a small **admin console** at the root of the same origin
 (`https://store.futuremagic.de/`, or `http://127.0.0.1:8477/` on the box): enter a
-master key, see what that key is, list and create stores, list keys, mint one (shown
-once), **edit one in place** (rename, stores, permissions — the key's value is never
-shown again and never changes), and revoke one. Each row also shows **when it was last
-changed and by which key** ("never changed" until an edit happens). It is plain HTML,
-one ES module and one stylesheet — **no build step, no bundler, no framework** — served
-from `web/` at three **literal** routes (`/`, `/app.js`, `/app.css`); there is no
-static-file subsystem, no directory walking, and no other path is served.
+master key, see what that key is, list and create stores, **look inside a store** (its
+entry names, sizes and hashes, filtered by prefix on the server), list keys, mint one
+(shown once), **edit one in place** (rename, stores, permissions — the key's value is
+never shown again and never changes), revoke one, and **delete** one (a revoked key
+included). Each row also shows **when it was last changed and by which key** ("never
+changed" until an edit happens). The console also **deletes a single entry** and
+**empties or deletes a whole store**; those two whole-store actions ask for the store
+name to be TYPED and send that text as the `?confirm=` token the bulk routes require. It
+is plain HTML, one ES module and one stylesheet — **no build step, no bundler, no
+framework** — served from `web/` at three **literal** routes (`/`, `/app.js`, `/app.css`);
+there is no static-file subsystem, no directory walking, and no other path is served.
 
 - **The key lives in a JavaScript variable for the life of the page.** It is never
   written to `localStorage`, `sessionStorage`, a cookie, the URL, `history` or the
@@ -77,9 +81,12 @@ static-file subsystem, no directory walking, and no other path is served.
 - **Errors are rendered, not swallowed**: the `{error:{code,message}}` envelope is
   shown in the page, code and message both.
 - **It is the operator's console, not a client API.** The paths it calls are pinned to
-  the routes below (pin U3), and its behaviour inside a real browser is **not**
-  exercised by any automated check yet — a headless-browser test is owed
-  (`docs/TESTING.md`, honest unknowns).
+  the routes below (pin U3), and its behaviour inside a real browser is executed by
+  `tests/browser.test.ts` — pins B1–B3 (load, authenticate, edit) and V1–V7 (delete a
+  key, look inside a store, prefix-filter, delete an entry, empty/delete a store, and
+  the `409`/`400`/`403`/`429` error paths) — with the API read back afterwards
+  (`docs/TESTING.md`, the browser sections). A scripted click is not a claim about
+  layout, and only one browser engine runs.
 
 ## CORS (a browser on another origin)
 

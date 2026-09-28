@@ -1,0 +1,60 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+chrome-count control (t8): scoped+bracketed=0  brief's-literal=1
+  the literal command counts the grep THAT IS RUNNING IT (its pattern is in that argv); the bracketed one cannot.
+=== CONTROL — the committed tree (5bf080a) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/console-destructive/.diff-harness-console/control)
+  control GREEN:  Test Files  18 passed (18)       Tests  179 passed (179) 
+ ✓ tests/browser.test.ts (15 tests) 3639ms
+=== ARM A — the whole-store token is PRE-FILLED: a WRONG typed name destroys the store ===
+  file:   web/app.js
+  sha256: 56bd8f70639bdaff417a660f412cb15d3ac7d5d19284c2c6cf44080ff0e5ed2c  (before)
+  sha256: ae32e9ac967c5f643ba62a1cdabff7996473adf53f6cf6327e32cdc842b1046a  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/console-destructive/.diff-harness-console/arm-a)
+     × PIN V4: emptying needs the TYPED name, and a wrong name changes nothing 5097ms
+     ✓ PIN V5: a BLOCKED store delete is shown, and then succeeds once the key is gone 305ms
+     ✓ PIN V6: the console's promises hold with the new controls 98ms
+     ✓ PIN V7: the outcomes are legible — 409, 400, 403 and 429 render the server's message 618ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser.test.ts > the console's destructive actions, executed in a real browser (pins V1-V7) > PIN V4: emptying needs the TYPED name, and a wrong name changes nothing
+BrowserError: timed out after 5000ms waiting for the client's own refusal of the mismatched name; last: the expression is falsy (false)
+ ❯ BrowserPage.waitFor tests/helpers/browser.ts:379:11
+    377|       await sleep(POLL_INTERVAL_MS);
+    378|     }
+    379|     throw new BrowserError(
+ ❯ tests/browser.test.ts (15 tests | 1 failed) 8603ms
+ FAIL  tests/browser.test.ts > the console's destructive actions, executed in a real browser (pins V1-V7) > PIN V4: emptying needs the TYPED name, and a wrong name changes nothing
+RESTORED: web/app.js back at HEAD; lock released
+=== ARM B — the entry list filters CLIENT-SIDE: the request carries NO prefix= ===
+  file:   web/app.js
+  sha256: 56bd8f70639bdaff417a660f412cb15d3ac7d5d19284c2c6cf44080ff0e5ed2c  (before)
+  sha256: 8c1e0128f882b25935713a8c77c08a47e8bdbdca623799f95e96760e5fa1c795  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/console-destructive/.diff-harness-console/arm-b)
+     × PIN V2: the console shows a store's ENTRIES, and the prefix filter is server-side 153ms
+     ✓ PIN V3: the console deletes ONE entry, and the other survives 101ms
+     ✓ PIN V4: emptying needs the TYPED name, and a wrong name changes nothing 143ms
+     ✓ PIN V5: a BLOCKED store delete is shown, and then succeeds once the key is gone 284ms
+     ✓ PIN V6: the console's promises hold with the new controls 98ms
+     × PIN V7: the outcomes are legible — 409, 400, 403 and 429 render the server's message 5253ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser.test.ts > the console's destructive actions, executed in a real browser (pins V1-V7) > PIN V2: the console shows a store's ENTRIES, and the prefix filter is server-side
+AssertionError: the narrowed listing did not come from a request carrying "/stores/game/objects?prefix=room-4"; requests seen: ["http://127.0.0.1:35985/stores","http://127.0.0.1:35985/stores/game/objects","http://127.0.0.1:35985/stores/game/objects"]: expected 0 to be greater than 0
+ ❯ tests/browser.test.ts:910:7
+    908|       requested.filter((url) => url.includes(wanted)).length,
+ ❯ tests/browser.test.ts (15 tests | 2 failed) 8335ms
+ FAIL  tests/browser.test.ts > the console's destructive actions, executed in a real browser (pins V1-V7) > PIN V2: the console shows a store's ENTRIES, and the prefix filter is server-side
+  DECLARED TWIN (named): PIN V7: the outcomes are legible -> RED — its 400 half rides the SAME prefix= query
+RESTORED: web/app.js back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/console-destructive/.diff-harness-console/control2)
+  control GREEN:  Test Files  18 passed (18)       Tests  179 passed (179) 
+ ✓ tests/browser.test.ts (15 tests) 3676ms
+  sha256: 56bd8f70639bdaff417a660f412cb15d3ac7d5d19284c2c6cf44080ff0e5ed2c  (web/app.js back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN V4 (the pre-filled whole-store token let a WRONG typed name destroy the store) with the right-name flow and every other pin GREEN; arm B RED on PIN V2 (the listing was filtered CLIENT-SIDE, so no request carried prefix=) with the visible list still correct, PIN V7 RED as the DECLARED TWIN (its 400 half rides the same prefix= query) and every other pin GREEN. Both controls GREEN. Our own chrome processes after every run: 0 (count scoped to ServerStore/*browser-scratch; the brief's literal command self-matches its own grep, measured). No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/console-destructive/.diff-harness-console/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/console-destructive/checkpoints/console-destructive-differential.out
+RESTORED: web/app.js back at HEAD; lock released

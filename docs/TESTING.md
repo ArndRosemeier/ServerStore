@@ -966,6 +966,112 @@ probe that "went red somewhere".
   a scratch data root; `https://store.futuremagic.de` was never loaded (the host rule
   forbids synthetic load), so nothing here verifies the DEPLOYED console in a browser.
 
+## The console's destructive pins (slice 18, V1–V7)
+
+Slice 18 (ledger rows 81/82) is the UI for the routes slice 16 landed: the console gains
+**Delete** on every key row (a REVOKED one included), an **Open** affordance that fetches
+`GET /stores/{store}/objects` ON DEMAND and lists the entry NAMES (size, createdAt and an
+abbreviated sha256) with a prefix field that re-queries with `?prefix=` **server-side**,
+**per-entry Delete**, and **Empty this store** / **Delete this store** — the last two
+requiring the store name TYPED into a never-prefilled field and sent as the server's
+`?confirm=` token. The proof is the REAL browser: pins V1–V7 ride the existing seam
+(`tests/helpers/browser.ts`) and the existing spawned entrypoint
+(`tests/helpers/entrypoint.ts`), clicking with trusted `Input.*` events and asserting the
+EFFECT through the API or the filesystem-visible store, never from the DOM alone.
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| V1 | **deleting a KEY through the UI kills its credential** — a throwaway key is minted through the UI, its row's Delete is trusted-clicked and confirmed, the row disappears from the refreshed list, the key is gone from `GET /keys`, and the deleted key's OWN raw credential answers `401` | `tests/browser.test.ts` (`PIN V1`) |
+| V2 | **the console shows a store's ENTRIES and the prefix filter is SERVER-side** — opening the store lists exactly its seeded names; typing a prefix narrows the visible list AND the pin asserts the request that produced it carried `prefix=<prefix>` (read from the page's resource timing). A client-side filter renders the same list and FAILS this pin | `tests/browser.test.ts` (`PIN V2`) |
+| V3 | **deleting ONE entry leaves the other readable** — the row's Delete is confirmed, the entry disappears from the refreshed list, the API answers `404` for it and `200` for the OTHER entry | `tests/browser.test.ts` (`PIN V3`) |
+| V4 | **emptying needs the TYPED name; a wrong name changes nothing** — the field is asserted EMPTY first, a WRONG name produces the client's own `confirm_mismatch` refusal with every entry still listed through the API, and the RIGHT name sends the typed text as the token and empties the store (`GET …/objects` is `[]`) | `tests/browser.test.ts` (`PIN V4`) |
+| V5 | **a BLOCKED store delete is shown, then succeeds once the key is gone** — with a key scoped to the store the delete renders the server's `409` (the message NAMES the blocking key), the store SURVIVES, then the blocking key is deleted through the UI (V1's flow), the delete is retried, and `GET /stores` no longer lists the store | `tests/browser.test.ts` (`PIN V5`) |
+| V6 | **the console's promises hold with the new controls** — after a FAILING destructive action the pane refreshed, the row is still there and the status surface does NOT claim a deletion; and no key material reached `localStorage`, `sessionStorage`, a cookie, the query or the fragment during any of it | `tests/browser.test.ts` (`PIN V6`) |
+| V7 | **the outcomes are legible** — the `409` (blocked), a genuine `400` (`invalid_name`, from an illegal prefix typed into the filter), the `403` (a non-master key cannot list stores) and a genuine `429` each render the SERVER's own `{error:{code,message}}` through the console's ONE error surface | `tests/browser.test.ts` (`PIN V7`) |
+
+**The 429 is REAL, and it needs a second service.** The main browser service runs with
+`SERVERSTORE_RATE_LIMIT=0` — the operator kill-switch — because a browser test must never
+fail for a limiter reason (TRAP 1, row 68). V7 therefore spawns a SECOND service on its
+own scratch data root with `SERVERSTORE_RATE_LIMIT=1` (and its own master key, minted in
+process through the ONE mint path), and asserts only that the console RENDERS the server's
+`rate_limited` envelope. The limiter's own boundary stays pinned deterministically in
+`tests/ratelimit.test.ts` (R1–R8); nothing here re-derives it.
+
+**A HARNESS DEFECT FOUND WHILE WRITING THIS, and it is a real browser behaviour rather
+than a test gadget:** once `Target.createTarget` opens another page (a cross-origin
+fixture, a second console page), the console's target is BACKGROUNDED, and Chrome DEFERS
+trusted input to a hidden page — measured as **5001 ms on every
+`Input.dispatchMouseEvent`**. The first version of this file took **143 s** and V1 could
+not find a row at all. `BrowserPage.bringToFront()` (`Page.bringToFront`) is now called by
+`clickElement()`, and the file runs in **~3.6 s**. The pins were not weakened to fix it;
+the seam was completed.
+
+**PIN U3's shape check normalises a route's parameter NAME on BOTH sides now.**
+`calledPaths()` has always normalised a template hole to `:id`, while Hono registers
+`/stores/:store/objects/:name` — so the FIRST multi-param route the console calls could
+never match the old comparison. `routeShape()` maps `:store`/`:name`/`:id` to `:id` on the
+registered side, so the pin still compares path SHAPES and still fails on a path the API
+does not register (row 54's arm B proved that with `/no-such-route`; this slice's arm B
+leaves U3 GREEN). This is a JUDGEMENT CALL, recorded in ledger row 82.
+
+**Honest unknowns (this slice):**
+
+- **Only one browser engine, and no visual or keyboard claim.** A trusted scripted click
+  is not a statement about layout, a phone screen, or a keyboard-only path; the console's
+  inline two-step and typed-name flows are reachable, but nothing asserts they LOOK right.
+- **The `409` body is prose.** The console DISPLAYS the server's message (which names the
+  blocking keys) and deliberately parses nothing out of it; a structured
+  `blockers:[{id,label}]` would let the UI branch, and that is an OPEN follow-up (ledger
+  row 81(b)), not a hidden one.
+- **The whole-store flows have no undo.** Empty and Delete are irreversible in the UI as
+  in the API; the typed-name token is the guard, and the API's own `?confirm=` check is
+  the backstop (pinned X6 in `tests/destructive.test.ts`).
+- **A wrong typed name is refused by the CLIENT, so the server's `400` for a mismatched
+  token is not reachable through this UI.** It stays pinned in-process (X6); V4 pins the
+  client refusal, which is the behaviour the owner asked for.
+- **The live host was never touched.** Everything runs against spawned services on
+  loopback with scratch data roots.
+
+## The console-destructive differential (2 arms + two controls)
+
+Machinery: `checkpoints/console-destructive-differential.sh`. Raw transcript:
+`checkpoints/console-destructive-differential.out` (per-arm logs are `*.log` under
+`.diff-harness-console/`, so gitignored).
+
+Same shape as the earlier differentials — the slice is COMMITTED FIRST (the CONTROL line
+names the code tip `5bf080a`), the lock `scripts/gate.sh` takes is held across every arm,
+the mutated file's sha256 is printed before and after, restore is `git checkout HEAD --`
+inside an `EXIT INT TERM` trap with the hash asserted back, `error TS` = VOID, and a
+control runs BEFORE **and** AFTER. Chrome processes are counted after every run, **scoped
+to this worktree's own profile** (`ps -eo args | grep -c 'ServerStor[e]/.*browser-scratch'`
+→ 0). The brief's LITERAL command is itself self-matching — its pattern sits in the
+running `grep`'s own argv and it reported **1** on an idle box — so the harness measures
+and prints both counts (TRAP t8, sharpened).
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| A | **the whole-store token is PRE-FILLED from the store name** — the typed field is ignored, so a WRONG typed name destroys the store | `web/app.js` | `56bd8f70…ed2c` → `ae32e9ac…046a` | `PIN V4: emptying needs the TYPED name, and a wrong name changes nothing` — the client's `confirm_mismatch` never appears (`timed out after 5000ms waiting for the client's own refusal of the mismatched name`). **V1, V2, V3, V5, V6, V7 and U1–U4 stayed GREEN** — the key-delete flow, the entry listing and the RIGHT-name store delete are untouched |
+| B | **the entry list filters CLIENT-SIDE** — the whole store is fetched and narrowed in the browser, so no request carries `prefix=` | `web/app.js` | `56bd8f70…ed2c` → `8c1e0128…c795` | `PIN V2: … the prefix filter is server-side` — `requests seen: ["…/stores","…/stores/game/objects","…/stores/game/objects"]`, none carrying `prefix=room-4` — while the RENDERED list is still exactly correct. **V7 went RED as the DECLARED TWIN** (below). V1, V3, V4, V5, V6, B1–B3, B6 and U1–U4 stayed GREEN |
+| control | none — the committed tree | — | — | **GREEN**: 18 files · 179 tests; `tests/browser.test.ts (15 tests) 3639ms` |
+| control | none — the restored tree, `app.js` back at its before hash | — | `56bd8f70…ed2c` | **GREEN**: 18 files · 179 tests; `tests/browser.test.ts (15 tests) 3676ms` |
+
+**Arm B's DECLARED TWIN, named rather than hidden: PIN V7 goes RED with it.** V7's `400`
+half types an ILLEGAL prefix so the SERVER answers `invalid_name` — and that request IS
+the `prefix=` query V2 pins. A defect that removes the server-side query therefore removes
+the only UI route to a genuine `400`, so **no mutation of `refreshEntries` can redden V2
+alone**. The harness ASSERTS V7 is red (an arm that stopped reddening it would mean the
+arm no longer targets the server-side query), exactly as the browser differential asserts
+its PIN O2 collateral.
+
+- The two arms are aimed at DIFFERENT mechanisms — one at the CONFIRMATION rule, one at
+  WHERE the filtering happens — and each leaves the other's pins green, so neither is
+  vacuous.
+- No hash was unchanged (a VOID probe would have been refused by the harness), the two
+  arms produced DIFFERENT hashes from the SAME before-hash, and both controls are GREEN —
+  so the injection, and nothing else, was the difference.
+- **What these arms do NOT prove** is the honest unknown above: neither arm is a layout or
+  phone claim, and both mutate `web/app.js` only.
+
 ## The destructive-lifecycle pins (slice 16, X1–X9)
 
 The three destructive routes and the byte reclamation they imply (ledger rows 70, 71). Every

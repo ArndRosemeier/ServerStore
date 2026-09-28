@@ -81,19 +81,11 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
-IN-FLIGHT | row=82 | session=(dispatching now) | worktree=worktrees/console-destructive |
-  | branch=feat/console-destructive | base=origin/main — resolved by the writer and recorded in its landing
-  | state=THE ONE WRITER. Scope: the console's four destructive actions (design = ledger row 81, the
-  |   owner's ask = row 70, brief `docs/briefs/slice-18-console-destructive.md`). UI-ONLY: `web/` plus
-  |   the browser test. Key rows gain Delete (including a revoked key — the owner's complaint); store
-  |   rows gain "open" with an on-demand entry list fetched with `prefix=` SERVER-SIDE, per-entry
-  |   delete, empty-store and delete-store, the last two requiring the store name TYPED and sent as the
-  |   server's `confirm=` token. A `409` blocked store delete is DISPLAYED (the message names the
-  |   blocking keys) and never worked around, and no prose is parsed for ids. Pins V1–V7 ride the real
-  |   browser test (delete a key and the credential dies; entries listed and prefix-filtered; delete one
-  |   entry; wrong typed name changes nothing; blocked store delete then succeeds after the key is
-  |   deleted; U1–U4/A1–A3 unchanged). NOT in scope: any API/schema/storage change, a structured
-  |   `blockers` field in the 409 body (named as a possible follow-up), and any new asset or dependency.
+(The row=82 `IN-FLIGHT` block is FOLDED by the LANDED row=82 record in `## Landed` — the
+writer's own record, added in the docs child of landing `5bf080a`. Its scope statement is
+unchanged and now has a landing: the console's four destructive actions, pins V1–V7 on the
+existing browser seam, the U3 shape-normalisation judgement call, and NO `src/`, schema,
+storage or API change.)
 
 IN-FLIGHT | row=79 | session=(dispatching now) | worktree=worktrees/sqlite-core |
   | branch=feat/sqlite-core | base=origin/main — resolved by the writer and recorded in its landing
@@ -1169,6 +1161,57 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=82 | sha=5bf080a (the WRITER'S VERIFIED CODE tip — `web/index.html`, `web/app.js`,
+  | `web/app.css`, `tests/browser.test.ts`, `tests/helpers/browser.ts` and
+  | `tests/admin-ui.test.ts`; the docs commit carrying THIS line, ledger row 82,
+  | `docs/SEAM-INDEX.md`, `docs/TESTING.md` and the `docs/API.md` correction is its child — a
+  | commit cannot name its own sha. The pre-push rebase may replay it; an empty content delta on
+  | the code is what makes the replayed sha the same landing.)
+  | base=origin/main `e6bc547`, resolved by the writer and carrying the row-81 design and this
+  | slice's brief.
+  | verify=THE WRITER'S OWN, in-turn, on the committed tree: `bash scripts/gate.sh` → exit 0
+  | GREEN · 18 files · 179 tests · 4.29s (raw log `.gate-logs/writer-gate-s18.log`; the gate's own
+  | copy is `/home/administrator/projects/ServerStore/.gate-logs/gate.log`), with
+  | `tests/browser.test.ts (15 tests) 3849ms` — the eight slice-15 pins plus the seven new V pins,
+  | so the console flows add ~2.0 s to every gate run. THE DISPATCHER'S INDEPENDENT VERIFICATION IS
+  | OWED — this record claims the writer's gate and the writer's arms only.
+  | arms=`checkpoints/console-destructive-differential.sh`, transcript
+  | `checkpoints/console-destructive-differential.out`, the gate lock held across the CONTROL and
+  | BOTH arms, `web/app.js`'s sha256 printed before and after, restore from `HEAD` in an
+  | `EXIT INT TERM` trap with the hash asserted back, `error TS` = VOID, a control BEFORE and AFTER:
+  |   A the whole-store token is PRE-FILLED from the store name (`56bd8f70…ed2c` → `ae32e9ac…046a`)
+  |     → RED on PIN V4: the client's `confirm_mismatch` never appears, so a WRONG typed name would
+  |     have destroyed the store. V1/V2/V3/V5/V6/V7 and U1–U4 stayed GREEN.
+  |   B the entry list is filtered CLIENT-SIDE (fetch the whole store, narrow in the browser;
+  |     `56bd8f70…ed2c` → `8c1e0128…c795`) → RED on PIN V2: the requests seen are exactly
+  |     `["…/stores","…/stores/game/objects","…/stores/game/objects"]`, NONE carrying `prefix=`,
+  |     while the RENDERED list stayed exactly correct — which is the whole reason V2 observes the
+  |     request and not the DOM.
+  |   DECLARED TWIN (named, and ASSERTED red by the harness): PIN V7 on arm B — its 400 half drives
+  |   an ILLEGAL prefix, so it rides the same `prefix=` query, and no mutation of `refreshEntries`
+  |   can redden V2 alone.
+  |   both controls GREEN (18 files · 179 tests); `web/app.js` restored byte-identical to its
+  |   before-hash; no VOID probe.
+  | COPIES=`COPIES: 3→1` — the confirmation rule is ONE seam per weight (`armGuard()` for one item,
+  | `armTypedConfirm()` for a whole store), the outcome rule is the ONE `finishDestructive()`, and
+  | the query string is built by the ONE `withQuery()`. `COPIES: 1` — verified by grep: the
+  | on-demand entry fetch (`refreshEntries()`) and each `ROUTES` path exist once.
+  | A HARNESS DEFECT FOUND AND FIXED, and it is why the file is fast: after `Target.createTarget`
+  | opens another page the console's target is BACKGROUNDED, and Chrome DEFERS trusted input to a
+  | hidden page — measured as 5001 ms on every `Input.dispatchMouseEvent`, which made the file take
+  | 143 s. `BrowserPage.bringToFront()` is now called by `clickElement()`; the file runs in ~3.6 s.
+  | JUDGEMENT CALLS (all in ledger row 82): the U3 shape check normalises a route's parameter NAME
+  | on both sides (`routeShape()`), Revoke now uses the same inline two-step instead of
+  | `window.confirm()`, the typed-name button stays enabled and refuses a mismatch with
+  | `confirm_mismatch`, the `409` is displayed and nothing is parsed out of it, `forgetKey()` clears
+  | the open store, and V7's 429 is a real second service (`SERVERSTORE_RATE_LIMIT=1`).
+  | HOST: chrome processes scoped to this worktree's profile (`ServerStor[e]/.*browser-scratch`)
+  | counted after EVERY run → 0. The brief's LITERAL count command is SELF-MATCHING (it reported 1
+  | on an idle box because its pattern is in the running `grep`'s argv); the harness prints both.
+  | NOT touched: the live service, `/home/administrator/serverstore-data`, and every `src/` file — no
+  | restart, no request, no key (GUARD g5 is the dispatcher's, and this landing changes no product
+  | code).
+
 LANDED | row=71 | sha=f066f65 (the WRITER'S VERIFIED CODE tip — `src/core/errors.ts`,
   | `src/core/keys.ts`, `src/server/app.ts`, `src/storage/fs.ts`, `src/storage/kinds.ts`,
   | `src/stores/registry.ts`, `tests/destructive.test.ts`, `tests/objects.test.ts`,
