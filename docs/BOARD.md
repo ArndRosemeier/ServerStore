@@ -66,20 +66,34 @@ reconciled: 620a71b · 2026-09-28T12:35Z — the slice-17 (SQLite core) VERIFIED
   quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight. Slices 12–17 are LANDED, VERIFIED and RETIRED (CORS, the `prefix=`
-  |   filter, rate limiting, the headless-browser test, the destructive lifecycle, and THE SQLITE
-  |   CORE). LIVE at https://store.futuremagic.de/ — and the live data root has BEEN MIGRATED: one
-  |   database holds keys, scopes, stores and item bytes; the 177 blob files are gone; the mode is WAL;
-  |   every key row survived byte-identically and every one of the 175 migrated rows re-hashes to its
-  |   recorded sha256. A pre-migration copy of the data root is kept at
-  |   `/home/administrator/serverstore-data.backup-pre-migration` (1.8 MB) — it can be deleted once the
-  |   owner confirms his key still works, and it is the fallback if he does not.
-  |   NEXT: row 81 = the console slice for the four destructive actions.
+  | state=ONE writer in flight (row 82: THE CONSOLE'S FOUR DESTRUCTIVE ACTIONS — delete keys, look
+  |   inside a store and delete entries, empty a store, delete a store; worktree
+  |   worktrees/console-destructive, branch feat/console-destructive; design = ledger row 81, the
+  |   owner's ask = row 70). Slices 12–17 are LANDED, VERIFIED and RETIRED, and the routes this slice
+  |   drives are LIVE (row 73). LIVE at https://store.futuremagic.de/ on the MIGRATED SQLite core:
+  |   one database holds keys, scopes, stores and item bytes; WAL; every key survived; the
+  |   pre-migration copy stays at `/home/administrator/serverstore-data.backup-pre-migration` until the
+  |   owner confirms his key with a real call.
+  |   NEXT after row 82: nothing queued — the owner's four UI asks are the last open request.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
+
+IN-FLIGHT | row=82 | session=(dispatching now) | worktree=worktrees/console-destructive |
+  | branch=feat/console-destructive | base=origin/main — resolved by the writer and recorded in its landing
+  | state=THE ONE WRITER. Scope: the console's four destructive actions (design = ledger row 81, the
+  |   owner's ask = row 70, brief `docs/briefs/slice-18-console-destructive.md`). UI-ONLY: `web/` plus
+  |   the browser test. Key rows gain Delete (including a revoked key — the owner's complaint); store
+  |   rows gain "open" with an on-demand entry list fetched with `prefix=` SERVER-SIDE, per-entry
+  |   delete, empty-store and delete-store, the last two requiring the store name TYPED and sent as the
+  |   server's `confirm=` token. A `409` blocked store delete is DISPLAYED (the message names the
+  |   blocking keys) and never worked around, and no prose is parsed for ids. Pins V1–V7 ride the real
+  |   browser test (delete a key and the credential dies; entries listed and prefix-filtered; delete one
+  |   entry; wrong typed name changes nothing; blocked store delete then succeeds after the key is
+  |   deleted; U1–U4/A1–A3 unchanged). NOT in scope: any API/schema/storage change, a structured
+  |   `blockers` field in the 409 body (named as a possible follow-up), and any new asset or dependency.
 
 IN-FLIGHT | row=79 | session=(dispatching now) | worktree=worktrees/sqlite-core |
   | branch=feat/sqlite-core | base=origin/main — resolved by the writer and recorded in its landing
@@ -949,6 +963,12 @@ QUEUE | row=72 | **OPEN FORK, THE OWNER'S CHOICE (ledger row 72): items inside S
   single-writer); only Postgres does, and PGlite (single-connection) does not. TRADE: WAL adds
   `-wal`/`-shm` sidecars, so a plain copy of `serverstore.db` can miss the newest commits — the
   backup rule in `docs/STORAGE.md` becomes mandatory.
+QUEUE-CLOSED | row=81 | **THE CONSOLE SLICE (ledger row 81) IS DISPATCHED as row 82** — the owner's four
+  destructive actions as UI: delete a key, look inside a store (names, server-side `prefix=` filter)
+  and delete an entry, empty a store and delete a store (both with the store name TYPED, sent as the
+  server's `confirm=` token). UI-ONLY: the routes landed at row 71 and are live, the key stays in
+  memory, every path called must be a registered route (U2/U3), and the browser test landed at row 68
+  is what proves the flows in real Chrome.
 QUEUE-CLOSED | row=78 | **STORAGE MODEL SETTLED BY THE OWNER (ledger row 78): SQLite is the core — items live in the
   | database, the per-item files go, concurrency is asserted not to corrupt (a wait is fine) and the
   | storage layer stays encapsulated. DISPATCHED as row 79.** The forks this closes (rows 72/74/75/76/77):
@@ -1108,7 +1128,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-80 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-81 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
