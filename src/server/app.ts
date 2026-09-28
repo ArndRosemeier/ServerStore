@@ -27,6 +27,7 @@ import {
   parseLabel,
   parsePermissions,
   parseObjectName,
+  parseObjectPrefix,
   parseStoreKind,
   parseStores,
 } from "../core/validate.ts";
@@ -690,11 +691,21 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     });
   });
 
+  // The object listing, and the ONE filter it has (ledger row 61). The prefix never
+  // widens anything: authorization is decided FIRST and for the STORE, so a prefix can
+  // only narrow WITHIN a store the caller may already read. An absent `prefix` is
+  // today's whole-store listing; a PRESENT one is parsed against the SAME name rule —
+  // `undefined` means absent, the empty string means present-and-refused (400
+  // `invalid_name`), because silently returning the whole store for `?prefix=` would
+  // hide a client bug (AGENTS.md rule 1). A valid prefix matching nothing is a 200 with
+  // an empty list, never a 404: it is a listing, and an empty one is legitimate.
   app.get("/stores/:store/objects", (c) => {
     const store = requireStore(ctx.db, c.req.param("store"));
     c.get("auth").authorize(store.name, "read");
+    const rawPrefix = c.req.query("prefix");
+    const prefix = rawPrefix === undefined ? undefined : parseObjectPrefix(rawPrefix);
     const handler = handlerFor(store.kind);
-    return c.json({ objects: handler.list(ctx.db, store.name) });
+    return c.json({ objects: handler.list(ctx.db, store.name, prefix) });
   });
 
   app.put("/stores/:store/objects/:name", async (c) => {

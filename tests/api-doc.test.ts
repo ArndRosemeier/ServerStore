@@ -146,4 +146,36 @@ describe("the client contract (docs/API.md, pins A1-A3)", () => {
       "PIN A3: docs/API.md's MiB rendering disagrees with DEFAULT_MAX_BYTES",
     ).toBe(Math.floor(DEFAULT_MAX_BYTES / (1024 * 1024)));
   });
+
+  test("PIN P8: the API doc's stated `prefix` behaviour matches the code", () => {
+    // The ROUTE TABLE must carry the parameter on the listing row (the code half is
+    // driven in tests/objects.test.ts, pins P1-P4; this is the documented contract).
+    const row = section("Routes")
+      .split("\n")
+      .find((line) => /^\|\s*`GET`\s*\|\s*`\/stores\/\{store\}\/objects`\s*\|/.test(line));
+    expect(row, "PIN P8: the route table has no GET /stores/{store}/objects row").toBeDefined();
+    expect(row, "PIN P8: the listing row does not name the `prefix` parameter").toMatch(/prefix/);
+
+    // The listing BULLET must state the refusal rule and the empty-result rule.
+    const bulletStart = doc.indexOf("- **`GET /stores/{store}/objects`**");
+    expect(bulletStart, "PIN P8: the listing bullet is missing from docs/API.md").toBeGreaterThanOrEqual(0);
+    const nextBullet = doc.indexOf("\n- **", bulletStart + 1);
+    const bullet = doc.slice(bulletStart, nextBullet === -1 ? undefined : nextBullet);
+    expect(bullet, "PIN P8: the listing bullet does not name `prefix`").toMatch(/prefix/);
+    expect(bullet, "PIN P8: the bullet does not state the 400 invalid_name refusal").toMatch(
+      /400 `?invalid_name/,
+    );
+    expect(bullet, "PIN P8: the bullet does not state the empty-result answer").toMatch(
+      /\{\s*"objects"\s*:\s*\[\s*\]\s*\}|empty/i,
+    );
+
+    // The STALE sentence is REPLACED, not left standing beside the new one.
+    expect(
+      doc.includes("a store with many objects returns them all"),
+      "PIN P8: docs/API.md still carries the stale 'returns them all' sentence",
+    ).toBe(false);
+    expect(doc, "PIN P8: docs/API.md does not state that `prefix` is the ONE filter").toMatch(
+      /`prefix` is the ONE filter/,
+    );
+  });
 });

@@ -18,7 +18,7 @@ export const NAME_MAX_LENGTH = 64;
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
-export type NameKind = "store name" | "object name" | "key id";
+export type NameKind = "store name" | "object name" | "object name prefix" | "key id";
 
 /**
  * Parse a name from the wire against the explicit schema. Throws 400 on refusal.
@@ -62,6 +62,27 @@ export function parseStoreName(raw: unknown): string {
 /** Parse an object name. */
 export function parseObjectName(raw: unknown): string {
   return parseName(raw, "object name");
+}
+
+/**
+ * Parse the optional `prefix=` filter of the object listing (ledger row 61).
+ *
+ * **A prefix must ITSELF be a valid object name**, and that one rule is exactly the
+ * right one: the legal-name language `[a-z0-9][a-z0-9._-]{0,63}` is **prefix-closed**
+ * (every prefix of a legal name is legal), so this parser ACCEPTS exactly the strings
+ * that can match at least one stored name and REFUSES every string that can never
+ * match one — empty or whitespace, uppercase, a `/`, a leading `.`, `.`/`..`, or more
+ * than 64 characters — with the EXISTING `invalid_name` (400).
+ *
+ * It is deliberately {@link parseName}, not a second charset regex: a prefix rule that
+ * drifted from the name rule would accept a string that names nothing (a silent empty
+ * listing hiding a client bug — AGENTS.md rule 1) or refuse one that names something.
+ *
+ * There is no second error code and no empty-string fallback: an absent `prefix=` is
+ * the caller's business (it means "the whole store") and never reaches this parser.
+ */
+export function parseObjectPrefix(raw: unknown): string {
+  return parseName(raw, "object name prefix");
 }
 
 /**

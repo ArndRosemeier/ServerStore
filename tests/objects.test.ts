@@ -10,6 +10,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
+import {
+  OBJECT_LIST_PREFIX_SQL,
+  objectPrefixRange,
+} from "../src/storage/kinds.ts";
 import { createTestServer, cleanupTestServers, keyId, readError } from "./helpers/server.ts";
 
 afterEach(cleanupTestServers);
@@ -121,6 +125,195 @@ describe("the object round-trip (pin 4)", () => {
       objects: { name: string }[];
     };
     expect(listed.objects.map((object) => object.name)).toEqual(["a.txt", "b.txt"]);
+  });
+});
+
+/**
+ * The ONE filter the listing has (ledger row 61). Fixture note: `room-4` is stored AND
+ * is a prefix of three other names, so it is the SHARED PARTIAL boundary a `>` in place
+ * of `>=` would silently drop (differential arm A), and `room-42.` ends before
+ * `room-420.x` so the range cannot be a naive `LIKE 'room-42.%'`-style blur.
+ */
+describe("the object-listing prefix filter (pins P1-P7, ledger row 61)", () => {
+  const NAMES = ["room-4", "room-42.a", "room-420.x", "room-4x", "room-5", "other.txt"];
+
+  /** Seed the one fixture these pins share, through the real API. */
+  async function seeded() {
+    const server = createTestServer();
+    const key = server.mint({ stores: ["*"], perms: ["admin"] });
+    for (const name of NAMES) {
+      const response = await server.put(`/stores/master/objects/${name}`, name, key);
+      expect(response.status, `${name} must be stored`).toBe(201);
+    }
+    return { server, key };
+  }
+
+  async function listed(
+    server: Awaited<ReturnType<typeof seeded>>["server"],
+    key: string,
+    query: string,
+  ): Promise<{ status: number; names: string[]; body: { objects: Record<string, unknown>[] } }> {
+    const response = await server.get(`/stores/master/objects${query}`, key);
+    const body = (await response.json()) as { objects: Record<string, unknown>[] };
+    return { status: response.status, names: body.objects.map((object) => String(object.name)), body };
+  }
+
+  test("PIN P1: ?prefix= returns exactly the matching entries", async () => {
+    const { server, key } = await seeded();
+
+    const shared = await listed(server, key, "?prefix=room-4");
+    expect(shared.status).toBe(200);
+    // `room-4` is itself a stored name, and `room-4` is a prefix of the other three.
+    expect(shared.names).toEqual(["room-4", "room-42.a", "room-420.x", "room-4x"]);
+    // The response SHAPE and field set are unchanged (only the row set narrowed).
+    expect(Object.keys(shared.body.objects[0] ?? {}).sort()).toEqual([
+      "createdAt",
+      "name",
+      "sha256",
+      "size",
+      "store",
+    ]);
+
+    // A LONGER prefix is not a superset and stops at its own boundary: `room-42.` does
+    // NOT match `room-420.x` (`.` is below `0` in the range, so the bound is exact).
+    const narrower = await listed(server, key, "?prefix=room-42.");
+    expect(narrower.names).toEqual(["room-42.a"]);
+
+    // And a wider one takes the whole family, still ordered by name.
+    const wider = await listed(server, key, "?prefix=room");
+    expect(wider.names).toEqual(["room-4", "room-42.a", "room-420.x", "room-4x", "room-5"]);
+  });
+
+  test("PIN P2: a prefix that matches nothing is 200 with an empty list, never 404", async () => {
+    const { server, key } = await seeded();
+    const response = await server.get("/stores/master/objects?prefix=zzz", key);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ objects: [] });
+  });
+
+  test("PIN P3: an empty or whitespace prefix is refused 400 invalid_name — NOT the whole store", async () => {
+    const { server, key } = await seeded();
+    for (const query of ["?prefix=", "?prefix=%20", "?prefix=%20%20"]) {
+      const response = await server.get(`/stores/master/objects${query}`, key);
+      expect(response.status, query).toBe(400);
+      expect((await readError(response)).code, query).toBe("invalid_name");
+    }
+    // The refusal is LOUD: nothing above returned the whole store as a silent fallback.
+    expect((await listed(server, key, "")).names).toEqual([...NAMES].sort());
+  });
+
+  test("PIN P4: an unmatchable prefix is refused, never silently empty", async () => {
+    const { server, key } = await seeded();
+    const unmatchable = [
+      "Room", // uppercase can never appear in a stored name
+      "a/b", // a slash is not in the charset
+      ".hidden", // a leading dot is refused by the ONE name rule
+      "..", // a path segment, not a name
+      "a".repeat(65), // over the 64-character cap
+      "with space", // whitespace is not in the charset
+      "-leading", // must start with a letter or digit
+      "semi;colon", // punctuation outside the charset
+    ];
+    for (const prefix of unmatchable) {
+      const response = await server.get(
+        `/stores/master/objects?prefix=${encodeURIComponent(prefix)}`,
+        key,
+      );
+      expect(response.status, prefix).toBe(400);
+      expect((await readError(response)).code, prefix).toBe("invalid_name");
+    }
+  });
+
+  test("PIN P5: with NO prefix the listing is byte-for-byte what it was", async () => {
+    const { server, key } = await seeded();
+    const response = await server.get("/stores/master/objects", key);
+    expect(response.status).toBe(200);
+    // The fixed clock makes `createdAt` deterministic, so this is the EXACT body the
+    // route produced before the filter existed: every object, ordered by name.
+    const expected = {
+      objects: [...NAMES].sort().map((name) => ({
+        store: "master",
+        name,
+        sha256: sha(name),
+        size: Buffer.byteLength(name),
+        createdAt: "2026-01-01T00:00:00.000Z",
+      })),
+    };
+    expect(await response.text()).toBe(JSON.stringify(expected));
+  });
+
+  test("PIN P6: the filter changes no authorization", async () => {
+    const server = createTestServer();
+    const master = server.mint({ stores: ["*"], perms: ["admin"] });
+    await server.postJson("/stores", { name: "other" }, master);
+    await server.put("/stores/master/objects/shared.x", "x", master);
+    await server.put("/stores/other/objects/shared.y", "y", master);
+    const masterReader = server.mint({ stores: ["master"], perms: ["read"] });
+    const otherReader = server.mint({ stores: ["other"], perms: ["read"] });
+
+    // A key that MAY read: 200 with and without a prefix.
+    for (const query of ["", "?prefix=shared."]) {
+      expect((await server.get(`/stores/master/objects${query}`, masterReader)).status, query).toBe(200);
+    }
+
+    // A key WITHOUT read on the store: 403 with and without a prefix — and authorization
+    // is decided BEFORE the prefix is validated, so even an ILLEGAL prefix is a 403 for
+    // this caller, never a 400 that would leak the filter's rules to an outsider.
+    for (const query of ["", "?prefix=shared.", "?prefix=BAD"]) {
+      const response = await server.get(`/stores/master/objects${query}`, otherReader);
+      expect(response.status, query).toBe(403);
+      expect((await readError(response)).code, query).toBe("forbidden");
+    }
+
+    // No key at all: 401, prefix or not.
+    for (const query of ["", "?prefix=shared."]) {
+      expect((await server.get(`/stores/master/objects${query}`)).status, query).toBe(401);
+    }
+
+    // An unknown store is still 404, prefix or not.
+    for (const query of ["", "?prefix=shared."]) {
+      expect((await server.get(`/stores/nope/objects${query}`, master)).status, query).toBe(404);
+    }
+
+    // A prefix that names another store's namespace returns only THIS store's rows.
+    const mine = await listed(server, master, "?prefix=shared");
+    expect(mine.names).toEqual(["shared.x"]);
+    const theirs = await (await server.get("/stores/other/objects?prefix=shared", master)).json() as {
+      objects: { name: string }[];
+    };
+    expect(theirs.objects.map((object) => object.name)).toEqual(["shared.y"]);
+  });
+
+  test("PIN P7: the prefix query is a RANGE on the primary key", async () => {
+    const { server } = await seeded();
+    // EXPLAIN the REAL exported statement, bound with the REAL production parameters:
+    // a pin that re-typed the SQL would prove nothing about what the server runs.
+    const plan = server.direct((db) =>
+      (
+        db
+          .prepare(`EXPLAIN QUERY PLAN ${OBJECT_LIST_PREFIX_SQL}`)
+          .all(...objectPrefixRange("master", "room-4")) as unknown as { detail: string }[]
+      ).map((row) => row.detail),
+    );
+    expect(plan.length, "EXPLAIN QUERY PLAN returned no rows — the pin is blind").toBeGreaterThan(0);
+    // NOT a full scan of the store.
+    expect(plan.filter((detail) => /SCAN objects/.test(detail))).toEqual([]);
+    // NOT merely a store-equality probe either: the index search must carry the NAME
+    // RANGE. This is the half a `substr(name, 1, length(?)) = ?` implementation LOSES
+    // (it still says SEARCH ... (store=?), which is why "no SCAN" alone cannot fail).
+    const unbounded = plan.filter(
+      (detail) =>
+        !/SEARCH objects USING (?:COVERING )?INDEX \S+ \(store=\? AND name>\? AND name<\?\)/.test(
+          detail,
+        ),
+    );
+    expect(
+      unbounded,
+      `the filtered statement is not a (store, name) index range: ${JSON.stringify(plan)}`,
+    ).toEqual([]);
+    // And the statement itself carries no LIKE/substr, so a future edit cannot keep the
+    // plan green while re-introducing a row-by-row filter.
+    expect(OBJECT_LIST_PREFIX_SQL).not.toMatch(/LIKE|substr/i);
   });
 });
 

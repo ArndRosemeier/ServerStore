@@ -233,7 +233,7 @@ response bodies are JSON unless the row says otherwise.
 | `GET` | `/keys` | an **`admin`** key — a master admin sees every key, a store-scoped admin only keys inside its own set | — | `{"keys":[{"id","label","stores","prefix","perms","createdAt","expiresAt","lastUsedAt","revokedAt","updatedAt","updatedBy"}]}` | `200`, `401`, `403` |
 | `PATCH` | `/keys/{id}` | an **`admin`** key — a master admin may narrow or widen anything, a store-scoped admin only keys it could have minted | `{"label"?,"stores"?,"perms"?}` (any subset) | the updated entry, exactly as `GET /keys` lists it | `200`, `400`, `401`, `403`, `404` |
 | `POST` | `/keys/{id}/revoke` | an **`admin`** key — a master admin may revoke any key, a store-scoped admin only keys it could have minted; a key may always revoke itself | — (no body) | `{"id","revokedAt","changed"}` | `200`, `401`, `403`, `404` |
-| `GET` | `/stores/{store}/objects` | `read` or `admin` on `{store}` | — | `{"objects":[{"store","name","sha256","size","createdAt"}]}` | `200`, `401`, `403`, `404` |
+| `GET` | `/stores/{store}/objects` | `read` or `admin` on `{store}` | optional `?prefix=` (query) | `{"objects":[{"store","name","sha256","size","createdAt"}]}` | `200`, `400`, `401`, `403`, `404` |
 | `PUT` | `/stores/{store}/objects/{name}` | `write` or `admin` on `{store}` | raw bytes (any `content-type`; ignored) | `{"store","name","sha256","size","createdAt"}` | `201`, `400`, `401`, `403`, `404`, `413` |
 | `GET` | `/stores/{store}/objects/{name}` | `read` or `admin` on `{store}` | — | raw bytes (+ `x-serverstore-sha256`) | `200`, `401`, `403`, `404` |
 | `DELETE` | `/stores/{store}/objects/{name}` | `delete` or `admin` on `{store}` | — | empty body | `204`, `401`, `403`, `404` |
@@ -254,6 +254,12 @@ Store names and object names use the **same** rule:
 - Any URL path carrying a `.` or `..` **segment** (raw or percent-encoded) is refused
   as `400 invalid_name` before routing. Names are parsed, never sanitised into a
   different name.
+- An **object-listing `prefix`** obeys the **same** rule: a prefix must itself be a
+  legal object name (1–64 characters of `[a-z0-9._-]`, starting with a letter or
+  digit). Every prefix of a legal name is legal, so nothing a stored name could start
+  with is refused — and anything that could never match (empty, whitespace, uppercase,
+  a `/`, a leading `.`, `..`, over 64 characters) is `400 invalid_name` rather than a
+  silent empty list.
 
 A **`PUT` of an existing name overwrites** it (the response is `201` with the new
 `sha256`/`size`/`createdAt`). There is no create-only variant.
@@ -376,9 +382,20 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
   that key is `401`, with no cache and no restart. Plan for it — revoking the last admin
   key leaves the store administrable only by a key minted from the box
   (`pnpm run admin:key`). **No key material is in the response.**
-- **`GET /stores/{store}/objects`** — all objects in the store, ordered by name.
+- **`GET /stores/{store}/objects`** — the objects in the store, ordered by name.
   Fields: `store`, `name`, `sha256` (the content address), `size` (bytes),
-  `createdAt`. No pagination: a store with many objects returns them all.
+  `createdAt`.
+  - **`?prefix=<name>`** narrows the listing to the entries whose name starts with
+    `<name>`. **`prefix` is the ONE filter** this route has — there is no pagination,
+    no `since=`, no `limit`, no cursor and no sort parameter (see Non-goals). The
+    filter can only narrow **within** the authorized store.
+  - **Absent** `prefix` — every object in the store, exactly as before the parameter
+    existed.
+  - **Valid but matching nothing** — `200` with `{"objects":[]}`. It is **never**
+    `404`: the store exists, the listing is simply empty.
+  - **Empty, whitespace, or otherwise unmatchable** — `400 invalid_name` (the same
+    rule as a name). It is **never** the whole store: a refusal is loud, because a
+    prefix that can never match is almost always a client bug.
 - **`PUT /stores/{store}/objects/{name}`** — the body **is** the object, byte for
   byte; `content-type` is ignored and nothing is parsed. An **empty body is refused**
   (`400 invalid_body`) — a PUT never creates an empty object. The `201` body reports
@@ -478,6 +495,12 @@ curl -s "$BASE/stores/game/objects/room-1" -H "Authorization: Bearer $PLAYER_KEY
 curl -s "$BASE/stores/game/objects" -H "Authorization: Bearer $PLAYER_KEY"
 # {"objects":[{"store":"game","name":"room-1","sha256":"…","size":11,"createdAt":"…"}]}
 
+# 5b. Narrow the listing to one prefix — the ONE filter the route has (row 61).
+curl -s "$BASE/stores/game/objects?prefix=room-1" -H "Authorization: Bearer $PLAYER_KEY"
+# {"objects":[{"store":"game","name":"room-1",…}]}
+# An unmatchable prefix (empty, uppercase, a '/') is 400 invalid_name; a valid prefix
+# that matches nothing is 200 {"objects":[]}.
+
 # 6. Delete it (204, empty body).
 curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$BASE/stores/game/objects/room-1" \
   -H "Authorization: Bearer $PLAYER_KEY"
@@ -534,8 +557,11 @@ These are **not** implemented today. A client that assumes them will break:
    users. A key pasted into a browser belongs to whoever reads it, and the server
    cannot tell two holders of the same key apart.
 5. **No bulk, range or streaming APIs.** One object per request; `GET` always returns
-   the whole body (no `Range`); lists are unpaginated and have no `since=` filter;
-   there are no multi-object transactions.
+   the whole body (no `Range`); there are no multi-object transactions.
+   **`?prefix=` on `GET /stores/{store}/objects` is the ONLY listing filter** (ledger
+   row 61). Deliberately **not** implemented, so a client does not design around them:
+   **no pagination, no cursor, no `limit`, no `since=` and no sort parameter**, and no
+   `prefix` on `GET /stores` or `GET /keys` (which have no filter at all).
 6. **No server-side format.** Objects are opaque bytes; the service never parses or
    validates their contents.
 7. **No ROTATION route.** There **is** a revoke route (`POST /keys/{id}/revoke`,
