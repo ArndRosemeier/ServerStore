@@ -1,0 +1,62 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (55f1bbf) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/destructive/.diff-harness/control)
+  control GREEN:  Test Files  16 passed (16)       Tests  159 passed (159) 
+=== ARM A — the store-delete key-scope refusal is neutralised (blockers forced empty) ===
+  file:   src/server/app.ts
+  sha256: 62247607c1f265ff6cc9c9d8a7cb00aecc531f4034db55ea22baa3865bd9c2bf  (before)
+  sha256: 2f7afd9c4782cd3d63a8b7faa0908d4069262ff82df6c9e31bbf442dda37c162  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/destructive/.diff-harness/arm-a)
+stderr | tests/destructive.test.ts > the destructive lifecycle (slice 16, pins X1-X9) > PIN X5: a store with a key scoped to it cannot be deleted
+[serverstore] internal error: FOREIGN KEY constraint failed
+
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-FRBBCF/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+
+ ✓ tests/auth.test.ts (16 tests) 177ms
+ ❯ tests/destructive.test.ts (9 tests | 1 failed) 212ms
+   ❯ the destructive lifecycle (slice 16, pins X1-X9) (9)
+     ✓ PIN X1: DELETE /keys/:id removes the key and its scope, and the credential dies at once 52ms
+     ✓ PIN X2: deleting a key is revoke's boundary 14ms
+--
+     × PIN X5: a store with a key scoped to it cannot be deleted 18ms
+     ✓ PIN X6: the confirm token is server-side 26ms
+     ✓ PIN X7: deleting one object reclaims only UNSHARED content 14ms
+     ✓ PIN X8: authorization and the error surface are unchanged in kind 13ms
+     ✓ PIN X9: the docs match the code 3ms
+ ✓ tests/cors.test.ts (14 tests) 211ms
+RESTORED: src/server/app.ts and src/storage/kinds.ts back at HEAD; lock released
+=== ARM B — the single-object delete always removes the blob (no sharing check) ===
+  file:   src/storage/kinds.ts
+  sha256: b49f20136aa31c1bb3ca668c5b26e0194f9194b7349d7d6d5a9ce736bc08bbca  (before)
+  sha256: f4152115c8b8f3deb2b8de55e1d82efaff84b287da6c4ead4dcc311531c307e6  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/destructive/.diff-harness/arm-b)
+stderr | tests/destructive.test.ts > the destructive lifecycle (slice 16, pins X1-X9) > PIN X7: deleting one object reclaims only UNSHARED content
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-W1f5Kf/stores/master/blobs/3c/3c169b6f05ef7c3c427bf622270ba65fedf39b45a4bdede5600de80ae24345fe'
+
+ ✓ tests/cors.test.ts (14 tests) 188ms
+ ❯ tests/destructive.test.ts (9 tests | 1 failed) 213ms
+   ❯ the destructive lifecycle (slice 16, pins X1-X9) (9)
+     ✓ PIN X1: DELETE /keys/:id removes the key and its scope, and the credential dies at once 50ms
+     ✓ PIN X2: deleting a key is revoke's boundary 13ms
+     ✓ PIN X3: the LAST admin key cannot be deleted 17ms
+     ✓ PIN X4: emptying a store removes every entry and reclaims the bytes 57ms
+     ✓ PIN X5: a store with a key scoped to it cannot be deleted 15ms
+--
+     × PIN X7: deleting one object reclaims only UNSHARED content 21ms
+     ✓ PIN X8: authorization and the error surface are unchanged in kind 11ms
+     ✓ PIN X9: the docs match the code 3ms
+stderr | tests/objects.test.ts > the object round-trip (pin 4) > a GET where the blob is missing from disk fails loudly, not with empty bytes
+[serverstore] internal error: ENOENT: no such file or directory, stat '/tmp/serverstore-test-4LfuWc/stores/master/blobs/11/1153a4080f1fcb04425aa0b841c2b14606fe6df25d9076d2a1face2d5af57129'
+
+RESTORED: src/server/app.ts and src/storage/kinds.ts back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/destructive/.diff-harness/control2)
+  control GREEN:  Test Files  16 passed (16)       Tests  159 passed (159) 
+  sha256: 62247607c1f265ff6cc9c9d8a7cb00aecc531f4034db55ea22baa3865bd9c2bf  (app.ts, back to its before hash)
+  sha256: b49f20136aa31c1bb3ca668c5b26e0194f9194b7349d7d6d5a9ce736bc08bbca  (kinds.ts, back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN X5 (the store-delete refusal removed, so the foreign key answers instead of a named 409) with the confirm rule, the empty-store path and the error surface GREEN; arm B RED on PIN X7 while the ORDINARY single-object delete stayed GREEN (always deleting a blob is correct for a lone object, which is exactly why the sharing case needs its own pin). Both controls GREEN. No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/destructive/.diff-harness/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/destructive/checkpoints/destructive-differential.out
+RESTORED: src/server/app.ts and src/storage/kinds.ts back at HEAD; lock released

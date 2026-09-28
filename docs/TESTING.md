@@ -958,6 +958,80 @@ probe that "went red somewhere".
   a scratch data root; `https://store.futuremagic.de` was never loaded (the host rule
   forbids synthetic load), so nothing here verifies the DEPLOYED console in a browser.
 
+## The destructive-lifecycle pins (slice 16, X1–X9)
+
+The three destructive routes and the byte reclamation they imply (ledger rows 70, 71). Every
+pin drives the real app through the ONE fixture against a real temp data root; the sharing
+half (`X7`) and the last-admin half (`X3`) read the DATABASE and the FILESYSTEM directly,
+because that is where the claims live. `tests/destructive.test.ts` is the file; the ONE
+existing assertion it REPLACES is `tests/objects.test.ts`'s "DELETE… leaves the blob", which
+asserted the debt this slice closes (it now asserts reclamation of an UNSHARED blob).
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| X1 | `DELETE /keys/:id` removes the key row AND its `key_stores` rows (asserted in the SQLite file, not by counting responses), the key disappears from `GET /keys`, and the credential answers `401` on the **NEXT** request; a **REVOKED** key is deletable too | `tests/destructive.test.ts` (`PIN X1`) |
+| X2 | deleting a key is **revoke's boundary**: a store-scoped admin cannot delete a key outside its scope (`403`) nor one holding `admin` (`403`), a master can, **self-deletion is allowed**, and a NON-admin key is `403` even for its own id | `tests/destructive.test.ts` (`PIN X2`) |
+| X3 | the **LAST live admin key** is refused `409 conflict` and still works; with TWO live admins either may be deleted and the survivor still authenticates; a **REVOKED** admin does not count (and is itself deletable); an **EXPIRED** admin does not count either | `tests/destructive.test.ts` (`PIN X3`) |
+| X4 | emptying a store removes every entry, reclaims its blob FILES from disk (not merely unreferencing them), leaves a sibling store's bytes alone, leaves the store and every key's scope untouched, and emptying an already-empty store is `200` with `deleted: 0` | `tests/destructive.test.ts` (`PIN X4`) |
+| X5 | a store with a key scoped to it cannot be deleted: `409 conflict` NAMING the blocking key (id and label), the store still lists, its objects still read, its directory is still there; delete the key and the store delete succeeds and the directory is gone | `tests/destructive.test.ts` (`PIN X5`) |
+| X6 | the confirm token is SERVER-side: missing, empty and mismatched `confirm` are `400 bad_request` on BOTH bulk routes and NOTHING is deleted (objects, bytes, stores and the scoped key all still there); the correct token works | `tests/destructive.test.ts` (`PIN X6`) |
+| X7 | two names with IDENTICAL bytes share one blob file; deleting one leaves the survivor's bytes intact and the file present; deleting the LAST row removes both the row and the file | `tests/destructive.test.ts` (`PIN X7`) |
+| X8 | authorization and the error surface are unchanged in kind: emptying needs `delete` (a `read`-only key is `403`), deleting a store needs a master (a store-scoped admin AND a `["*"]` key without `admin` are `403`), an unknown store/key is `404`, every destructive route without a key is `401`, and a traversal attempt is `400 invalid_name` (the store name goes through the ONE parser before any path is built) | `tests/destructive.test.ts` (`PIN X8`) |
+| X9 | the docs match the code: the three routes are in `docs/API.md`'s table with their permissions, statuses and the confirm token, the app REGISTERS them, `conflict` is in the error table at `409`, and the last-live-admin, confirm and shared-content rules are all stated — with PIN A1–A3 green in the same gate | `tests/destructive.test.ts` (`PIN X9`) |
+
+## The destructive-lifecycle differential (2 arms + two controls)
+
+Machinery: `checkpoints/destructive-differential.sh`. Raw transcript:
+`checkpoints/destructive-differential.out` (per-arm raw logs are `*.log`, so gitignored).
+
+The slice is committed FIRST (the transcript's CONTROL line names the code tip `55f1bbf`,
+replayed by the pre-push rebase onto the dispatcher's `d906bbd` — which carries `d9b2016`'s
+`docs/STORAGE.md` — as `f066f65`, with an empty content delta on the code). Same shape as
+every earlier differential: the gate lock held across the CONTROL
+and BOTH arms, each file's sha256 printed before and after, restore from `HEAD` in an
+`EXIT INT TERM` trap with the hash asserted back, `error TS` = VOID, a control BEFORE and
+AFTER.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| A | the store-delete key-scope refusal is neutralised (the blocker list is forced empty), so the `stores` row is deleted while a `key_stores` row still names it | `src/server/app.ts` | `62247607…c2bf` → `2f7afd9c…c162` | `PIN X5: a store with a key scoped to it cannot be deleted` — `expected 500 to be 409`, and the server logs `FOREIGN KEY constraint failed`: the refusal is what turns the schema's error into a NAMED, actionable 409. **X4 (empty), X6 (confirm) and X8 (error surface) stayed GREEN** |
+| B | the shared-content check is removed from the single-object delete, so the blob is ALWAYS deleted | `src/storage/kinds.ts` | `b49f2013…bbca` → `f4152115…c307` | `PIN X7: deleting one object reclaims only UNSHARED content` — the survivor's read answers `{"error":{"code":"internal","message":"ENOENT…"}}` instead of the bytes. **The ORDINARY delete stayed GREEN** (`tests/objects.test.ts` 23/23 — a lone object's blob MUST go, which is why always-deleting passes there), and X5, X6, X8 stayed GREEN |
+| control | none — the committed tree, same lock held | — | — | **GREEN**: 16 files · 159 tests |
+| control | none — the restored tree, both files back at their before hashes | — | `62247607…c2bf` / `b49f2013…bbca` | **GREEN**: 16 files · 159 tests |
+
+- Arm A's RED is the schema's own foreign key surfacing as a 500 where the route must answer
+  a named `409`; it does NOT redden X6 or X8, so the refusal and the confirm rule are
+  **different mechanisms** and the arm is attributable.
+- Arm B is the two-sided check the brief asks for: the SHARED case reddens (`X7`) while the
+  UNSHARED case stays green, which is exactly what distinguishes "the sharing check is gone"
+  from "delete is broken".
+- Arms mutate DIFFERENT files from different before-hashes; no arm reddened a pin it did not
+  name, so there is no declared twin to report.
+- The writer's own gate on the identical tree: `bash scripts/gate.sh` → **exit 0 GREEN ·
+  16 files · 159 tests · 2.45s** (raw log `.gate-logs/gate.log`).
+
+### Honest unknowns (this slice)
+
+- **The removals are not one transaction.** A `sqlite` DELETE and an `rm` cannot be atomic
+  together, so a crash BETWEEN them leaves orphan bytes (for empty-store, delete-store and
+  the single-object delete alike). The ORDER is the safe one — rows first — so the leftover
+  is always space, never a row whose blob is missing (which would be an unreadable object);
+  but the space is unreclaimed until a future sweep, and nothing asserts the crash window.
+- **No concurrency pin.** The sharing check reads the row set and then deletes, with no
+  interleaving possible in a single-threaded `node:sqlite` process — asserted by the
+  architecture, not by a test. A second process writing the same data root is already out of
+  scope (`docs/STORAGE.md`: one process owns the root).
+- **No orphan SWEEP for overwritten content.** `PUT` replaces a row and the previous
+  content's file stays; nothing collects it, and this slice does not change that. X4/X5/X7
+  cover what a DELETE reclaims, not what an overwrite strands.
+- **X9 is a doc-TEXT pin.** It proves the contract states the routes, the confirm rule and
+  the reclamation behaviour; the behaviour itself is X1–X8 and A1–A3. Nothing checks that a
+  human reads the prose as intended.
+- **The live host was not touched.** No request, no key, no restart: every pin uses a temp
+  data root under the test's own scratch, and `https://store.futuremagic.de` was never
+  loaded (the host rule forbids synthetic load). Whether the deployed service is restarted
+  onto this code is the dispatcher's step under GUARD g5, not a claim here.
+
 ## The full gate
 
 `bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.
@@ -986,7 +1060,11 @@ for the specific landing it verified.
   nothing has exercised `Restart=on-failure`, the cloudflared ingress, or the live
   hostname. `scripts/probe-live.sh` is the command that will check the last of those,
   and its live run is a step in `docs/DEPLOYMENT.md`, not a test.
-- **No garbage collection test** — there is no GC (brief §4, ledger row 19).
+- **Reclamation is tested; an orphan SWEEP is not — because there is none.** X4, X5 and X7
+  prove the bytes a DELETE reclaims (an entry, a whole store, a store directory) and the
+  sharing trap that makes a naive delete wrong. A file orphaned by **overwriting** a name
+  (`PUT` replaces the row and the old file stays) is still not reclaimed and is not tested —
+  there is nothing to test (ledger row 71, `docs/STORAGE.md`).
 - **Memory ceiling (GUARD g3) not implemented**; the suite is still trivial.
 - **The tripwire only knows the pinned shapes.** A secret in a format outside
   `ghp_`/`github_pat_`/PEM (or a github.com credential for another host) is not

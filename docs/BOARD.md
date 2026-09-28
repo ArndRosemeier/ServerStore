@@ -62,36 +62,30 @@ reconciled: c13219a · 2026-09-28T08:08Z — the slice-15 VERIFIED CODE tip (the
   LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (row 71: the DESTRUCTIVE LIFECYCLE API — delete a key, empty a store,
-  |   delete a store, plus byte reclamation; worktree worktrees/destructive, branch feat/destructive;
-  |   design fixed in ledger row 70). Slices 12 (CORS, row 58), 13 (the `prefix=` filter, row 62),
-  |   14 (rate limiting, row 66) and 15 (the headless-browser test, row 69) are LANDED, VERIFIED and
-  |   RETIRED. The browser test drives the installed Chrome INSIDE THE GATE, so the console's
-  |   Connect/Edit flow and the browser half of CORS are exercised on every gate run (~1.6 s) — and it
-  |   is what will verify the console slice (row 72) that follows this one. LIVE at
+  | state=row 71 (the DESTRUCTIVE LIFECYCLE API) is LANDED by its writer, which gate-verified it
+  |   and ran its own two arms; the DISPATCHER'S independent verification (its own gate + its own
+  |   arms) is OWED, and only then is the worktree/branch retired. Slices 12 (CORS, row 58), 13
+  |   (the `prefix=` filter, row 62), 14 (rate limiting, row 66) and 15 (the headless-browser test,
+  |   row 69) are LANDED, VERIFIED and RETIRED. The browser test drives the installed Chrome INSIDE
+  |   THE GATE, so the console's Connect/Edit flow and the browser half of CORS are exercised on every
+  |   gate run (~1.6 s) — and it is what will verify the console slice (row 72) that follows this one.
+  |   LIVE at
   |   https://store.futuremagic.de/ with the console, key editing (C2), CORS, the prefix filter and
   |   the rate limiter (default 600 requests per identity per 60 s, no `SERVERSTORE_RATE_LIMIT` in the
-  |   unit); service restarted onto the limiter tip and re-probed; EXACTLY ONE live admin key. A
-  |   turn-based browser game from ANOTHER ORIGIN is UNBLOCKED and can read one namespace per request.
+  |   unit); service restarted onto the limiter tip and re-probed; EXACTLY ONE live admin key. The
+  |   destructive routes are NOT live until the dispatcher restarts the unit onto this tip (GUARD g5).
+  |   A turn-based browser game from ANOTHER ORIGIN is UNBLOCKED and can read one namespace per request.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
-IN-FLIGHT | row=71 | session=(dispatching now) | worktree=worktrees/destructive |
-  | branch=feat/destructive | base=origin/main — resolved by the writer and recorded in its landing
-  | state=THE ONE WRITER. Scope: the DESTRUCTIVE LIFECYCLE API (design = ledger row 70, the authority;
-  |   brief `docs/briefs/slice-16-destructive-lifecycle.md`). THREE new routes — `DELETE /keys/:id`
-  |   (revoke's boundary plus the row; the LAST live admin key is refused 409; a revoked key IS
-  |   deletable), `DELETE /stores/:store/objects?confirm=<store>` (empty; `delete` permission; server-side
-  |   confirm token; bytes reclaimed; idempotent) and `DELETE /stores/:store?confirm=<store>` (MASTER
-  |   admin; REFUSED 409 while any key's scope names the store — never a silent credential rewrite,
-  |   because `key_stores.store REFERENCES stores(name)` and `PRAGMA foreign_keys = ON`) — plus BYTE
-  |   RECLAMATION for the existing single-object delete, which must remove a blob only when no other row
-  |   in the store names the same sha256 (content-addressed storage shares blobs; `deleteBlob()` finally
-  |   gets its caller and row 19's GC debt closes). Pins X1–X9. NOT in scope: any console/UI change
-  |   (that is row 72), any schema change, and any change to `revoke`'s behaviour.
+(The row=71 `IN-FLIGHT` block is FOLDED by the LANDED row=71 record in `## Landed` — a
+mechanical union; docs/BOARD.md is the only file the fold touched, and no other landing's
+record was altered. Its scope statement is unchanged and now has a landing: the three
+destructive routes plus byte reclamation, pins X1–X9, no console work and no change to
+`revoke`'s behaviour.)
 
 IN-FLIGHT | row=68 | session=(dispatching now) | worktree=worktrees/browser-test |
   | branch=feat/browser-test | base=origin/main — resolved by the writer and recorded in its landing
@@ -1055,6 +1049,54 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=71 | sha=f066f65 (the WRITER'S VERIFIED CODE tip — `src/core/errors.ts`,
+  | `src/core/keys.ts`, `src/server/app.ts`, `src/storage/fs.ts`, `src/storage/kinds.ts`,
+  | `src/stores/registry.ts`, `tests/destructive.test.ts`, `tests/objects.test.ts`,
+  | `checkpoints/destructive-differential.sh` and `docs/API.md`; the docs commit carrying THIS
+  | line, ledger row 71, `docs/SEAM-INDEX.md`, `docs/TESTING.md` and the `docs/STORAGE.md`
+  | correction is its child — a commit cannot name its own sha. The pre-push rebase replayed the
+  | pre-rebase tip `55f1bbf` onto the dispatcher's `d906bbd` (which carries `d9b2016`'s
+  | `docs/STORAGE.md`) as this sha, with an EMPTY content delta on the code:
+  | `git diff --stat 55f1bbf f066f65 -- src tests docs/API.md checkpoints` is empty)
+  | verify=THE WRITER'S OWN, in-turn, on the committed tree: `bash scripts/gate.sh` → exit 0
+  | GREEN · 16 files · 159 tests · 2.45s (raw log `.gate-logs/gate.log`, a copy kept at
+  | `worktrees/destructive/.gate-logs/gate.log`). THE DISPATCHER'S INDEPENDENT VERIFICATION IS
+  | OWED — this record claims the writer's gate and the writer's arms only.
+  | arms=`checkpoints/destructive-differential.sh`, transcript
+  | `checkpoints/destructive-differential.out`, the gate lock held across the CONTROL and BOTH
+  | arms, sha256 printed before and after, restore from `HEAD` in an `EXIT INT TERM` trap with
+  | each hash asserted back, `error TS` = VOID, a control BEFORE and AFTER:
+  |   A the store-delete key-scope refusal neutralised (`src/server/app.ts` `62247607…c2bf` →
+  |     `2f7afd9c…c162`) → RED on PIN X5 — `expected 500 to be 409`, `FOREIGN KEY constraint
+  |     failed`: the schema's error surfaced as a 500 because the route's NAMED refusal was
+  |     gone. X4 (empty), X6 (confirm) and X8 (error surface) stayed GREEN, so the refusal and
+  |     the token are different mechanisms.
+  |   B the shared-content check removed from the single-object delete (`src/storage/kinds.ts`
+  |     `b49f2013…bbca` → `f4152115…c307`, always delete the blob) → RED on PIN X7 — the
+  |     survivor's read answered `{"error":{"code":"internal","message":"ENOENT…"}}` instead of
+  |     its bytes — while the ORDINARY delete stayed GREEN (`tests/objects.test.ts` 23/23) with
+  |     X5, X6 and X8 GREEN. That two-sided result is the whole reason X7 exists.
+  |   both controls GREEN (16 files · 159 tests); both mutated files back at their before-hashes;
+  |   no VOID probe; no arm reddened a pin it did not name, so there is no declared twin.
+  | COPIES=`COPIES: 2→1` — the expiry comparison is now the ONE `isExpired()` (`resolveKey` had
+  | its own `Date.parse` + NaN branch), the confirm rule is the ONE `requireConfirm()` for both
+  | bulk routes, and "is this still an admin" is the ONE `isLiveAdminKey()` used by the route and
+  | `countLiveAdminKeys()`. Also `COPIES: 1` — the blocking-key query (`keysHoldingStore`) and
+  | the blob-vs-row decision (`StoreKindHandler.remove`) each exist once (grepped `src/`).
+  | THE BRIEF'S OWN GAP, reported rather than worked around: the brief's doc list (ledger row 71,
+  | SEAM-INDEX, TESTING, BOARD, API) predates the dispatcher's `d9b2016`, which added
+  | `docs/STORAGE.md` AND pointed `AGENTS.md` at it. STORAGE.md already stated this slice's
+  | post-state in the future tense ("what the destructive-lifecycle slice adds"), so that one
+  | sentence is corrected in this landing's docs child — a doc this landing makes true must not
+  | be left saying it is still owed.
+  | NOT restarted and NOT touched: no change to `revoke`'s behaviour, no schema change, no
+  | console/UI change (row 72), and the live unit was never contacted (GUARD g5 is the
+  | dispatcher's; this landing changes `src/`).
+  | retired=NOT yet: worktree `worktrees/destructive`, branch `feat/destructive`, writer session
+  | this one — retiring it is the dispatcher's, after its own verification.
+  | docs=ledger row 71 · this board · `docs/API.md` · `docs/SEAM-INDEX.md` · `docs/TESTING.md` ·
+  | `docs/STORAGE.md`.
+
 LANDED | row=69 | sha=c13219a (the VERIFIED CODE tip — the headless-browser test; TEST-ONLY, so the
   | slice-15 landing itself is row 68 below and the live unit is byte-for-byte unaffected)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 15 files · 150 tests ·

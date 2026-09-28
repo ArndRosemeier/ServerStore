@@ -112,10 +112,11 @@ uses 873 KB of it.
 `/home/administrator/serverstore-data` — 2 stores (`master`, `colossus`), **175 entries**, 177 blob
 files, 873 KB. The two extra files are leftovers from deletes/overwrites done **before** reclamation
 existed: with content-addressed storage, an overwrite leaves the previous content's file behind, and
-nothing sweeps those. Reclaiming on delete, on emptying a store and on deleting a store is what the
-destructive-lifecycle slice (ledger row 71) adds; **a sweep for files orphaned by earlier overwrites is
-still not built**, and on a store that is rewritten often that is the number to watch
-(`du -sh <dataRoot>`).
+nothing sweeps those. Since **ledger row 71** a DELETE reclaims what it can — an entry's file (only
+when no other entry in that store shares its content), a whole store's blob tree, or a store's
+directory — but **a sweep for files orphaned by earlier overwrites is still not built**, and on a
+store that is rewritten often that is the number to watch (`du -sh <dataRoot>`). Those pre-existing
+orphans do not shrink on their own.
 
 ## Where this lives in the code
 
