@@ -47,7 +47,15 @@
             <h2 id="stores-heading">2. Stores</h2>
             <button type="button" id="refresh">Refresh</button>
           </div>
+          <p class="muted">
+            <strong>Open</strong> a store to see its entries (fetched when you open it, not
+            on every refresh) and filter them by prefix. <strong>Empty…</strong> and
+            <strong>Delete…</strong> each ask you to TYPE the store name, and that typed
+            name is sent to the server as the confirmation — nothing is sent until it
+            matches.
+          </p>
           <ul id="stores" class="list"></ul>
+          <div id="entries" class="entries" hidden></div>
           <form id="create-store-form" autocomplete="off">
             <label for="store-name">New store name</label>
             <div class="row">
@@ -123,7 +131,9 @@
             renames it and rewrites its stores and permissions <em>in place</em> — the key
             itself is never shown again and never changes, so whoever holds it keeps using
             the same key. Editing is disabled for a revoked key, and revoking cannot be
-            undone.
+            undone. <strong>Delete</strong> removes the row for good, including for a
+            revoked key — it asks once, and the server still refuses the last live admin
+            key with a <code>409</code> that is shown here.
           </p>
           <ul id="keys" class="list"></ul>
         </section>

@@ -245,6 +245,83 @@ legend {
   font-weight: 600;
 }
 
+/* The destructive controls, visually distinct from Edit/Revoke. Revoke is recoverable
+   thinking only in the sense that the row stays; Delete removes it, so it is red too. */
+button.danger {
+  background: #3a1c1c;
+  border-color: var(--danger);
+  color: #ffd9d9;
+}
+
+.danger-note {
+  color: #ffd9d9;
+  font-size: 0.9rem;
+}
+
+/* The inline two-step for ONE item: a question and a Confirm/Cancel pair, beside the
+   button that armed it — never a native dialog. It wraps onto its own line on a phone. */
+.confirm-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  flex: 1 1 100%;
+}
+
+/* The typed-name confirmation for a WHOLE store: its own block inside the row, and the
+   field is never pre-filled. */
+.typed-confirm {
+  flex: 1 1 100%;
+  border-left: 2px solid var(--danger);
+  padding-left: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+/* The open store's entries: a heading, the prefix form, the count and the entry list. */
+.entries {
+  border-left: 2px solid var(--accent);
+  padding-left: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.entries h3 {
+  margin-top: 0;
+}
+
+.entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.entry-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.entry-list li:last-child {
+  border-bottom: none;
+}
+
+.entry-name {
+  flex: 1 1 14rem;
+  font-weight: 600;
+}
+
+.entry-meta {
+  flex: 1 1 100%;
+}
+
+.store-summary {
+  flex: 1 1 24rem;
+}
+
 code {
   background: #0d1117;
   padding: 0.1rem 0.3rem;

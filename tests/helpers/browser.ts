@@ -412,6 +412,7 @@ export class BrowserPage {
     elementExpression: string,
     options: { description: string },
   ): Promise<void> {
+    await this.bringToFront();
     const point = await this.#pointForElementExpression(elementExpression);
     if (!point.found) {
       throw new BrowserError(`cannot click ${options.description}: ${point.reason ?? "not found"}`);
@@ -499,6 +500,20 @@ export class BrowserPage {
       throw new BrowserError("measuring a click target returned no measurement");
     }
     return point;
+  }
+
+  /**
+   * Bring this page to the FRONT.
+   *
+   * Not cosmetic: `Target.createTarget` (a second console page, a cross-origin fixture)
+   * makes the NEW target active and leaves this one in the background, and a browser
+   * DEFERS trusted `Input.*` events aimed at a hidden page — measured on this box as a
+   * 5001ms stall on every `Input.dispatchMouseEvent`. Every scripted CLICK therefore
+   * activates its own page first, so a click can never be delayed by whichever page
+   * another pin opened last.
+   */
+  async bringToFront(): Promise<void> {
+    await this.#connection.command("Page.bringToFront", {}, this.sessionId);
   }
 
   /** Stop listening for this target's events (the target itself is closed by `close`). */

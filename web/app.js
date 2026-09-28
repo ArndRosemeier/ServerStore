@@ -9,6 +9,20 @@
  * Every request goes to this page's own origin, and every path below is a route the
  * API registers. (PIN U3 parses the path literals out of these served bytes and
  * compares them to `createApp(...).routes`.)
+ *
+ * THE DESTRUCTIVE FLOWS (ledger row 81) have exactly TWO confirmation weights, and
+ * they are different on purpose because the API's own blast radius is different:
+ *
+ *   - deleting ONE key or ONE entry needs a plain inline two-step (`armGuard`), because
+ *     the API has no token for them;
+ *   - emptying or deleting a WHOLE STORE needs the store name TYPED into a field that
+ *     is NEVER pre-filled, and the typed text is what travels as the server's
+ *     `?confirm=` token (`armTypedConfirm`). A mismatch is refused HERE, before any
+ *     request is sent.
+ *
+ * A blocked store delete is DISPLAYED and never worked around: the `409` names the
+ * blocking keys in its message, that message is rendered verbatim, and nothing is
+ * parsed out of it and nothing is auto-deleted.
  */
 
 /** The API paths this console calls. Path literals ONLY here, so PIN U3 can read them. */
@@ -16,8 +30,15 @@ const ROUTES = {
   whoami: "/whoami",
   stores: "/stores",
   keys: "/keys",
-  keyEdit: (id) => `/keys/${encodeURIComponent(id)}`,
+  // ONE path for the two methods on a key: `PATCH` edits it, `DELETE` removes it.
+  key: (id) => `/keys/${encodeURIComponent(id)}`,
   keyRevoke: (id) => `/keys/${encodeURIComponent(id)}/revoke`,
+  // ONE path for the two methods on a store's entries collection: `GET` lists them
+  // (optionally narrowed by `prefix=`), `DELETE` empties the store.
+  storeObjects: (store) => `/stores/${encodeURIComponent(store)}/objects`,
+  storeObject: (store, name) =>
+    `/stores/${encodeURIComponent(store)}/objects/${encodeURIComponent(name)}`,
+  store: (store) => `/stores/${encodeURIComponent(store)}`,
 };
 
 /** The API's canonical permission order. */
@@ -38,6 +59,13 @@ let whoami = null;
 let storeList = [];
 let keyLabels = {};
 
+// Which store's entries are OPEN, and the prefix they were last fetched with. Both are
+// memory only, like the key: nothing here is persisted anywhere. Entries are fetched
+// ON DEMAND — when a store is opened or refreshed, never for every store on every
+// `refreshAll()` (ledger row 81(c)) — and the prefix narrows the query SERVER-side.
+let openStore = null;
+let openPrefix = "";
+
 /** One API failure, carrying the API's own error code when there is one. */
 class UiError extends Error {
   constructor(code, message) {
@@ -52,6 +80,38 @@ const $ = (id) => document.getElementById(id);
 /** The ONLY place the key variable is assigned. */
 function setKey(value) {
   key = value;
+}
+
+function messageOf(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function codeOf(error) {
+  return error instanceof UiError ? error.code : "ui_error";
+}
+
+/**
+ * Add query parameters to a path.
+ *
+ * The path literals stay TEMPLATE HOLES in `ROUTES` and the query is appended HERE, so
+ * PIN U3 reads a registered route shape and never a `…/objects?prefix=:id` string it
+ * could not match. An empty/absent value is OMITTED rather than sent: the API refuses a
+ * present-but-empty `prefix=` loudly (400 `invalid_name`, ledger row 61), and a
+ * present-but-empty token would be a request this console should never make.
+ */
+function withQuery(path, params) {
+  const query = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    query.set(name, String(value));
+  }
+  const rendered = query.toString();
+  return rendered === "" ? path : path + "?" + rendered;
+}
+
+/** The listing path for `store`, narrowed SERVER-side when a prefix is present. */
+function entriesPath(store, prefix) {
+  return withQuery(ROUTES.storeObjects(store), { prefix });
 }
 
 /**
@@ -130,6 +190,45 @@ async function guard(loader) {
   }
 }
 
+/**
+ * THE outcome path of every destructive attempt.
+ *
+ * The affected pane is refreshed FIRST and the outcome is stated on the console's ONE
+ * surface afterwards, so a row that is gone can never be left on screen looking like a
+ * success, and a successful action whose refresh failed says so instead of quietly
+ * showing a stale list. The action's own error is never replaced by a refresh error:
+ * they are combined into the one message.
+ */
+async function finishDestructive(refresh, error, successMessage) {
+  let refreshError = null;
+  try {
+    await refresh();
+  } catch (caught) {
+    refreshError = caught;
+  }
+  if (error !== null) {
+    showError(
+      refreshError === null
+        ? error
+        : new UiError(
+            codeOf(error),
+            messageOf(error) + " (and the list could not be refreshed: " + messageOf(refreshError) + ")",
+          ),
+    );
+    return;
+  }
+  if (refreshError !== null) {
+    showError(
+      new UiError(
+        "refresh_failed",
+        "the change was applied, but the list could not be refreshed: " + messageOf(refreshError),
+      ),
+    );
+    return;
+  }
+  showStatus(successMessage);
+}
+
 function renderSession() {
   const session = $("session");
   const forget = $("forget");
@@ -183,6 +282,9 @@ async function proveKey(event) {
 function forgetKey() {
   setKey(null);
   whoami = null;
+  openStore = null;
+  openPrefix = "";
+  refreshEntries().catch(showError);
   $("key-input").value = "";
   $("minted-key").value = "";
   $("minted-panel").hidden = true;
@@ -236,17 +338,201 @@ function renderStoreChoices(stores) {
   syncScope();
 }
 
+/**
+ * One store's row: what it is, and the three things this console may do to it.
+ *
+ * `Open` shows the store's entries below the list (fetched ON DEMAND); `Empty…` and
+ * `Delete…` open the typed-name confirmation, which is the ONLY place a whole-store
+ * destruction can be started from.
+ */
+function storeRow(store) {
+  const item = document.createElement("li");
+  item.setAttribute("data-store-row", store.name);
+
+  const summary = document.createElement("span");
+  summary.className = "store-summary";
+  summary.textContent = store.name + " (" + store.kind + ")";
+
+  const actions = document.createElement("span");
+  actions.className = "actions";
+
+  const open = document.createElement("button");
+  open.type = "button";
+  open.setAttribute("data-store-open", "yes");
+  open.textContent = openStore === store.name ? "Close" : "Open";
+  open.addEventListener("click", () => {
+    toggleStore(store.name).catch(showError);
+  });
+  actions.append(open);
+
+  const empty = document.createElement("button");
+  empty.type = "button";
+  empty.className = "danger";
+  empty.setAttribute("data-store-action", "empty");
+  empty.textContent = "Empty…";
+  empty.addEventListener("click", () => {
+    armTypedConfirm(item, store.name, "empty").catch(showError);
+  });
+  actions.append(empty);
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "danger";
+  remove.setAttribute("data-store-action", "delete");
+  remove.textContent = "Delete…";
+  remove.addEventListener("click", () => {
+    armTypedConfirm(item, store.name, "delete").catch(showError);
+  });
+  actions.append(remove);
+
+  item.append(summary, actions);
+  return item;
+}
+
 async function refreshStores() {
   const payload = await api(ROUTES.stores);
   storeList = payload.stores;
   const list = $("stores");
   list.replaceChildren();
-  for (const store of payload.stores) {
-    const item = document.createElement("li");
-    item.textContent = store.name + " (" + store.kind + ")";
-    list.append(item);
-  }
+  for (const store of payload.stores) list.append(storeRow(store));
   renderStoreChoices(payload.stores);
+  // The open store may have just been deleted: stop showing a pane for a store that is
+  // no longer there BEFORE the pane is refreshed.
+  if (openStore !== null && !payload.stores.some((store) => store.name === openStore)) {
+    openStore = null;
+    openPrefix = "";
+  }
+  await refreshEntries();
+}
+
+/** Open/close one store's entries pane. Opening starts from NO prefix. */
+async function toggleStore(name) {
+  openStore = openStore === name ? null : name;
+  openPrefix = "";
+  await refreshStores();
+}
+
+/** A compact rendering of a content address: enough to compare, not a wall of hex. */
+function abbreviateSha(sha) {
+  return sha.slice(0, 12) + "…";
+}
+
+/** ONE entry's row: its NAME, its size/created time, its abbreviated hash, and Delete. */
+function entryRow(entry, storeName) {
+  const item = document.createElement("li");
+  item.setAttribute("data-entry-row", entry.name);
+
+  const name = document.createElement("span");
+  name.className = "entry-name";
+  name.textContent = entry.name;
+
+  const meta = document.createElement("span");
+  meta.className = "muted entry-meta";
+  meta.textContent =
+    entry.size +
+    " bytes — created " +
+    entry.createdAt +
+    " — sha256 " +
+    abbreviateSha(entry.sha256);
+
+  const actions = document.createElement("span");
+  actions.className = "actions";
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "danger";
+  remove.textContent = "Delete";
+  armGuard(remove, {
+    question: 'Delete the entry "' + entry.name + '" from ' + storeName + "?",
+    confirmLabel: "Confirm delete",
+    onConfirm: () => deleteEntry(storeName, entry.name),
+  });
+  actions.append(remove);
+
+  item.append(name, meta, actions);
+  return item;
+}
+
+/**
+ * Fetch and render the OPEN store's entries, narrowed SERVER-side by `openPrefix`.
+ *
+ * The whole store is NEVER shipped to the browser to be filtered here: the request
+ * carries `prefix=` and the API does the narrowing (ledger row 61, the point of the
+ * slice). An empty prefix means "no filter" and the parameter is omitted entirely.
+ */
+async function refreshEntries() {
+  const pane = $("entries");
+  if (openStore === null) {
+    pane.hidden = true;
+    pane.replaceChildren();
+    return;
+  }
+  const storeName = openStore;
+
+  const heading = document.createElement("h3");
+  heading.textContent = "Entries — " + storeName;
+
+  const form = document.createElement("form");
+  form.autocomplete = "off";
+  form.className = "row";
+  const label = document.createElement("label");
+  label.textContent = "Prefix (narrows the query on the server)";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.setAttribute("data-prefix", "yes");
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.placeholder = "e.g. room-";
+  input.value = openPrefix;
+  label.append(input);
+  const filter = document.createElement("button");
+  filter.type = "submit";
+  filter.className = "primary";
+  filter.textContent = "Filter";
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.textContent = "Clear";
+  clear.addEventListener("click", () => {
+    openPrefix = "";
+    input.value = "";
+    refreshEntries().catch(showError);
+  });
+  form.append(label, filter, clear);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    openPrefix = input.value.trim();
+    refreshEntries().catch(showError);
+  });
+
+  const count = document.createElement("p");
+  count.className = "muted";
+  count.setAttribute("data-entry-count", "yes");
+  const list = document.createElement("ul");
+  list.className = "entry-list";
+
+  pane.replaceChildren(heading, form, count, list);
+  pane.hidden = false;
+
+  const payload = await api(entriesPath(storeName, openPrefix));
+  const objects = payload.objects;
+  count.textContent =
+    openPrefix === ""
+      ? objects.length + (objects.length === 1 ? " entry" : " entries")
+      : objects.length +
+        " of " +
+        storeName +
+        "’s entries match the prefix " +
+        JSON.stringify(openPrefix) +
+        " (filtered by the server)";
+  list.replaceChildren();
+  if (objects.length === 0) {
+    const none = document.createElement("li");
+    none.className = "muted";
+    none.textContent =
+      openPrefix === "" ? "this store has no entries" : "no entry matches that prefix";
+    list.append(none);
+    return;
+  }
+  for (const entry of objects) list.append(entryRow(entry, storeName));
 }
 
 /**
@@ -264,7 +550,7 @@ function changedLine(entry) {
   return "changed " + entry.updatedAt + " by " + by;
 }
 
-/** One key's row: what it holds, when it last changed, and its Edit/Revoke buttons. */
+/** One key's row: what it holds, when it last changed, and its Edit/Revoke/Delete. */
 function keyRow(entry) {
   const item = document.createElement("li");
 
@@ -309,11 +595,29 @@ function keyRow(entry) {
     const revoke = document.createElement("button");
     revoke.type = "button";
     revoke.textContent = "Revoke";
-    revoke.addEventListener("click", () => {
-      revokeKey(entry.id, entry.label).catch(showError);
+    armGuard(revoke, {
+      question: 'Revoke the key "' + entry.label + '"? This cannot be undone.',
+      confirmLabel: "Confirm revoke",
+      onConfirm: () => revokeKey(entry.id),
     });
     actions.append(revoke);
   }
+
+  // DELETE, on EVERY row including a REVOKED one (ledger row 70(a)): this is the
+  // owner's actual complaint — a revoked key still clutters the inventory. A key is one
+  // item, so the API needs no token and the console's plain two-step is the guard; the
+  // server still refuses the LAST live admin key with a `409` that is rendered verbatim.
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "danger";
+  remove.setAttribute("data-key-delete", "yes");
+  remove.textContent = "Delete";
+  armGuard(remove, {
+    question: 'Delete the key "' + entry.label + '" (' + entry.id + ")? This removes the row for good.",
+    confirmLabel: "Confirm delete",
+    onConfirm: () => deleteKey(entry),
+  });
+  actions.append(remove);
 
   item.append(summary, changed, actions);
   return item;
@@ -476,11 +780,204 @@ async function saveEdit(id, form) {
     showError(new UiError("no_perms", "check at least one permission"));
     return;
   }
-  await api(ROUTES.keyEdit(id), { method: "PATCH", body: JSON.stringify(body) });
+  await api(ROUTES.key(id), { method: "PATCH", body: JSON.stringify(body) });
   showStatus(
     "Key " + id + " updated. Its value is unchanged — whoever holds the key keeps using the same key.",
   );
   await guard(refreshKeys);
+}
+
+// --- the destructive actions -------------------------------------------------
+
+/** Delete ONE key. A REVOKED key is deletable too — that is the owner's ask. */
+async function deleteKey(entry) {
+  clearError();
+  clearStatus();
+  let error = null;
+  try {
+    await api(ROUTES.key(entry.id), { method: "DELETE" });
+  } catch (caught) {
+    error = caught;
+  }
+  await finishDestructive(
+    refreshKeys,
+    error,
+    "Key " + entry.id + " deleted. Its credential is refused on its next request.",
+  );
+}
+
+async function revokeKey(id) {
+  clearError();
+  clearStatus();
+  await api(ROUTES.keyRevoke(id), { method: "POST" });
+  showStatus("Key " + id + " revoked. It is refused on its next request.");
+  await guard(refreshKeys);
+}
+
+/** Delete ONE entry from the open store. */
+async function deleteEntry(storeName, name) {
+  clearError();
+  clearStatus();
+  let error = null;
+  try {
+    await api(ROUTES.storeObject(storeName, name), { method: "DELETE" });
+  } catch (caught) {
+    error = caught;
+  }
+  await finishDestructive(refreshEntries, error, "Entry " + name + " deleted from " + storeName + ".");
+}
+
+/** Empty a whole store. `typed` is the name the operator typed, and it IS the token. */
+async function emptyStore(storeName, typed) {
+  clearError();
+  clearStatus();
+  let error = null;
+  let outcome = null;
+  try {
+    outcome = await api(withQuery(ROUTES.storeObjects(storeName), { confirm: typed }), {
+      method: "DELETE",
+    });
+  } catch (caught) {
+    error = caught;
+  }
+  const deleted = outcome === null ? 0 : outcome.deleted;
+  await finishDestructive(
+    refreshStores,
+    error,
+    "Store " +
+      storeName +
+      " emptied — " +
+      deleted +
+      (deleted === 1 ? " entry deleted." : " entries deleted."),
+  );
+}
+
+/** Delete a whole store. `typed` is the name the operator typed, and it IS the token. */
+async function deleteStore(storeName, typed) {
+  clearError();
+  clearStatus();
+  let error = null;
+  try {
+    await api(withQuery(ROUTES.store(storeName), { confirm: typed }), { method: "DELETE" });
+  } catch (caught) {
+    error = caught;
+  }
+  await finishDestructive(refreshStores, error, "Store " + storeName + " deleted.");
+}
+
+/**
+ * The PRIVATE confirmation for a single item: an inline two-step, never a native dialog.
+ *
+ * Clicking the destructive button reveals one question and a Confirm/Cancel pair beside
+ * it; nothing is sent until Confirm is clicked, and a second click cannot stack a second
+ * question. This is the ONE place a one-item destruction is armed, for keys and entries
+ * alike (the two whole-store actions use `armTypedConfirm`, a different weight on
+ * purpose — ledger row 81(a)).
+ */
+function armGuard(button, options) {
+  button.addEventListener("click", () => {
+    const holder = button.parentElement;
+    if (holder === null) {
+      showError(new UiError("ui_error", "the destructive button has no row to confirm in"));
+      return;
+    }
+    if (holder.querySelector(".confirm-row") !== null) return;
+    const panel = document.createElement("span");
+    panel.className = "confirm-row";
+    panel.setAttribute("role", "group");
+    const note = document.createElement("span");
+    note.className = "danger-note";
+    note.textContent = options.question;
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = "danger";
+    confirm.setAttribute("data-confirm", "yes");
+    confirm.textContent = options.confirmLabel;
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", () => panel.remove());
+    confirm.addEventListener("click", () => {
+      panel.remove();
+      options.onConfirm().catch(showError);
+    });
+    panel.append(note, confirm, cancel);
+    holder.append(panel);
+  });
+}
+
+/**
+ * The CONFIRMATION FOR A WHOLE STORE: the store name TYPED into a never-prefilled field.
+ *
+ * The typed text — not a string this module already has — is what is sent as the
+ * server's `?confirm=` token, and a mismatch is refused HERE with nothing sent. There is
+ * no way to arm this from a stored value and no pre-filled field to submit blind.
+ */
+async function armTypedConfirm(item, storeName, kind) {
+  const existing = item.querySelector(".typed-confirm");
+  if (existing !== null) {
+    existing.remove();
+    return;
+  }
+  const verb = kind === "empty" ? "empty" : "delete";
+  const box = document.createElement("form");
+  box.className = "typed-confirm";
+  box.autocomplete = "off";
+
+  const note = document.createElement("p");
+  note.className = "muted";
+  note.textContent =
+    "To " +
+    verb +
+    " " +
+    storeName +
+    ", type its name below. The typed text is sent to the server as the confirmation token.";
+
+  const label = document.createElement("label");
+  label.textContent = "Store name (type it exactly)";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.setAttribute("data-typed-confirm", "yes");
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.value = "";
+  label.append(input);
+
+  const row = document.createElement("div");
+  row.className = "row";
+  const go = document.createElement("button");
+  go.type = "submit";
+  go.className = "danger";
+  go.setAttribute("data-typed-confirm-go", "yes");
+  go.textContent = kind === "empty" ? "Empty store" : "Delete store";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => box.remove());
+  row.append(go, cancel);
+
+  box.append(note, label, row);
+  box.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const typed = input.value.trim();
+    if (typed !== storeName) {
+      showError(
+        new UiError(
+          "confirm_mismatch",
+          "the typed name " +
+            JSON.stringify(typed) +
+            " does not match the store " +
+            JSON.stringify(storeName) +
+            " — nothing was sent.",
+        ),
+      );
+      return;
+    }
+    box.remove();
+    const action = kind === "empty" ? emptyStore(storeName, typed) : deleteStore(storeName, typed);
+    action.catch(showError);
+  });
+  item.append(box);
 }
 
 async function refreshAll() {
@@ -582,15 +1079,6 @@ async function copyKey() {
     field.select();
     showError(new UiError("copy_failed", "the clipboard was refused — the key is selected, press Ctrl/Cmd+C"));
   }
-}
-
-async function revokeKey(id, label) {
-  if (!window.confirm('Revoke the key "' + label + '"? This cannot be undone.')) return;
-  clearError();
-  clearStatus();
-  await api(ROUTES.keyRevoke(id), { method: "POST" });
-  showStatus("Key " + id + " revoked. It is refused on its next request.");
-  await guard(refreshKeys);
 }
 
 function init() {

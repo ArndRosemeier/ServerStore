@@ -60,6 +60,21 @@ function calledPaths(source: string): string[] {
   return [...out].sort();
 }
 
+/**
+ * A route path with its PARAMETER NAMES removed: `:store`, `:name` and `:id` all become
+ * `:id`.
+ *
+ * The path scan below normalises a template hole (`${…}`) to `:id`, because a served
+ * module cannot know a route's parameter NAME. Comparing the two sets therefore has to
+ * normalise the same way on the REGISTERED side: the pin is about the SHAPE of the path
+ * a click would call, not about what Hono named the hole. A path the API does not
+ * register still has no shape match, which is the claim U3 makes (arm B of the slice-10
+ * differential reddens it with `/no-such-route`; arm (b) of slice 18 leaves it green).
+ */
+function routeShape(path: string): string {
+  return path.replace(/:[A-Za-z0-9_]+/g, ":id");
+}
+
 describe("the admin UI (pins U1-U4)", () => {
   test("PIN U1: the UI routes are served, and the served bytes carry no secret", async () => {
     const root = await served("/");
@@ -119,7 +134,7 @@ describe("the admin UI (pins U1-U4)", () => {
     ).toBeGreaterThan(0);
 
     const registered = new Set(
-      registeredRoutes().map((route) => route.slice(route.indexOf(" ") + 1)),
+      registeredRoutes().map((route) => routeShape(route.slice(route.indexOf(" ") + 1))),
     );
     const unknown = called.filter((path) => !registered.has(path));
     expect(
