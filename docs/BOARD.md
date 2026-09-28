@@ -975,6 +975,17 @@ QUEUE-CLOSED | row=78 | **STORAGE MODEL SETTLED BY THE OWNER (ledger row 78): SQ
   | one durable piece of that research is the WAL/`busy_timeout`/`BEGIN IMMEDIATE` finding (row 77)
   | plus the boundary it names: SQLite serializes WRITERS, so "concurrent writers or a second app
   | instance" is the requirement that would reopen this, and LMDB would not satisfy it either.
+QUEUE | row=87 (only if the other project needs it) | **TWO LIMITS REPORTED BY THE OWNER'S OTHER PROJECT**
+  |   (ledger row 86): names are capped at 64 characters and request bodies at 64 MiB — BOTH CONFIRMED in
+  |   code, and both live (the unit sets no `SERVERSTORE_MAX_BYTES`, so 64 MiB is what the host enforces).
+  |   The NAME LENGTH is policy (the constant is referenced only in `validate.ts`; entry names never were
+  |   filesystem paths, and they are TEXT in SQLite now) and raising it is one constant + regex + docs +
+  |   pins, a WIDENING that breaks nothing — while the CHARSET (lowercase, no `/`, no leading `.`, no `..`)
+  |   is the load-bearing part. The ITEM CAP is load-bearing: a write and a read each peak near 2× the item
+  |   in memory and every write lands the item in the WAL, so the cap bounds `concurrency × size` against
+  |   the box's RAM; the VALUE is an operator setting with no parser upper bound. NOTHING CHANGES until the
+  |   other project says what it needs (a name length, an item size); the alternative to a bigger cap is
+  |   chunking into parts and listing them with `prefix=`.
 QUEUE | row=81 | AFTER the storage rebuild = slice 18 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
   FOR — delete a key, look inside a store (names only) and delete an entry, empty a store, delete a
   store. UI-ONLY: `GET /stores/{store}/objects` already lists entries (and takes `prefix=`), and
@@ -1128,7 +1139,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-85 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-86 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
