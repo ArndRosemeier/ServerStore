@@ -59,22 +59,34 @@ reconciled: 695ba2e · 2026-09-28T07:22Z — the slice-13 (`prefix=` object filt
   quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight — slice 13 (the `prefix=` object filter) is LANDED, VERIFIED and
-  |   RETIRED (row 62). Slice 12 (D1: CORS) likewise (row 58). LIVE at
+  | state=ONE writer in flight (row 65: rate limiting on the public endpoint, worktree
+  |   worktrees/rate-limit, branch feat/rate-limit; design fixed in ledger row 64). Slices 12 (CORS,
+  |   row 58) and 13 (the `prefix=` filter, row 62) are LANDED, VERIFIED and RETIRED. LIVE at
   |   https://store.futuremagic.de/ with the console, key editing (C2), CORS and the prefix filter;
   |   service restarted onto the prefix tip and re-probed; EXACTLY ONE live admin key. A turn-based
-  |   browser game from ANOTHER ORIGIN is UNBLOCKED and can now name objects kind-first
-  |   (`game.<id>`, `player.<id>.<tag>`, `snap.<id>.<turn>.<seq>.<tag>`) and read one namespace per
-  |   request; it holds 3 test objects in store `colossus`.
-  |   NEXT: row 64 = rate limiting on the public endpoint; row 65 = the OWED headless-browser test.
-  |   (Row 63 is CLOSED with no code change — my "board.sh counts the service" claim was RETRACTED:
-  |   the count was my own shell's command line self-matching `pgrep -af`, see QUEUE-CLOSED row 63
-  |   and TRAP t6.)
+  |   browser game from ANOTHER ORIGIN is UNBLOCKED and can read one namespace per request.
+  |   NEXT: row 66 = the headless-browser test (Google Chrome is ALREADY on the box; the driver choice
+  |   goes to the owner before dispatch).
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
+
+IN-FLIGHT | row=65 | session=(dispatching now) | worktree=worktrees/rate-limit |
+  | branch=feat/rate-limit | base=origin/main — resolved by the writer and recorded in its landing
+  | state=THE ONE WRITER. Scope: RATE LIMITING (design = ledger row 64, which is the authority; brief
+  |   `docs/briefs/slice-14-rate-limit.md`). ONE new module `src/server/ratelimit.ts` (no npm
+  |   dependency, injected clock, `limit === 0` disables, HARD-CAPPED bucket table with eviction and a
+  |   sweep), wired in `src/server/app.ts` in FRONT of the key guard, applying to the API only —
+  |   `/healthz`, the three UI assets and CORS preflights are NEVER limited. Identity:
+  |   `CF-Connecting-IP`, else the first `X-Forwarded-For` hop, else one `local` bucket (the socket is
+  |   always the tunnel). New code `rate_limited` (429) with `Retry-After`, so `retry-after` joins
+  |   `Access-Control-Expose-Headers` and the two CORS pins that assert that header by EQUALITY must be
+  |   updated to the FULL set in the same commit. `SERVERSTORE_RATE_LIMIT` default 600 per 60 s, `0` =
+  |   disabled, malformed = a LOUD boot failure. Pins R1–R8; the ONE fixture disables the limiter so
+  |   the existing 127 pins stay green. NOT in scope: per-key buckets, persistence, `/metrics`, and any
+  |   change to the guard, CORS policy or storage.
 
 (The row=61 `IN-FLIGHT` block, dropped by the dispatcher at row 62 as superseded and stale: slice 13
 landed, was independently verified with three own arms, and its worktree worktrees/object-prefix,
@@ -815,13 +827,27 @@ QUEUE-CLOSED | row=63 | **RETRACTED AND CLOSED WITH NO CODE CHANGE — my own di
   `scripts/board.sh` when a caller is clean; the lesson is a TRAP (t6), and the honest correction is
   that a guard is only as good as the shell that reads it. Evidence and the probe:
   `.gate-logs/suite-audit.py`.
-QUEUE | row=64 | RATE LIMITING on the public endpoint — the only queued item that PROTECTS the
-  surface rather than extending it (rows 28 and 43 both name it), and more pressing now that the API
-  answers cross-origin browsers. Then the OWED HEADLESS-BROWSER test (row=65), which closes the same
-  gap for both the console (rows 49/54) and CORS (rows 57/58): nothing automated drives a real
-  browser, and a browser is a process TREE whose kill belongs in a trap. Also deferred by owner
-  decision, not forgotten: per-store permissions (`key_stores` + perms) — only if a game needs ONE
-  mutable shared room object; editing `expiresAt`; edit history.
+QUEUE-CLOSED | row=64 | **RATE LIMITING: DESIGNED (ledger row 64) and DISPATCHED as row 65** — one
+  bounded, in-memory, per-IDENTITY bucket in FRONT of the key guard (an unkeyed flood is what a public
+  endpoint faces, and the key comparison is the work worth protecting), identity from `CF-Connecting-IP`
+  then the first `X-Forwarded-For` hop then one `local` bucket (the socket address is always the
+  tunnel), a hard-capped bucket table WITH eviction because a map keyed by a client-supplied header is
+  itself a DoS vector, `/healthz` + the three UI assets + CORS preflights NEVER limited, a new
+  `rate_limited` 429 code with `Retry-After` (which means `retry-after` must join
+  `Access-Control-Expose-Headers`, changing two CORS pins that assert that header by equality),
+  `SERVERSTORE_RATE_LIMIT` default **600 per 60 s** with `0` = disabled, and an injected clock so the
+  boundary is pinned deterministically — NO synthetic load against the live service. The per-key
+  bucket is DEFERRED and named.
+QUEUE | row=66 | NEXT AFTER RATE LIMITING: the OWED HEADLESS-BROWSER test, which closes the same gap
+  for both the console (rows 49/54) and CORS (rows 57/58): nothing automated drives a real browser.
+  GROUNDED, so the fork is real rather than guessed: **`/usr/bin/google-chrome` is ALREADY installed
+  on this box** and there is no Playwright/Puppeteer browser cache, so the choice is (a) drive that
+  Chrome directly over the DevTools protocol with Node's built-in `WebSocket` and NO npm dependency, or
+  (b) add a driver dependency (`playwright-core`/`puppeteer-core`) pointed at the installed binary —
+  the dispatcher takes this fork to the owner before dispatching, and either way: the browser is a
+  process TREE, its kill belongs in a `trap`, and the run must be bounded and in-turn.
+  Also deferred by owner decision, not forgotten: per-store permissions (`key_stores` + perms) — only
+  if a game needs ONE mutable shared room object; editing `expiresAt`; edit history.
 QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
   the two the live store needs NOW, because the live database holds THREE master admin keys (two
   unused, created before the service existed) and revocation is currently operator-only. Then C
@@ -940,7 +966,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-62 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-64 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -954,7 +980,10 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   the name language is prefix-closed), 61 = the prefix filter LANDED (P1-P8, three writer arms),
   |   62 = it is VERIFIED with three DISPATCHER arms (validation, authorization order, empty-vs-404),
   |   the live ordering confirmed, the worktree/branch/session retired, and the brief's own P7 error
-  |   corrected — the prefix tip is what the live service now runs)
+  |   corrected — the prefix tip is what the live service now runs, 63 = closed with NO code change (my
+  |   "board.sh counts the service" claim RETRACTED: the phantom was my own shell self-matching
+  |   `pgrep -af`, now TRAP t6), 64 = RATE LIMITING designed (before the guard, header identity,
+  |   bounded table, exemptions, exposed `Retry-After`, 600/60 s default) and dispatched as row 65)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
