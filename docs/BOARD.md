@@ -910,7 +910,15 @@ QUEUE | row=72 | **OPEN FORK, THE OWNER'S CHOICE (ledger row 72): items inside S
   equivalent (private cluster: `initdb` + `pg_ctl`, `listen_addresses=''`, unix socket only) is real
   Postgres with no TCP port but needs a host install plus lifecycle management we would own — more
   machinery than PGlite for the same property.
-QUEUE | row=76 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
+  AND NoSQL (ledger row 76): the owner is not married to Postgres and asked for a web check. MEASURED
+  on this box — `lmdb` 3.5.6 installed and RAN on Node 24 without compiling (prebuilds; pnpm blocked
+  its build script and it worked anyway), a prefix range scan is native (`getRange`), the whole
+  database is TWO files (`data.mdb` + `lock.mdb`), and it grew itself to 20 MB despite a reported
+  131 KB default map size. Also weighed from npm metadata: `classic-level` (LevelDB, many files),
+  `@seald-io/nedb` and `lowdb` (pure JS, one JSON file, whole-DB in memory), `pouchdb` (the ONLY
+  option with CouchDB-style SYNC — a client-side product decision, not a storage swap), `pglite`
+  (Postgres in-process). Nothing decided; all candidates land behind the same kind seam.
+QUEUE | row=77 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
   FOR — delete a key, look inside a store (names only) and delete an entry, empty a store, delete a
   store. UI-ONLY: `GET /stores/{store}/objects` already lists entries (and takes `prefix=`), and
   `DELETE /stores/{store}/objects/{name}` already deletes one, so this slice adds the new routes from
@@ -1060,7 +1068,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-75 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-76 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
