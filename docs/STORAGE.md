@@ -69,6 +69,44 @@ becomes a loud error rather than a silent empty value.
   body is capped by `SERVERSTORE_MAX_BYTES` (64 MiB by default) — a larger body is refused before
   anything is written.
 
+## How far does "one file per entry" actually scale? (measured on this box, 2026-09-28)
+
+The filesystem under the data root is **ext4 on `/dev/vda1`** (mounted with `discard`,
+`errors=remount-ro`, `commit=30`). Its relevant limits, read from the filesystem itself and not from
+folklore:
+
+| Limit | Value here | Does it bind? |
+| --- | --- | --- |
+| **Free inodes** (one per file — the classic wall) | **73,783,154 free** of 75,138,560 (2% used) | Yes, at roughly **73 million entries** |
+| Free space | **505 GiB** | Yes: each entry takes whole 4 KiB blocks, so it binds first once the average entry exceeds ~7 KiB |
+| Name component length | 255 bytes | No — a blob file is named by a 64-character hash; entry NAMES never become filenames |
+| Path length | 4096 bytes | No — the deepest path here is ~60 characters |
+| Open files per process | 524,288 (the service's own limit) | No — one file is open per in-flight request, not per stored entry |
+| Directories per store | 256 shards (`blobs/<first 2 hex chars>/`) | No, and it is deliberate: at 73M entries a shard holds ~288k files |
+| Files in ONE directory | ext4 with `dir_index` (htree; **no** `large_dir`) | Not for us: 256-way sharding keeps every directory far below the ~10M-entry point where htree lookups degrade |
+
+**What that means in practice.** The binding factor is the **average size of an entry**, because ext4
+allocates whole 4 KiB blocks and one inode per file:
+
+- small entries (a few hundred bytes to 4 KiB): **~73 million entries**, capped by inodes;
+- 16 KiB average entries: **~33 million entries**, capped by space;
+- 256 KiB average entries: **~2 million entries**;
+- the crossover — where space starts to bind before inodes — is an average entry of **~7 KiB**.
+
+Two costs that arrive before either limit, and both are worth knowing:
+
+1. **The API lists a whole store in one response.** `GET /stores/{store}/objects` has no pagination
+   (only the `prefix=` filter), so a store with a million entries means a million-row JSON answer. That
+   is a limit of THIS SERVICE, not of the filesystem, and it is the first wall a real workload hits —
+   the fix is `limit=`/pagination, recorded as debt (rows 28/61).
+2. **Millions of small files are slow to copy.** A backup of the data root is fine with `tar`/`rsync`
+   but painful with a naive per-file copy, and a tool that *watches* files (inotify) is capped at
+   193,750 watches here — nothing in the service watches them, but a monitoring tool might.
+
+Also stated plainly: the data root shares one filesystem with the operating system and everything else
+on this box, so the service's real share is smaller than the numbers above; and the store currently
+uses 873 KB of it.
+
 ## State on this box (measured 2026-09-28, service live)
 
 `/home/administrator/serverstore-data` — 2 stores (`master`, `colossus`), **175 entries**, 177 blob
