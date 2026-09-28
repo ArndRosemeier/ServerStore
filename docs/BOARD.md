@@ -65,20 +65,34 @@ reconciled: 66a3295 · 2026-09-28T07:51Z — the slice-14 (rate limiting) VERIFI
   quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight. Slices 12 (CORS, row 58), 13 (the `prefix=` filter, row 62) and 14
-  |   (rate limiting, row 66) are LANDED, VERIFIED and RETIRED. LIVE at
+  | state=ONE writer in flight (row 68: the OWED headless-browser test, worktree
+  |   worktrees/browser-test, branch feat/browser-test; design fixed in ledger row 67 — the owner
+  |   chose to drive the installed `/usr/bin/google-chrome` over the DevTools protocol with Node's
+  |   built-in `WebSocket` and NO new dependency). Slices 12 (CORS, row 58), 13 (the `prefix=` filter,
+  |   row 62) and 14 (rate limiting, row 66) are LANDED, VERIFIED and RETIRED. LIVE at
   |   https://store.futuremagic.de/ with the console, key editing (C2), CORS, the prefix filter and
   |   the rate limiter (default 600 requests per identity per 60 s, no `SERVERSTORE_RATE_LIMIT` in the
   |   unit); service restarted onto the limiter tip and re-probed; EXACTLY ONE live admin key. A
   |   turn-based browser game from ANOTHER ORIGIN is UNBLOCKED and can read one namespace per request.
-  |   NEXT: row 67/68 = the headless-browser test — the OWNER CHOSE to drive the installed
-  |   `/usr/bin/google-chrome` over the DevTools protocol with Node's built-in `WebSocket` and NO new
-  |   dependency; it starts now that the shared `tests/helpers/server.ts` is free.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
+
+IN-FLIGHT | row=68 | session=(dispatching now) | worktree=worktrees/browser-test |
+  | branch=feat/browser-test | base=origin/main — resolved by the writer and recorded in its landing
+  | state=THE ONE WRITER. Scope: TEST-ONLY — the headless-browser test the console and CORS are owed
+  |   (design = ledger row 67, which is the authority; brief `docs/briefs/slice-15-browser-test.md`).
+  |   ONE seam `tests/helpers/browser.ts` owns the launch (`/usr/bin/google-chrome --headless=new`,
+  |   temp `--user-data-dir` under the worktree, loopback debugging port), the DevTools session over
+  |   Node's built-in `WebSocket` (no dependency), TRUSTED `Input.*` events for the console flow, and
+  |   the KILL of the whole process GROUP from `afterAll` AND a failure path. Pins B1–B8: the console's
+  |   JS actually runs, a key authenticates through the UI, the EDIT flow really PATCHes (asserted
+  |   through the API, not the DOM), a real browser on ANOTHER origin completes an authorized fetch,
+  |   reads the exposed `x-serverstore-sha256`, a DISALLOWED origin is blocked BY THE BROWSER, nothing
+  |   outlives the test, and a MISSING browser FAILS the run instead of skipping. It runs IN THE GATE.
+  |   NOT in scope: any product-code change, any new dependency, any screenshot/visual claim.
 
 (The row=65 `IN-FLIGHT` block is FOLDED by the LANDED row=65 record in `## Landed` — a mechanical
 union; docs/BOARD.md is the only file the fold touched, and no other landing's record was altered.
@@ -836,7 +850,7 @@ QUEUE-CLOSED | row=64 | **RATE LIMITING: DESIGNED (ledger row 64) and DISPATCHED
   `SERVERSTORE_RATE_LIMIT` default **600 per 60 s** with `0` = disabled, and an injected clock so the
   boundary is pinned deterministically — NO synthetic load against the live service. The per-key
   bucket is DEFERRED and named.
-QUEUE | row=67 (design+dispatch) / 68 (landing) | NEXT: the OWED HEADLESS-BROWSER test, which closes the same gap
+QUEUE-CLOSED | row=67 | **DESIGNED (ledger row 67) and DISPATCHED as row 68** — the OWED HEADLESS-BROWSER test, which closes the same gap
   for both the console (rows 49/54) and CORS (rows 57/58): nothing automated drives a real browser.
   TWO things are settled rather than guessed: (1) **the owner chose to DRIVE THE INSTALLED
   `/usr/bin/google-chrome` DIRECTLY over the DevTools protocol with Node's built-in `WebSocket` and NO
@@ -969,7 +983,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-66 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-67 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -993,7 +1007,9 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   66 = it is VERIFIED with three DISPATCHER arms (identity->R4 ALONE, exemptions->R5 ALONE, the
   |   silent-disable fallback->R7 ALONE), a BOUNDED local spawn proving the whole mechanism on a real
   |   process without touching the public endpoint, the live preflight's `retry-after` exposure, and
-  |   the worktree/branch/session retired — the limiter is LIVE)
+  |   the worktree/branch/session retired — the limiter is LIVE), 67 = the HEADLESS-BROWSER test
+  |   designed (installed Chrome over the DevTools protocol, no dependency, inside the gate, a missing
+  |   browser FAILS rather than silently skips, process-tree kill in a trap) and dispatched as row 68)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
