@@ -10,16 +10,18 @@
  *
  * The two facts that make the naive implementation WRONG are pinned here, not argued:
  * `PRAGMA foreign_keys = ON` + `key_stores.store REFERENCES stores(name)` (X5, and why the
- * store delete refuses instead of cascading), and content-addressed storage, where two
- * entries can share ONE blob (X7, which is why the single-object delete cannot simply
- * unlink the file). The confirm token is pinned SERVER-side (X6): a dialog protects a
- * mis-click, not a mis-aimed `curl`.
+ * store delete refuses instead of cascading), and since slice 17 (ledger row 79) the fact
+ * that DELETING IS NOW UNCONDITIONAL: an entry's bytes live in its OWN row, so two entries
+ * with identical content are two independent rows and removing one can never touch the
+ * other (X7, which also records that the old shared-blob trap — and with it the whole
+ * orphan-blob class — is GONE rather than handled). The confirm token is pinned
+ * SERVER-side (X6): a dialog protects a mis-click, not a mis-aimed `curl`.
  *
  * No test binds a port, touches the live data root, or reaches the deployed hostname.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { join, resolve as resolvePath } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
 import {
@@ -202,7 +204,8 @@ describe("the destructive lifecycle (slice 16, pins X1-X9)", () => {
     await server.put("/stores/alpha/objects/a.txt", "aaa", master);
     await server.put("/stores/alpha/objects/b.txt", "bbb", master);
     await server.put("/stores/master/objects/keep.txt", "keep", master);
-    expect(server.listBlobFiles().filter((path) => path.startsWith("alpha/"))).toHaveLength(2);
+    expect(server.objectContent("alpha", "a.txt")).not.toBeNull();
+    expect(server.objectContent("alpha", "b.txt")).not.toBeNull();
 
     const emptied = await server.del("/stores/alpha/objects?confirm=alpha", master);
     expect(emptied.status).toBe(200);
@@ -210,10 +213,13 @@ describe("the destructive lifecycle (slice 16, pins X1-X9)", () => {
 
     // The entries are gone from the listing…
     expect(await (await server.get("/stores/alpha/objects", master)).json()).toEqual({ objects: [] });
-    // …their blob FILES are gone from disk (not merely unreferenced)…
-    expect(server.listBlobFiles().filter((path) => path.startsWith("alpha/"))).toEqual([]);
+    // …their BYTES are gone with them — the row IS the content now, so an empty store
+    // holds nothing at all, and no per-item file was ever written (ledger row 79)…
+    expect(server.objectContent("alpha", "a.txt")).toBeNull();
+    expect(server.objectContent("alpha", "b.txt")).toBeNull();
+    expect(server.listBlobFiles()).toEqual([]);
     // …the sibling store's bytes are untouched…
-    expect(server.listBlobFiles().some((path) => path.startsWith("master/"))).toBe(true);
+    expect(server.objectContent("master", "keep.txt")).not.toBeNull();
     // …and the STORE and its keys' SCOPES are untouched: a key scoped to an empty store
     // is perfectly valid, and the scope is not this route's business.
     expect(await storeNames(server, master)).toContain("alpha");
@@ -242,21 +248,33 @@ describe("the destructive lifecycle (slice 16, pins X1-X9)", () => {
     expect(error.message, "the refusal must NAME the blocking key").toContain(blockerId);
     expect(error.message).toContain("the-blocker");
 
-    // The store still lists, its objects still read, and its directory is still on disk.
+    // The store still lists, its objects still read, and its bytes are still there.
     expect((await server.get("/stores/alpha/objects", master)).status).toBe(200);
     expect(await (await server.get("/stores/alpha/objects/keep.txt", master)).text()).toBe("keep");
     expect(await storeNames(server, master)).toContain("alpha");
-    expect(existsSync(join(server.dataRoot, "stores", "alpha"))).toBe(true);
+    expect(server.objectContent("alpha", "keep.txt")).not.toBeNull();
 
     // Delete the blocking key (X1's route), then the store delete SUCCEEDS and the
-    // directory goes with it.
+    // store row and its objects go with it.
     expect((await server.del(`/keys/${blockerId}`, master)).status).toBe(200);
     const deleted = await server.del("/stores/alpha?confirm=alpha", master);
     expect(deleted.status).toBe(200);
     expect(await deleted.json()).toEqual({ name: "alpha", deletedAt: FIXED_DELETED_AT });
     expect(await storeNames(server, master)).not.toContain("alpha");
     expect((await server.get("/stores/alpha/objects", master)).status).toBe(404);
-    expect(existsSync(join(server.dataRoot, "stores", "alpha"))).toBe(false);
+    // Asserted IN THE DATABASE, not only by the route's answer.
+    expect(
+      server.direct(
+        (db) =>
+          (db.prepare("SELECT COUNT(*) AS n FROM stores WHERE name = 'alpha'").get() as {
+            n: number;
+          }).n,
+      ),
+    ).toBe(0);
+    expect(server.objectContent("alpha", "keep.txt")).toBeNull();
+    // The old per-store DIRECTORY is gone too, and this time because it was never
+    // written: there is no `stores/` floor at all (ledger row 79).
+    expect(server.listBlobFiles()).toEqual([]);
   });
 
   test("PIN X6: the confirm token is server-side", async () => {
@@ -275,7 +293,7 @@ describe("the destructive lifecycle (slice 16, pins X1-X9)", () => {
       expect((await readError(response)).code, query).toBe("bad_request");
     }
     expect(await (await server.get("/stores/alpha/objects/a.txt", master)).text()).toBe("aaa");
-    expect(server.listBlobFiles().some((path) => path.startsWith("alpha/"))).toBe(true);
+    expect(server.objectContent("alpha", "a.txt")).not.toBeNull();
 
     // DELETE STORE: the same rule, and the object, the store, the key and its scope are
     // ALL still there afterwards.
@@ -296,17 +314,20 @@ describe("the destructive lifecycle (slice 16, pins X1-X9)", () => {
     expect(await storeDeleted.json()).toEqual({ name: "beta", deletedAt: FIXED_DELETED_AT });
   });
 
-  test("PIN X7: deleting one object reclaims only UNSHARED content", async () => {
+  test("PIN X7: identical bytes are two INDEPENDENT rows, and deleting one cannot touch the other", async () => {
     const server = createTestServer();
     const master = server.mint({ stores: ["*"], perms: ["admin"] });
     const payload = "identical bytes, one blob\n";
     const sha = sha256Hex(payload);
-    const blob = `master/blobs/${sha.slice(0, 2)}/${sha}`;
 
     await server.put("/stores/master/objects/twin-a", payload, master);
     await server.put("/stores/master/objects/twin-b", payload, master);
-    // Content-addressed storage: two name rows, ONE file on disk.
-    expect(server.listBlobFiles()).toEqual([blob]);
+    // Content-addressed storage USED to share ONE file between two names, and the
+    // single-object delete had to REFCOUNT before it could unlink. Slice 17 removed the
+    // sharing: each row carries its own bytes, so the two entries are independent and
+    // the whole orphan-blob class of bug is gone with the files (ledger row 79).
+    expect(server.objectContent("master", "twin-a")).not.toBeNull();
+    expect(server.objectContent("master", "twin-b")).not.toBeNull();
     const rows = server.direct(
       (db) =>
         (db
@@ -314,15 +335,18 @@ describe("the destructive lifecycle (slice 16, pins X1-X9)", () => {
           .get(sha) as { n: number }).n,
     );
     expect(rows).toBe(2);
+    expect(server.listBlobFiles()).toEqual([]);
 
-    // Delete ONE: the survivor still READS correctly, so the blob was NOT reclaimed.
+    // Delete ONE: the survivor still READS byte-identical content and still holds it.
     expect((await server.del("/stores/master/objects/twin-a", master)).status).toBe(204);
     expect(await (await server.get("/stores/master/objects/twin-b", master)).text()).toBe(payload);
-    expect(server.listBlobFiles()).toEqual([blob]);
+    expect(server.objectContent("master", "twin-a")).toBeNull();
+    expect(server.objectContent("master", "twin-b")).not.toBeNull();
 
-    // Delete the LAST: the row is gone AND the blob file is gone.
+    // Delete the LAST: the row and its bytes are gone together.
     expect((await server.del("/stores/master/objects/twin-b", master)).status).toBe(204);
     expect((await server.get("/stores/master/objects/twin-b", master)).status).toBe(404);
+    expect(server.objectContent("master", "twin-b")).toBeNull();
     expect(server.listBlobFiles()).toEqual([]);
   });
 
@@ -423,12 +447,13 @@ describe("the destructive lifecycle (slice 16, pins X1-X9)", () => {
     );
 
     // The rules the routes implement are STATED, so the pin is about the contract and not
-    // only about route presence: the last-live-admin rule, the confirm token, and the
-    // reclamation with its sharing trap.
+    // only about route presence: the last-live-admin rule, the confirm token, and the NEW
+    // storage fact that deleting an entry needs no sharing check because its bytes live in
+    // its own row (ledger row 79 — the sentence this line used to assert is gone).
     expect(doc, "the last-live-admin rule is not documented").toMatch(/[Ll]ast live admin/);
     expect(doc, "the confirm rule is not documented").toMatch(/confirm=/);
-    expect(doc, "the shared-content rule is not documented").toMatch(
-      /no other entry in that store/,
+    expect(doc, "the item-bytes-in-the-database rule is not documented").toMatch(
+      /bytes live in the database/i,
     );
   });
 });

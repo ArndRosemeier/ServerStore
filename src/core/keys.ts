@@ -37,6 +37,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { withImmediateTransaction } from "./db.ts";
 import { StoreError } from "./errors.ts";
 import { parsePermissions, parseStoredPermissions, parseStores } from "./validate.ts";
 import {
@@ -158,8 +159,10 @@ export function mintKey(
   const subjectKind: SubjectKind = options.subjectKind ?? "token";
   const perms = [...options.perms];
 
-  db.exec("BEGIN");
-  try {
+  // ONE `BEGIN IMMEDIATE` for the key row plus its scope rows (the ONE transaction
+  // seam, `src/core/db.ts`): a scope that names a store that does not exist fails the
+  // foreign key and mints NOTHING, and a concurrent writer queues rather than failing.
+  withImmediateTransaction(db, () => {
     db.prepare(
       `INSERT INTO access_keys
          (id, scope_all, label, key_hash, prefix, perms, subject_kind, created_at, expires_at)
@@ -179,11 +182,7 @@ export function mintKey(
       const insertStore = db.prepare("INSERT INTO key_stores(key_id, store) VALUES (?, ?)");
       for (const store of stores) insertStore.run(id, store);
     }
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+  });
 
   return {
     raw,
@@ -478,8 +477,9 @@ export function editKey(
   const scopeAll = stores.length === 1 && stores[0] === ALL_STORES;
   const updatedAt = new Date(options.now()).toISOString();
 
-  db.exec("BEGIN");
-  try {
+  // ONE `BEGIN IMMEDIATE` for the row plus its scope rows (the ONE transaction seam):
+  // a scope change can never land half-applied, and a concurrent writer queues.
+  withImmediateTransaction(db, () => {
     db.prepare(
       "UPDATE access_keys SET label = ?, perms = ?, scope_all = ?, updated_at = ?, updated_by = ? WHERE id = ?",
     ).run(options.label, perms.join(","), scopeAll ? 1 : 0, updatedAt, options.by, options.id);
@@ -488,11 +488,7 @@ export function editKey(
       const insertStore = db.prepare("INSERT INTO key_stores(key_id, store) VALUES (?, ?)");
       for (const store of stores) insertStore.run(options.id, store);
     }
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+  });
 
   // Re-read the row rather than trusting `changes`: the record served back is the
   // STORED one, which is what proves the write landed AND that the key's value

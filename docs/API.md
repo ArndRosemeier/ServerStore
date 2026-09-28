@@ -13,9 +13,10 @@ byte objects under string names. Every request is authenticated by an **access k
 — an opaque bearer token **scoped to a SET of stores** (or to `["*"]`, every store,
 for a master key) and carrying a subset of `read`, `write`, `delete`, `admin`. There
 is no user account, no session and no cookie: the key **is** the principal. It is one
-Node process (Node 24, TypeScript, `node:sqlite` for metadata, content-addressed files
-for bytes), it is meant for shared state between programs and players, and it is
-deliberately small: an object is a name and a byte string, nothing more.
+Node process (Node 24, TypeScript, ONE SQLite database — `node:sqlite` — holding the
+metadata AND the item bytes), it is meant for shared state between programs and
+players, and it is deliberately small: an object is a name and a byte string, nothing
+more.
 
 ## Where it lives
 
@@ -492,18 +493,19 @@ A **`PUT` of an existing name overwrites** it (the response is `201` with the ne
     store, so the token is not a UI courtesy. An **unknown store** is `404`, and a key
     without `delete` is `403`, both checked before the token.
 - **`DELETE /stores/{store}/objects/{name}`** — `204` with an empty body. Deleting a
-  name that does not exist is `404`. The entry's metadata row is removed **and its bytes
-  are reclaimed** — but **only when no other entry in that store still names the same
-  content address**. Storage is content-addressed, so two names written with identical
-  bytes share **one** file; deleting one of them leaves the file alone so the survivor
-  still reads correctly, and deleting the last one removes it (see the Non-goals and
-  `docs/STORAGE.md`).
+  name that does not exist is `404`. The entry's row is removed, and **the entry's bytes
+  live in that row** (slice 17, ledger row 79), so they go with it. There is no sharing
+  to protect any more: two entries written with identical content are two independent
+  rows, and deleting one can never affect the other. That also means overwriting a name
+  reclaims the previous content, and no orphan file is left behind (see the Non-goals
+  and `docs/STORAGE.md`).
 - **`DELETE /stores/{store}`** — **delete a store** (with a server-side confirmation).
   It requires a **master admin** key — symmetric with `POST /stores` — and
   **`?confirm={store}`**, checked exactly as above (`400 bad_request` and nothing
   deleted on a missing or mismatched token). On success it answers `200` with
-  `{"name","deletedAt"}`: the store's registry row, every entry row and the store's
-  whole directory are gone, and a later `GET /stores/{store}/objects` is `404`.
+  `{"name","deletedAt"}`: the store's registry row and every entry row are gone — and
+  with them every byte, because an entry's bytes live in its own row — and a later
+  `GET /stores/{store}/objects` is `404`.
   - **It REFUSES `409 conflict` while ANY key's scope names the store**, and the message
     names the blocking keys (id and label). This is deliberate: the store name is a
     foreign-key target of every key scope that names it, so the alternatives are to
@@ -560,16 +562,15 @@ what a client should do about it:
   a `400`, `403`, `404` or `413` leaves the store exactly as it was — and a refused
   `PATCH /keys/{id}` leaves the key, its scope rows and its audit stamp unchanged. This
   includes a **bad or missing `confirm` token on a bulk delete** (`400`): it is checked
-  before anything is removed, so not one row and not one byte goes. (A blob from an
-  *earlier successful* PUT of the same bytes may still be on disk — see the next point.)
-- A `DELETE` removes the object's metadata row and **reclaims its bytes when no other
-  entry in that store names the same content** — storage is content-addressed, so two
-  names can share one file and deleting one must leave it for the survivor.
-  `DELETE /stores/{store}/objects` reclaims the store's whole blob tree, and
-  `DELETE /stores/{store}` removes its directory. **Still NOT reclaimed:** files orphaned
-  by **overwriting** an existing name — a `PUT` replaces the row and the previous
-  content's file stays — so a frequently rewritten store can still grow. No sweep exists
-  for that yet (see `docs/STORAGE.md`, and the Non-goals below).
+  before anything is removed, so not one row and not one byte goes.
+- **A `DELETE` removes the row AND the bytes, always, because they are the same thing.**
+  An entry's bytes live in the database, in that entry's own row (slice 17, ledger row
+  79), so two entries with identical content are two independent rows and deleting one
+  can never touch the other. `DELETE /stores/{store}/objects` removes every row of the
+  store and `DELETE /stores/{store}` removes the store's row with them. **Nothing is
+  left behind to sweep:** a `PUT` over an existing name replaces the row — and therefore
+  the bytes — so a rewritten store does not grow, and there is no garbage-collector to
+  run and no `POST /gc` route to call (see `docs/STORAGE.md`).
 - **Rate limiting is on by default** (see Rate limiting): `SERVERSTORE_RATE_LIMIT`
   requests per client per 60-second window, `429 rate_limited` with `Retry-After` beyond
   it, and `/healthz`/assets/preflights never limited. There is no documented request
@@ -683,12 +684,14 @@ curl -s -X DELETE "$BASE/stores/game?confirm=game" -H "Authorization: Bearer $AD
 
 These are **not** implemented today. A client that assumes them will break:
 
-1. **No ORPHAN SWEEP.** Deleting an entry, emptying a store and deleting a store all
-   reclaim the bytes they can (an entry's file only when no other entry in that store
-   shares its content). But files orphaned by **overwriting** an existing name are **not**
-   reclaimed: `PUT` replaces the row and the previous content's file stays. There is no
-   garbage-collector process and no `POST /gc`-style route; a store rewritten in place can
-   still grow, and only an explicit delete reclaims anything.
+1. **No ORPHAN SWEEP — and none is needed.** An entry's bytes live in the database, in
+   that entry's own row, so every path that removes an entry removes its bytes with it:
+   deleting an entry, emptying a store and deleting a store all reclaim everything, and
+   `PUT` over an existing name replaces the row and therefore the previous content. The
+   orphan-file class this list used to describe (content-addressed files left behind by
+   an overwrite or a failed reclamation) was removed WITH the files in slice 17 (ledger
+   row 79). There is no garbage-collector process and no `POST /gc`-style route, because
+   there is nothing for one to collect.
 2. **No concurrency control.** A `PUT` is an unconditional overwrite. Two writers
    racing one name lose one update (last write wins); there is **no** `ETag`,
    `If-Match`, version number or compare-and-swap. If two players must not clobber

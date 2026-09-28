@@ -1,5 +1,5 @@
 /**
- * Metadata: one SQLite database, one place that defines its shape.
+ * The database: one SQLite file, one place that defines its shape.
  *
  * `node:sqlite` (`DatabaseSync`) ships in Node 24 and loads with NO flag (verified
  * on this box: `node -e "new (require('node:sqlite').DatabaseSync)(':memory:')"`).
@@ -12,13 +12,38 @@
  * replaces and is guarded by the presence of the old column, so it runs exactly once.
  * A column ADDED to an existing table cannot come from `CREATE TABLE IF NOT EXISTS`
  * (which is a no-op once the table exists), so it lands as an add-if-absent step:
- * `migrateKeyAuditColumns` for the slice-11 edit audit columns.
+ * `migrateKeyAuditColumns` for the slice-11 edit audit columns, and
+ * `migrateObjectContentColumn` for slice 17's item bytes (ledger row 79).
+ *
+ * ## The concurrency settings, and why each one is here (ledger rows 77, 78)
+ *
+ * `journal_mode = WAL` is what makes a reader NEVER wait on a writer — measured on
+ * this box (row 77): in `DELETE` mode a reader hit the writer's lock on ~22% of reads,
+ * in WAL on 0%. `busy_timeout` makes a second WRITER QUEUE instead of failing with
+ * `database is locked` (SQLite still serialises writers). `synchronous = FULL` fsyncs
+ * the WAL on every commit: corruption-safety over write speed, which is the trade the
+ * owner chose. And every multi-statement mutation runs inside `BEGIN IMMEDIATE`
+ * ({@link withImmediateTransaction}) so the write lock is taken UP FRONT rather than
+ * on an upgrade, which is the one case SQLite does not retry under `busy_timeout`.
+ *
+ * The three settings are pinned by PIN Y4–Y7 (`tests/concurrency.test.ts`).
  */
 
 import { DatabaseSync } from "node:sqlite";
 
 /** The store kind that exists from day one, and thus the one the column defaults to. */
 export const DEFAULT_STORE_KIND = "bytes";
+
+/**
+ * How long a connection waits for a lock another connection holds, in milliseconds.
+ *
+ * 5000 ms is chosen to be far longer than any write this service performs (its
+ * largest mutation is a store delete, and the whole gate's write burst is bounded by
+ * seconds) while still finite: a deadlock ends in a loud error after five seconds
+ * rather than hanging a request forever. Named here because PIN Y7 asserts it is
+ * non-zero and the docs quote it; there is no second place it is written.
+ */
+export const BUSY_TIMEOUT_MS = 5000;
 
 const MIGRATIONS: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS store_kinds (
@@ -33,12 +58,22 @@ const MIGRATIONS: readonly string[] = [
      created_at TEXT NOT NULL
    )
    STRICT`,
+  // ONE ROW PER ENTRY, and since slice 17 (ledger row 79) the row CARRIES the bytes:
+  // `content` is the object's content, `sha256`/`size` are the hash and length of those
+  // very bytes, and `created_at` is when this name was last written. `content` is
+  // nullable in BOTH the fresh shape and the migrated one — SQLite cannot add a NOT NULL
+  // column without inventing a default, and a default value for content would be a lie —
+  // so "content is not NULL for every row" is an invariant enforced by the boot import
+  // (`src/storage/migrate.ts`) and checked loudly on every read, never by a silent
+  // fallback. `store`, `name`, `sha256`, `size` and `created_at` are UNCHANGED: the
+  // `sha256` column is still the content hash the API exposes as `x-serverstore-sha256`.
   `CREATE TABLE IF NOT EXISTS objects (
      store TEXT NOT NULL,
      name TEXT NOT NULL,
      sha256 TEXT NOT NULL,
      size INTEGER NOT NULL,
      created_at TEXT NOT NULL,
+     content BLOB,
      PRIMARY KEY(store, name)
    )
    STRICT`,
@@ -94,6 +129,44 @@ const KEY_AUDIT_MIGRATION: readonly { readonly column: string; readonly statemen
 ];
 
 /**
+ * Run `fn` inside ONE `BEGIN IMMEDIATE` … `COMMIT`, rolling back on any throw.
+ *
+ * THIS is the ONE transaction seam (ledger rows 77/78): every multi-statement
+ * mutation in this codebase goes through it — minting a key (the key row plus its
+ * scope rows), editing one, the two-step store delete, and each store's slice of the
+ * boot import. `IMMEDIATE` takes the write lock when the transaction BEGINS rather
+ * than when the first statement needs it, so a second writer QUEUES under
+ * `busy_timeout` instead of failing `database is locked` on a lock upgrade — the one
+ * failure `busy_timeout` does not retry in WAL.
+ *
+ * The body must be SYNCHRONOUS: `node:sqlite` is synchronous, so an `await` inside
+ * would let another request's statement run INSIDE this transaction on the same
+ * connection. Callers do not await inside the callback, and the callback's return
+ * value is passed through.
+ *
+ * A failed ROLLBACK is reported too, never swallowed: it means the connection is in a
+ * state the caller must know about, and a bare rethrow would hide it (AGENTS.md rule 1).
+ */
+export function withImmediateTransaction<T>(db: DatabaseSync, fn: () => T): T {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = fn();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch (rollbackError) {
+      throw new Error(
+        `transaction failed (${(error as Error).message}) and ROLLBACK also failed ` +
+          `(${(rollbackError as Error).message})`,
+      );
+    }
+    throw error;
+  }
+}
+
+/**
  * Apply {@link KEY_AUDIT_MIGRATION} to a database that predates it. Idempotent (the
  * column's absence is the guard, so a second boot adds nothing) and atomic (both
  * columns land together or neither does), and LOUD on failure rather than booting a
@@ -102,15 +175,40 @@ const KEY_AUDIT_MIGRATION: readonly { readonly column: string; readonly statemen
 function migrateKeyAuditColumns(db: DatabaseSync): void {
   const missing = KEY_AUDIT_MIGRATION.filter((step) => !hasColumn(db, "access_keys", step.column));
   if (missing.length === 0) return;
-  db.exec("BEGIN");
   try {
-    for (const step of missing) db.exec(step.statement);
-    db.exec("COMMIT");
+    withImmediateTransaction(db, () => {
+      for (const step of missing) db.exec(step.statement);
+    });
   } catch (error) {
-    db.exec("ROLLBACK");
     throw new Error(
       `could not add the key-audit columns (${missing.map((step) => step.column).join(", ")}) ` +
         `to access_keys: ${(error as Error).message}`,
+    );
+  }
+}
+
+/**
+ * The slice-17 add-if-absent step (ledger row 79), in the shape rows 42/53 established:
+ * the guard is the COLUMN'S OWN ABSENCE, so a second boot adds nothing and a fresh
+ * database (whose `CREATE TABLE` already carries `content`) is untouched.
+ *
+ * Nullable on purpose, in the fresh shape AND the migrated one: SQLite cannot add a
+ * NOT NULL column without a default, and any default for object content would be an
+ * invented value. The invariant "every row's content is present and hashes to its
+ * `sha256`" is established by the boot import (`src/storage/migrate.ts`) and enforced
+ * loudly at read time, never by a fallback.
+ */
+function migrateObjectContentColumn(db: DatabaseSync): void {
+  if (hasColumn(db, "objects", "content")) return;
+  try {
+    withImmediateTransaction(db, () => {
+      db.exec("ALTER TABLE objects ADD COLUMN content BLOB");
+    });
+  } catch (error) {
+    throw new Error(
+      `could not add the objects.content column: ${(error as Error).message}. The item ` +
+        `bytes cannot be stored without it, so the boot is refused rather than serving ` +
+        `a database whose rows would fail on every read.`,
     );
   }
 }
@@ -144,12 +242,11 @@ function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
 function migrateLegacyKeyScope(db: DatabaseSync): void {
   // A fresh database is created in the new shape, so there is nothing to carry over.
   if (!hasColumn(db, "access_keys", "store")) return;
-  db.exec("BEGIN");
   try {
-    for (const statement of LEGACY_SCOPE_MIGRATION) db.exec(statement);
-    db.exec("COMMIT");
+    withImmediateTransaction(db, () => {
+      for (const statement of LEGACY_SCOPE_MIGRATION) db.exec(statement);
+    });
   } catch (error) {
-    db.exec("ROLLBACK");
     throw new Error(
       `could not migrate the pre-slice-8 access_keys.store column to key_stores: ` +
         `${(error as Error).message}. A key scoped to a store that no longer exists is ` +
@@ -159,24 +256,34 @@ function migrateLegacyKeyScope(db: DatabaseSync): void {
 }
 
 /**
- * Open (creating if needed) the metadata database and apply the schema.
+ * Open (creating if needed) the database and apply the schema and the pragmas.
  *
  * `dbPath` is passed in by the caller — nothing here reads `process.env`, so a test
  * can point it at a temp directory and `main.ts` can point it at the real data root.
+ *
+ * The pragmas are the concurrency contract (ledger rows 77/78) and their ORDER
+ * matters: `busy_timeout` first, so even the journal-mode change queues rather than
+ * failing on a lock; then `foreign_keys`; then `journal_mode = WAL` (persisted in the
+ * FILE, so it is set once and stays); then `synchronous = FULL` (per connection, so it
+ * is set on every open). PIN Y7 asserts all four values on a connection this function
+ * produced.
  */
 export function openDatabase(dbPath: string): DatabaseSync {
   const db = new DatabaseSync(dbPath);
+  db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
   db.exec("PRAGMA foreign_keys = ON");
-  // Rollback journal, deliberately NOT WAL: this box runs one process against one
-  // file, so WAL buys nothing, and it would scatter a just-minted key's row into a
-  // `-wal` sidecar. Pin 5 asserts the raw key is absent from the database BYTES; a
-  // DELETE journal keeps every committed row inside that one file, so the pin tests
-  // the claim rather than the journal mode.
-  db.exec("PRAGMA journal_mode = DELETE");
+  // WAL, deliberately (ledger rows 77, 78): a reader must never be blocked by a
+  // writer. The cost, said plainly in docs/STORAGE.md: a database now has `-wal` and
+  // `-shm` sidecars, so a backup must copy all three files or use SQLite's own backup
+  // — a plain copy of `serverstore.db` alone can miss the newest commits.
+  db.exec("PRAGMA journal_mode = WAL");
+  // Corruption-safety over write speed: fsync the WAL on every commit.
+  db.exec("PRAGMA synchronous = FULL");
   for (const statement of MIGRATIONS) {
     db.exec(statement);
   }
   migrateLegacyKeyScope(db);
   migrateKeyAuditColumns(db);
+  migrateObjectContentColumn(db);
   return db;
 }

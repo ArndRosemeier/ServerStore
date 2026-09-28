@@ -17,7 +17,7 @@ import { getPath } from "hono/utils/url";
 import type { DatabaseSync } from "node:sqlite";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { openDatabase } from "../core/db.ts";
+import { openDatabase, withImmediateTransaction } from "../core/db.ts";
 import { errorBody, StoreError, toStoreError, type ErrorCode } from "../core/errors.ts";
 import { describeStores, countLiveAdminKeys, deleteKey, editKey, findKeyById, isLiveAdminKey, keysHoldingStore, listKeys, mintKey, resolveKey, revokeKey, touchKey } from "../core/keys.ts";
 import {
@@ -44,7 +44,7 @@ import {
 import { clientIdentity, createRateLimiter } from "./ratelimit.ts";
 import { createStore, deleteStore, ensureMasterStore, listStores, requireStore } from "../stores/registry.ts";
 import { handlerFor } from "../storage/kinds.ts";
-import { removeStoreDir } from "../storage/fs.ts";
+import { importLegacyObjects } from "../storage/migrate.ts";
 
 export { DEFAULT_HOST, DEFAULT_MAX_BYTES, DEFAULT_PORT };
 
@@ -329,6 +329,12 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
   };
   const db = openDatabase(deps.dbPath);
   ensureMasterStore(db, deps.now);
+  // SLICE 17's ONE BOOT MIGRATION (ledger rows 42/53, 78, 79): carry any pre-slice-17
+  // blob files into `objects.content`, re-verifying every hash, then remove the layout.
+  // It runs BEFORE a single request is served, and a missing/corrupt/mismatched blob
+  // THROWS — the app is never built, so the process exits loudly instead of serving a
+  // data root it could not carry across (AGENTS.md rule 1).
+  importLegacyObjects(db, deps.dataRoot);
   const ctx: AppContext = { deps, db };
   // ONE limiter per app, over the SAME injected clock the app uses, so a pin can freeze
   // time and drive the exact window boundary (ledger row 64h).
@@ -888,16 +894,16 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
       throw new StoreError("invalid_body", "a PUT must carry a non-empty body");
     }
     const handler = handlerFor(store.kind);
-    const metadata = await handler.write(ctx.db, deps.dataRoot, store.name, name, bytes, deps.now);
+    const metadata = handler.write(ctx.db, deps.dataRoot, store.name, name, bytes, deps.now);
     return c.json({ store: store.name, name, ...metadata }, 201);
   });
 
-  app.get("/stores/:store/objects/:name", async (c) => {
+  app.get("/stores/:store/objects/:name", (c) => {
     const store = requireStore(ctx.db, c.req.param("store"));
     const name = parseObjectName(c.req.param("name"));
     c.get("auth").authorize(store.name, "read");
     const handler = handlerFor(store.kind);
-    const found = await handler.read(ctx.db, deps.dataRoot, store.name, name);
+    const found = handler.read(ctx.db, deps.dataRoot, store.name, name);
     if (found === null) {
       throw new StoreError("not_found", `no object ${JSON.stringify(name)} in store ${JSON.stringify(store.name)}`);
     }
@@ -911,33 +917,33 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
     });
   });
 
-  app.delete("/stores/:store/objects/:name", async (c) => {
+  app.delete("/stores/:store/objects/:name", (c) => {
     const store = requireStore(ctx.db, c.req.param("store"));
     const name = parseObjectName(c.req.param("name"));
     c.get("auth").authorize(store.name, "delete");
-    // THE BLOB-VS-ROW DECISION IS THE KIND HANDLER'S (ledger row 70(e)), not this
-    // route's: the handler removes the row and reclaims the blob ONLY when no other row
-    // in the store names the same content address. The route's job is the boundary
+    // The ROW IS THE CONTENT (ledger row 79), so removing it reclaims everything and
+    // there is no blob-vs-row decision left to make. The route's job is the boundary
     // (`requireStore` → `authorize`) and the 404 for a name that was never there.
-    const removed = await handlerFor(store.kind).remove(ctx.db, deps.dataRoot, store.name, name);
+    const removed = handlerFor(store.kind).remove(ctx.db, deps.dataRoot, store.name, name);
     if (!removed) {
       throw new StoreError("not_found", `no object ${JSON.stringify(name)} in store ${JSON.stringify(store.name)}`);
     }
     return c.body(null, 204);
   });
 
-  // EMPTY A STORE (ledger row 70(d)/(e)): every object row goes and its bytes are
-  // reclaimed, while the store itself and every key's scope stay exactly as they were —
-  // a key scoped to an empty store is perfectly valid. WHO may do it is the SAME `delete`
-  // permission that already gates deleting ONE entry (a scoped game admin may clean its
-  // own store); the ORDER is `requireStore` (404/`invalid_name`) → `authorize` (403) →
-  // the confirm token (400), so an unauthorized caller learns nothing about the token
-  // rule and a refusal has no side effect. IDEMPOTENT: an empty store answers 200 with 0.
-  app.delete("/stores/:store/objects", async (c) => {
+  // EMPTY A STORE (ledger row 70(d)/(e)): every object row goes — and with it every
+  // byte, because the row IS the content — while the store itself and every key's scope
+  // stay exactly as they were. A key scoped to an empty store is perfectly valid. WHO
+  // may do it is the SAME `delete` permission that already gates deleting ONE entry (a
+  // scoped game admin may clean its own store); the ORDER is `requireStore`
+  // (404/`invalid_name`) → `authorize` (403) → the confirm token (400), so an
+  // unauthorized caller learns nothing about the token rule and a refusal has no side
+  // effect. IDEMPOTENT: an empty store answers 200 with 0.
+  app.delete("/stores/:store/objects", (c) => {
     const store = requireStore(ctx.db, c.req.param("store"));
     c.get("auth").authorize(store.name, "delete");
     requireConfirm(c, store.name);
-    const deleted = await handlerFor(store.kind).empty(ctx.db, deps.dataRoot, store.name);
+    const deleted = handlerFor(store.kind).empty(ctx.db, deps.dataRoot, store.name);
     return c.json({ store: store.name, deleted });
   });
 
@@ -949,7 +955,7 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
   // an EMPTY scope, which the model forbids), and deleting the referencing keys would
   // kill credentials silently. The refusal makes the console show the blockers, and the
   // hard-delete route in this same slice is how he clears them.
-  app.delete("/stores/:store", async (c) => {
+  app.delete("/stores/:store", (c) => {
     const store = requireStore(ctx.db, c.req.param("store"));
     const auth = c.get("auth");
     auth.requireMasterAdmin();
@@ -964,17 +970,20 @@ export function createApp(dependencies: AppDependencies): Hono<{ Variables: Vari
           `; delete or re-scope ${blockers.length === 1 ? "that key" : "those keys"} first`,
       );
     }
-    // Object rows and bytes FIRST, then the registry row, then the directory: a crash
-    // in between leaves an EMPTY store (retryable) or orphan bytes (space), never a store
-    // row whose objects are gone or a scope row pointing at nothing.
-    await handlerFor(store.kind).empty(ctx.db, deps.dataRoot, store.name);
-    if (!deleteStore(ctx.db, store.name)) {
-      throw new StoreError(
-        "internal",
-        `store ${JSON.stringify(store.name)} vanished while it was being deleted`,
-      );
-    }
-    await removeStoreDir(deps.dataRoot, store.name);
+    // ONE `BEGIN IMMEDIATE` around the two statements (ledger rows 77/78), so a
+    // concurrent writer QUEUES rather than failing and a crash can never leave the
+    // store's entries deleted while its registry row survives. There is no blob tree
+    // and no directory to remove: the object rows ARE the bytes (ledger row 79), so the
+    // old `removeStoreDir()` step is gone rather than moved.
+    withImmediateTransaction(ctx.db, () => {
+      handlerFor(store.kind).empty(ctx.db, deps.dataRoot, store.name);
+      if (!deleteStore(ctx.db, store.name)) {
+        throw new StoreError(
+          "internal",
+          `store ${JSON.stringify(store.name)} vanished while it was being deleted`,
+        );
+      }
+    });
     return c.json({ name: store.name, deletedAt: new Date(deps.now()).toISOString() });
   });
 

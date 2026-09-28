@@ -269,12 +269,22 @@ function lastUsedAt(server: ReturnType<typeof createTestServer>): string | null 
   return row?.last_used_at ?? null;
 }
 
-/** The bytes AND metadata of every object in every store — the "untouched" witness. */
+/**
+ * The rows AND bytes of every object in every store — the "untouched" witness.
+ *
+ * It reads `length(content)` rather than the database file's size: with WAL on (ledger
+ * row 78) the `-wal` sidecar grows and shrinks independently of whether THIS store
+ * changed, so a file-length witness would fail for the journal's reason rather than the
+ * claim's. The content length is the stronger statement anyway — it is the bytes.
+ */
 function betaState(server: ReturnType<typeof createTestServer>): unknown {
   const rows = server.direct((db) =>
     db
-      .prepare("SELECT store, name, sha256, size, created_at FROM objects ORDER BY store, name")
+      .prepare(
+        "SELECT store, name, sha256, size, created_at, length(content) AS content_length " +
+          "FROM objects ORDER BY store, name",
+      )
       .all(),
   );
-  return { rows, files: server.listBlobFiles(), dbBytes: server.readDbBytes().byteLength };
+  return { rows, files: server.listBlobFiles() };
 }

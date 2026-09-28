@@ -6,8 +6,6 @@
 
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
 import {
@@ -37,12 +35,15 @@ describe("the object round-trip (pin 4)", () => {
     expect(got.headers.get("x-serverstore-sha256")).toBe(expected);
     expect(await got.text()).toBe(PAYLOAD);
 
-    // And the bytes on disk hash to the same value: the round trip is not a cache.
-    const onDisk = server.listBlobFiles();
-    const relative = `${expected.slice(0, 2)}/${expected}`;
-    expect(onDisk).toEqual([`master/blobs/${relative}`]);
-    const blob = readFileSync(join(server.dataRoot, "stores", "master", "blobs", relative));
-    expect(createHash("sha256").update(blob).digest("hex")).toBe(expected);
+    // And the bytes live IN the database (pin Y1, ledger row 79): the content column
+    // holds exactly those bytes and hashes to the same value, and NO per-item file
+    // exists anywhere under the data root any more.
+    const storedBytes = server.objectContent("master", "greeting.txt");
+    expect(storedBytes, "the objects row must carry its bytes").not.toBeNull();
+    expect(createHash("sha256").update(storedBytes as Uint8Array).digest("hex")).toBe(expected);
+    expect(Buffer.from(storedBytes as Uint8Array).toString()).toBe(PAYLOAD);
+    expect(server.listBlobFiles()).toEqual([]);
+    expect(server.listDataFiles().filter((path) => path.startsWith("stores/"))).toEqual([]);
   });
 
   test("binary bytes survive the round trip exactly", async () => {
@@ -87,30 +88,33 @@ describe("the object round-trip (pin 4)", () => {
     expect((await readError(response)).code).toBe("not_found");
   });
 
-  test("a GET where the blob is missing from disk fails loudly, not with empty bytes", async () => {
+  test("a GET whose row has no content fails loudly, not with empty bytes", async () => {
     const server = createTestServer();
     const key = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.put("/stores/master/objects/gone.txt", PAYLOAD, key);
-    // Prove the failure path: remove the blob behind the row's back.
-    const { rmSync } = await import("node:fs");
-    const blob = join(server.dataRoot, "stores", "master", "blobs", sha(PAYLOAD).slice(0, 2), sha(PAYLOAD));
-    rmSync(blob);
+    // Prove the failure path: blank the content behind the row's back, which is what a
+    // database written AROUND the storage layer looks like. The boot import guarantees
+    // this cannot happen through the app, so reaching it must be a loud 500.
+    server.direct((db) => {
+      db.prepare("UPDATE objects SET content = NULL WHERE store = 'master' AND name = 'gone.txt'").run();
+    });
     const response = await server.get("/stores/master/objects/gone.txt", key);
     expect(response.status).toBeGreaterThanOrEqual(500);
     expect((await readError(response)).code).toBe("internal");
   });
 
-  test("DELETE removes the row and reclaims the UNSHARED blob (the shared case is pin X7)", async () => {
+  test("DELETE removes the row and its bytes with it (the shared-content case is pin X7)", async () => {
     const server = createTestServer();
     const key = server.mint({ stores: ["*"], perms: ["admin"] });
     await server.put("/stores/master/objects/temp.txt", PAYLOAD, key);
-    expect(server.listBlobFiles()).toHaveLength(1);
+    expect(server.objectContent("master", "temp.txt")).not.toBeNull();
 
     const del = await server.del("/stores/master/objects/temp.txt", key);
     expect(del.status).toBe(204);
     expect((await server.get("/stores/master/objects/temp.txt", key)).status).toBe(404);
-    // The blob goes too: no other row names this content address. The SHARED case — where
-    // the file must SURVIVE — is pinned by X7 (`tests/destructive.test.ts`).
+    // The bytes went WITH the row: they are the same thing now, so there is no second
+    // place that could still hold them and no orphan left behind.
+    expect(server.objectContent("master", "temp.txt")).toBeNull();
     expect(server.listBlobFiles()).toEqual([]);
   });
 

@@ -12,6 +12,12 @@ data/
 # committed. `tests/helpers/browser.ts` deletes each profile when it kills the browser.
 /.browser-scratch/
 
+# The slice-17 storage pins' scratch (`tests/concurrency.test.ts`, `tests/sqlite-core.test.ts`):
+# the legacy data roots the boot import reads, and the data roots two CHILD PROCESSES
+# write to / are SIGKILLed against. Under the worktree, never `/tmp`, and deleted by the
+# tests' own `afterAll`.
+/.sqlite-scratch/
+
 # The data root lives OUTSIDE the repo (ledger row 13). These are the preventive
 # half of PIN S6; the tripwire in tests/secrets.test.ts is the enforcing half.
 *.db

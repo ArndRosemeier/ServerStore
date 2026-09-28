@@ -9,6 +9,7 @@
 
 import { createHash } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -89,7 +90,18 @@ export interface TestServer {
   /** Open a second app on the SAME data root and database (the "second boot"). */
   reboot(): TestServer;
   writeFile(relativePath: string, contents: string): void;
+  /**
+   * Every byte of the DATABASE AT REST: `serverstore.db` plus its WAL sidecars.
+   *
+   * WAL is ON since slice 17 (ledger rows 77/78), so a just-committed row lives in
+   * `serverstore.db-wal` until SQLite checkpoints — reading only the main file would
+   * make "this value IS stored" and "this value is NOT stored" both fail for a reason
+   * that is about the journal, not the claim. Concatenating the three files is what
+   * makes PIN 5's at-rest claim a statement about the DATABASE.
+   */
   readDbBytes(): Buffer;
+  /** The `objects.content` of one entry, or `null` when the row or its bytes are absent. */
+  objectContent(store: string, name: string): Uint8Array | null;
   /** Every file under the data root, root-relative paths, sorted. */
   listDataFiles(): string[];
   /** Every file under `stores/` (i.e. bytes a request could have written). */
@@ -180,7 +192,22 @@ function build(deps: {
     reboot: () => build(deps),
     writeFile: (relativePath, contents) =>
       writeFileSync(join(deps.dataRoot, relativePath), contents),
-    readDbBytes: () => readFileSync(deps.dbPath),
+    readDbBytes: () => {
+      // The DATABASE, sidecars included. `-shm` is a transient index; `-wal` carries
+      // the newest committed pages. Either may be absent (a checked-in/rolled-back
+      // database), which is why each is read if present rather than assumed.
+      const parts = [deps.dbPath, `${deps.dbPath}-wal`, `${deps.dbPath}-shm`]
+        .filter((path) => existsSync(path))
+        .map((path) => readFileSync(path));
+      return Buffer.concat(parts);
+    },
+    objectContent: (store, name) =>
+      direct((db) => {
+        const row = db
+          .prepare("SELECT content FROM objects WHERE store = ? AND name = ?")
+          .get(store, name) as { content: Uint8Array | null } | undefined;
+        return row === undefined || row.content === null ? null : new Uint8Array(row.content);
+      }),
     listDataFiles: () => walk(deps.dataRoot),
     listBlobFiles: () => {
       try {

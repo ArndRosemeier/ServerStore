@@ -6,14 +6,33 @@
  * Adding a kind means writing one handler and registering it here — not editing the
  * auth middleware, the routes, or the storage layer.
  *
- * `assertSupportedKind` fails LOUDLY on an unknown kind. It is not a fallback to
- * `bytes`: a database row this process cannot honour is a 500, never a guess.
+ * ## THE MEDIUM IS INVISIBLE HERE (ledger row 78)
+ *
+ * Since slice 17 the `bytes` kind stores an entry's bytes in the `objects.content`
+ * column of the SAME SQLite database that holds keys and stores. The `kind` vocabulary
+ * did NOT change: `bytes` still means "an entry is opaque bytes" and the API/console
+ * see exactly what they saw before. What moved is the MEDIUM, and this file is the
+ * only place that knows it: every statement against `objects` lives here or in
+ * `src/storage/migrate.ts`, and no route, core module or console names a table, a
+ * column or a path.
+ *
+ * ## Why the operations are SYNCHRONOUS
+ *
+ * The medium is an embedded database driven by `node:sqlite`, which is synchronous, so
+ * there is nothing to await and an `async` signature would be a lie. It is also what
+ * makes `BEGIN IMMEDIATE` possible at all: `src/core/db.ts withImmediateTransaction`
+ * requires a synchronous body (an `await` inside a transaction on a shared connection
+ * would let another request's statement run inside it). The route call sites are
+ * unchanged — `await handler.read(...)` on a value is the same expression it always
+ * was. A future ASYNC medium (Postgres, object storage) would reintroduce promises, and
+ * the transaction seam would have to be re-derived with it; that trade is recorded in
+ * docs/SEAM-INDEX.md rather than hidden.
  */
 
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { StoreError } from "../core/errors.ts";
 import type { StoreKind } from "../core/types.ts";
-import { deleteBlob, readBlob, removeStoreBlobs, writeBlob } from "./fs.ts";
 
 export interface StoredObject {
   readonly store: string;
@@ -37,15 +56,27 @@ export interface StoreKindHandler {
    * `prefix` is OPTIONAL and is the ONLY filter that exists (ledger row 61): omitted
    * means every object in the store, exactly as before the filter was added. The
    * caller (the route) has already validated it through `parseObjectPrefix()`; this
-   * seam only decides how to ASK the database for the rows.
+   * seam only decides how to ASK the database for the rows. `content` is deliberately
+   * NOT projected here — a listing must never pull every entry's bytes into memory.
    */
   list(db: DatabaseSync, store: string, prefix?: string): StoredObject[];
+  /**
+   * Read ONE entry: its metadata plus its bytes, or `null` when the name is not there.
+   *
+   * `dataRoot` is part of the handler contract so a FILE-BACKED medium remains a
+   * drop-in; this medium is the database and does not use it.
+   */
   read(
     db: DatabaseSync,
     dataRoot: string,
     store: string,
     name: string,
-  ): Promise<{ metadata: ObjectMetadata; bytes: Uint8Array } | null>;
+  ): { metadata: ObjectMetadata; bytes: Uint8Array } | null;
+  /**
+   * Write `bytes` under `name` and return the metadata the route reports. An existing
+   * name is REPLACED — the primary key decides, so this is one upsert rather than a
+   * read-then-branch race. The content hash is computed from the bytes in hand.
+   */
   write(
     db: DatabaseSync,
     dataRoot: string,
@@ -53,29 +84,23 @@ export interface StoreKindHandler {
     name: string,
     bytes: Uint8Array,
     now: () => number,
-  ): Promise<ObjectMetadata>;
+  ): ObjectMetadata;
   /**
-   * Delete ONE object and reclaim its bytes — the seam where the SHARING TRAP is
-   * handled (ledger row 70(e)). Returns whether a row was removed; the route turns
-   * `false` into a 404 and never deletes a blob for a name that was not there.
+   * Delete ONE object. Returns whether a row was removed; the route turns `false` into
+   * a 404.
    *
-   * Content-addressed storage means the SAME `sha256` can back two names in one store,
-   * so the blob goes ONLY when no remaining row names it. That decision lives HERE, in
-   * the kind handler, and not in the route: it is a fact about how this kind stores
-   * bytes, and a second kind (or a second delete route) must inherit it rather than
-   * re-derive it.
+   * THE SHARED-BLOB CHECK IS GONE (ledger rows 70(e), 79): each row carries its own
+   * bytes now, so there is nothing to share and no way to delete a survivor's content
+   * by accident. That removes the orphan-blob class of bug — a file left by an
+   * overwrite or a failed reclamation — entirely, not merely its symptoms.
    */
-  remove(db: DatabaseSync, dataRoot: string, store: string, name: string): Promise<boolean>;
+  remove(db: DatabaseSync, dataRoot: string, store: string, name: string): boolean;
   /**
-   * Delete EVERY object of a store and reclaim its whole blob tree — the EMPTY-STORE
-   * seam. Returns the number of rows removed, so the route can report an idempotent
-   * `0` for an already-empty store.
-   *
-   * Rows first, then bytes: after the DELETE no row of this store can reference a blob,
-   * so removing the store's own tree cannot corrupt another store's data, and a crash in
-   * between leaves orphan bytes rather than an unreadable row.
+   * Delete EVERY object of a store. Returns the number of rows removed, so the route
+   * can report an idempotent `0` for an already-empty store. There is no byte tree to
+   * reclaim afterwards: the rows ARE the bytes.
    */
-  empty(db: DatabaseSync, dataRoot: string, store: string): Promise<number>;
+  empty(db: DatabaseSync, dataRoot: string, store: string): number;
 }
 
 interface ObjectRow {
@@ -84,6 +109,11 @@ interface ObjectRow {
   sha256: string;
   size: number;
   created_at: string;
+}
+
+/** A row plus its bytes — the point read, and only the point read. */
+interface ObjectRowWithContent extends ObjectRow {
+  content: Uint8Array | null;
 }
 
 function rowToObject(row: ObjectRow): StoredObject {
@@ -120,6 +150,9 @@ export const PREFIX_RANGE_HIGH_SENTINEL = "\uffff";
  * list-prefix, point read) project the SAME row shape, and a column added to one of
  * them without the others is exactly the drift `rowToObject` exists to absorb
  * (AGENTS.md rule 4 — this was three copies before slice 13 touched two of them).
+ *
+ * `content` is NOT in this list: it is added explicitly by the one statement that
+ * needs the bytes, so a listing can never load them by accident.
  */
 const OBJECT_COLUMNS = "store, name, sha256, size, created_at";
 
@@ -149,7 +182,17 @@ export function objectPrefixRange(store: string, prefix: string): string[] {
   return [store, prefix, `${prefix}${PREFIX_RANGE_HIGH_SENTINEL}`];
 }
 
-/** The `bytes` kind: an object is a content-addressed blob, keyed by its name. */
+/** sha256 of a byte buffer, hex. The content address the API exposes. */
+export function sha256Of(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * The `bytes` kind: an object is opaque bytes held IN the objects row, keyed by name.
+ *
+ * Every statement below is the whole medium; `dataRoot` is unused because this medium
+ * is the database (see the interface note).
+ */
 const bytesHandler: StoreKindHandler = {
   kind: "bytes",
 
@@ -167,54 +210,65 @@ const bytesHandler: StoreKindHandler = {
     return rows.map(rowToObject);
   },
 
-  async read(db, dataRoot, store, name) {
+  read(db, _dataRoot, store, name) {
     const row = db
-      .prepare(`SELECT ${OBJECT_COLUMNS} FROM objects WHERE store = ? AND name = ?`)
-      .get(store, name) as ObjectRow | undefined;
+      .prepare(`SELECT ${OBJECT_COLUMNS}, content FROM objects WHERE store = ? AND name = ?`)
+      .get(store, name) as ObjectRowWithContent | undefined;
     if (row === undefined) return null;
-    const bytes = await readBlob(dataRoot, store, row.sha256, row.size);
+    const bytes = row.content;
+    if (bytes === null || bytes === undefined) {
+      // The boot import guarantees every row has content; reaching here means a row
+      // was written around the storage layer. LOUD, never empty bytes (AGENTS.md
+      // rule 1) — and the route's error surface turns it into a 500.
+      throw new StoreError(
+        "internal",
+        `object ${JSON.stringify(name)} in store ${JSON.stringify(store)} has no content ` +
+          `in the database; the boot import did not cover it`,
+      );
+    }
+    if (bytes.byteLength !== row.size) {
+      throw new StoreError(
+        "internal",
+        `object ${JSON.stringify(name)} in store ${JSON.stringify(store)} holds ` +
+          `${bytes.byteLength} bytes but its row says ${row.size} — refusing to serve it`,
+      );
+    }
     return {
       metadata: { sha256: row.sha256, size: row.size, createdAt: row.created_at },
-      bytes,
+      bytes: new Uint8Array(bytes),
     };
   },
 
-  async write(db, dataRoot, store, name, bytes, now) {
-    const sha256 = await writeBlob(dataRoot, store, bytes);
+  write(db, _dataRoot, store, name, bytes, now) {
+    // The content hash is computed from the bytes in hand, so `sha256` can never
+    // drift from `content` (pin Y1).
+    const sha256 = sha256Of(bytes);
     const createdAt = new Date(now()).toISOString();
     // An existing object of the same name is replaced: the primary key decides, so
-    // this is an upsert rather than a read-then-branch race.
+    // this is an upsert rather than a read-then-branch race. One statement, so SQLite
+    // makes it atomic on its own; a concurrent writer queues under `busy_timeout`.
     db.prepare(
-      `INSERT INTO objects (store, name, sha256, size, created_at) VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO objects (store, name, sha256, size, created_at, content)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(store, name) DO UPDATE SET sha256 = excluded.sha256,
-                                              size = excluded.size,
-                                              created_at = excluded.created_at`,
-    ).run(store, name, sha256, bytes.byteLength, createdAt);
+                                             size = excluded.size,
+                                             created_at = excluded.created_at,
+                                             content = excluded.content`,
+    ).run(store, name, sha256, bytes.byteLength, createdAt, bytes);
     return { sha256, size: bytes.byteLength, createdAt };
   },
 
-  async remove(db, dataRoot, store, name) {
-    const row = db
-      .prepare("SELECT sha256 FROM objects WHERE store = ? AND name = ?")
-      .get(store, name) as { sha256: string } | undefined;
-    if (row === undefined) return false;
-    // THE SHARING CHECK, and it is a check on the ROW SET, not on the file: two names
-    // that were PUT with identical bytes share one blob, so the blob may be removed only
-    // when this store has no OTHER row naming the same content address. (`name <> ?`
-    // excludes the row about to go; SQLite's `LIMIT 1` stops at the first survivor.)
-    const shared = db
-      .prepare("SELECT 1 AS one FROM objects WHERE store = ? AND sha256 = ? AND name <> ? LIMIT 1")
-      .get(store, row.sha256, name);
-    db.prepare("DELETE FROM objects WHERE store = ? AND name = ?").run(store, name);
-    if (shared === undefined) await deleteBlob(dataRoot, store, row.sha256);
-    return true;
+  remove(db, _dataRoot, store, name) {
+    // ONE statement, and the row IS the bytes: there is no second place that could
+    // still reference the content, so no sharing check and no orphan left behind.
+    const result = db.prepare("DELETE FROM objects WHERE store = ? AND name = ?").run(store, name);
+    return Number(result.changes) > 0;
   },
 
-  async empty(db, dataRoot, store) {
+  empty(db, _dataRoot, store) {
+    // The rows ARE the bytes: deleting them reclaims everything, with no tree to walk
+    // and no ordering between rows and files to get wrong.
     const result = db.prepare("DELETE FROM objects WHERE store = ?").run(store);
-    // AFTER the DELETE, so no surviving row can reference anything in the tree this
-    // removes — and the tree is this store's own (`<dataRoot>/stores/<store>/blobs`).
-    await removeStoreBlobs(dataRoot, store);
     return Number(result.changes);
   },
 };
