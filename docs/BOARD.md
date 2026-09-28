@@ -45,28 +45,35 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: 695ba2e · 2026-09-28T07:22Z — the slice-13 (`prefix=` object filter) VERIFIED CODE tip.
-  The docs commit carrying THIS marker is its child, so the marker is the code tip and not itself —
-  a commit cannot name its own sha. `bash scripts/board.sh` must report this marker as an ancestor of
-  origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 13 files ·
-  127 tests · 2.35s; plus THREE own arms, none of them the writer's (D the prefix validation
-  neutralised → P3+P4; E the prefix parsed BEFORE authorization → P6 ALONE; F an empty listing turned
-  into a 404 → P2 ALONE), each with a control before and after; plus GUARD g5 on the LIVE service
-  (restarted, probe PASS exit 0, and the route with a query string answers 401 — not 400 — for an
-  empty or illegal prefix, which is the ordering claim confirmed on the real host). (History: this
-  line read "bd55b7e" (row 57/58, CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27)
+reconciled: 66a3295 · 2026-09-28T07:51Z — the slice-14 (rate limiting) VERIFIED CODE tip. The docs
+  commit carrying THIS marker is its child, so the marker is the code tip and not itself — a commit
+  cannot name its own sha. `bash scripts/board.sh` must report this marker as an ancestor of
+  origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 14 files ·
+  142 tests · 2.26s; plus THREE own arms, none of them the writer's (G the identity collapses to one
+  bucket → R4 ALONE; H the exemption list ignored → R5 ALONE; I a malformed/empty
+  `SERVERSTORE_RATE_LIMIT` silently disabling the limiter → R7 ALONE), each with a control before and
+  after; plus a BOUNDED live-mechanism check on a LOCAL SPAWN of the real entrypoint with a limit of 2
+  (2×401 → 429 with `retry-after: 60` and the exposed header, a second identity independent, the
+  first `X-Forwarded-For` hop the identity, `/healthz` + all three assets + both preflights exempt,
+  `0` = kill-switch, an empty value failing the boot loudly) and, for the disallowed-origin case, a
+  second spawn under an explicit allowlist (listed 204, disallowed 401 — the guard's own refusal, never
+  a 429, while the same identity is still 429 on the API); plus GUARD g5 on the LIVE service
+  (restarted 09:51:16 CEST, probe PASS exit 0, and the live preflight now carries
+  `access-control-expose-headers: x-serverstore-sha256, retry-after`). (History: this line read
+  "695ba2e" (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27)
   and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
   quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (row 65: rate limiting on the public endpoint, worktree
-  |   worktrees/rate-limit, branch feat/rate-limit; design fixed in ledger row 64). Slices 12 (CORS,
-  |   row 58) and 13 (the `prefix=` filter, row 62) are LANDED, VERIFIED and RETIRED. LIVE at
-  |   https://store.futuremagic.de/ with the console, key editing (C2), CORS and the prefix filter;
-  |   service restarted onto the prefix tip and re-probed; EXACTLY ONE live admin key. A turn-based
-  |   browser game from ANOTHER ORIGIN is UNBLOCKED and can read one namespace per request.
-  |   NEXT: row 66 = the headless-browser test (Google Chrome is ALREADY on the box; the driver choice
-  |   goes to the owner before dispatch).
+  | state=NO writer in flight. Slices 12 (CORS, row 58), 13 (the `prefix=` filter, row 62) and 14
+  |   (rate limiting, row 66) are LANDED, VERIFIED and RETIRED. LIVE at
+  |   https://store.futuremagic.de/ with the console, key editing (C2), CORS, the prefix filter and
+  |   the rate limiter (default 600 requests per identity per 60 s, no `SERVERSTORE_RATE_LIMIT` in the
+  |   unit); service restarted onto the limiter tip and re-probed; EXACTLY ONE live admin key. A
+  |   turn-based browser game from ANOTHER ORIGIN is UNBLOCKED and can read one namespace per request.
+  |   NEXT: row 67/68 = the headless-browser test — the OWNER CHOSE to drive the installed
+  |   `/usr/bin/google-chrome` over the DevTools protocol with Node's built-in `WebSocket` and NO new
+  |   dependency; it starts now that the shared `tests/helpers/server.ts` is free.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -829,14 +836,15 @@ QUEUE-CLOSED | row=64 | **RATE LIMITING: DESIGNED (ledger row 64) and DISPATCHED
   `SERVERSTORE_RATE_LIMIT` default **600 per 60 s** with `0` = disabled, and an injected clock so the
   boundary is pinned deterministically — NO synthetic load against the live service. The per-key
   bucket is DEFERRED and named.
-QUEUE | row=66 | NEXT AFTER RATE LIMITING: the OWED HEADLESS-BROWSER test, which closes the same gap
+QUEUE | row=67 (design+dispatch) / 68 (landing) | NEXT: the OWED HEADLESS-BROWSER test, which closes the same gap
   for both the console (rows 49/54) and CORS (rows 57/58): nothing automated drives a real browser.
   TWO things are settled rather than guessed: (1) **the owner chose to DRIVE THE INSTALLED
   `/usr/bin/google-chrome` DIRECTLY over the DevTools protocol with Node's built-in `WebSocket` and NO
   new dependency**, rejecting `playwright-core` (a new dev dependency in a repo that serves this API)
   and Playwright's own Chromium (~170 MB, duplicating a browser already on the box); (2) it STARTS
-  ONLY AFTER row 65 lands, because both slices touch `tests/helpers/server.ts` — a shared file means
-  SERIALIZE, and this is proven by reading the writer's worktree rather than predicted. It must be
+  IT IS READY TO START: row 65 has LANDED and was verified and retired (row 66), so the shared
+  `tests/helpers/server.ts` is free — a shared file meant SERIALIZE, and that was proven by reading
+  the writer's worktree rather than predicted. It must be
   BOUNDED and in-turn: the browser is a process TREE, its kill belongs in a `trap`, scratch lives under
   the worktree (never `/tmp`), and the run ends with a count that cannot self-match
   (`ps -eo comm= | grep -c '^chrome$'` → 0).
@@ -953,6 +961,7 @@ retired_branch=feat/admin-ui
 retired_branch=feat/key-edit
 retired_branch=feat/cors
 retired_branch=feat/object-prefix
+retired_branch=feat/rate-limit
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -960,7 +969,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-65 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-66 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -980,8 +989,11 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   bounded table, exemptions, exposed `Retry-After`, 600/60 s default) and dispatched as row 65,
   |   65 = the limiter LANDED (`src/server/ratelimit.ts`, wired after CORS and before the key guard,
   |   `rate_limited`/429 + `Retry-After`, `SERVERSTORE_RATE_LIMIT` default 600/60 s with `0` = off,
-  |   pins R1-R8, two writer arms A=window-never-rolls->R3 and B=cap-removed->R6 with R2 green) — the
-  |   dispatcher's independent verification is OWED)
+  |   pins R1-R8, two writer arms A=window-never-rolls->R3 and B=cap-removed->R6 with R2 green),
+  |   66 = it is VERIFIED with three DISPATCHER arms (identity->R4 ALONE, exemptions->R5 ALONE, the
+  |   silent-disable fallback->R7 ALONE), a BOUNDED local spawn proving the whole mechanism on a real
+  |   process without touching the public endpoint, the live preflight's `retry-after` exposure, and
+  |   the worktree/branch/session retired — the limiter is LIVE)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
@@ -996,6 +1008,66 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=66 | sha=66a3295 (the VERIFIED CODE tip on the FINAL REBASED tree; the slice-14 landing
+  | itself is row 65 below. Pulled to the remote tip and re-probed BEFORE my own gate and arms, per
+  | GUARD g5)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 14 files · 142 tests ·
+  | 2.26s (raw log `.gate-logs/dispatcher-gate-s14.log`), matching the writer's count.
+  | arms=`.gate-logs/dispatcher-arms-s14.sh`, transcript `.gate-logs/dispatcher-arms-s14.out`, the gate
+  | lock held across a control and ALL THREE arms, sha256 printed before and after each mutation,
+  | restore from HEAD in an EXIT/INT/TERM trap with the hash asserted back, a control BEFORE and AFTER,
+  | and `error TS` = VOID. Arms, none of them the writer's (the writer armed A the window never rolls →
+  | R3 alone, B the cap removed → both R6 tests with R2 green):
+  |   G the IDENTITY collapses to one shared bucket (`src/server/ratelimit.ts` `810abb51…c2753` →
+  |     `8d17a471…5184`) → **RED on PIN R4 ALONE**: the "one bucket for everyone" failure, which would
+  |     throttle the whole world together while every single-identity pin still passes.
+  |   H the EXEMPTION list stops exempting (`src/server/app.ts` `e62df5e8…12a7` → `7797afd5…f222`) →
+  |     **RED on PIN R5 ALONE**: `/healthz`, the console and preflights would be limited, i.e. the
+  |     probe, the operator's UI and every browser would break under exactly the load the limiter
+  |     exists for.
+  |   I a malformed/EMPTY `SERVERSTORE_RATE_LIMIT` silently becomes 0 — disabled — at the call site
+  |     (`src/server/config.ts` `460741d3…b2be` → `05833528…e5b0`) → **RED on PIN R7 ALONE**: `Number("")`
+  |     is 0, so this is the fallback that turns a typo into "unlimited".
+  |   both controls GREEN (14 files · 142 tests), every file back at its before-hash, no VOID arm in the
+  |   final run. **THE HARNESS'S OWN FIRST RUN WAS VOID AND IS RECORDED:** arm G's first mutation gave
+  |   `connectingIp` the narrowed type `"local" | undefined`, so the existing `!== ""` guard became
+  |   `TS2367` (a comparison with no overlap); the harness REFUSED it as VOID rather than crediting it
+  |   to R4 — and it also ABORTED the run, costing arms H and I. The mutation now annotates the type,
+  |   and the harness RECORDS a VOID/unattributable arm and CONTINUES, exiting non-zero at the end: one
+  |   bad arm must not cost the others' evidence. (My own error, caught by exactly the mechanism that
+  |   exists for it.)
+  | live-mechanism check=`.gate-logs/ratelimit-live-check.sh` + `.gate-logs/ratelimit-preflight-check.sh`
+  | and their `.out` transcripts, run against a **LOCAL SPAWN of the repo's own entrypoint** on free
+  | loopback ports with a scratch data root — the PUBLIC endpoint was never hammered (the host rule
+  | forbids synthetic load) and the live unit keeps the 600 default. With `SERVERSTORE_RATE_LIMIT=2`:
+  | two requests 401 then **429** carrying `retry-after: 60` and `access-control-expose-headers:
+  | x-serverstore-sha256, retry-after`, body `{"error":{"code":"rate_limited",…}}`; a SECOND
+  | `CF-Connecting-IP` is independent (401); the FIRST `X-Forwarded-For` hop is the identity (three
+  | calls with different second hops → 401, 401, 429); `/healthz`, `/`, `/app.js`, `/app.css` all exempt
+  | and the allowed-origin preflight 204 while that identity is over its limit; `SERVERSTORE_RATE_LIMIT=0`
+  | → five requests, no 429; an EMPTY value fails the boot loudly. **A second spawn under an explicit
+  | allowlist settled the case my own script had stated wrongly:** with the policy `*` (unset) a
+  | preflight from `https://evil.example.com` is CORRECTLY 204 — my parenthetical said 401 and was
+  | wrong, because a wildcard policy has no disallowed origin; with
+  | `SERVERSTORE_CORS_ORIGINS=https://game.example.com` the disallowed origin's preflight is **401**
+  | (the guard's own refusal, never a 429) while the listed origin is 204 and the same identity is still
+  | 429 on the API. Both children were killed; the audit after shows no orphan (only the live unit's
+  | pid) and 0 chrome processes.
+  | GUARD g5=the live unit was restarted onto the limiter tip at **09:51:16 CEST** (MainPID 131596) with
+  | NO `SERVERSTORE_RATE_LIMIT` in its environment (so the 600 default applies), `scripts/probe-live.sh
+  | https://store.futuremagic.de` → **PASS exit 0**, and the bounded live checks agree: unauthenticated
+  | API 401, `/healthz` 200, console `/` 200, allowed-origin preflight **204** with
+  | `access-control-expose-headers: x-serverstore-sha256, retry-after` — the limiter and its CORS
+  | integration are live. **The live 429 was NOT triggered and must not be**: at 600 per minute that
+  | would be synthetic load, so the threshold is proved deterministically in process and on the local
+  | spawn instead, and this is stated rather than glossed.
+  | retired=worktree worktrees/rate-limit · branch feat/rate-limit (was fb7945a, verified fully merged
+  | with `git branch --merged main`) · writer session c5def7df… — salvage-checked BEFORE deletion
+  | (tracked-clean worktree, tip == origin/main, only untracked scratch its own `.diff-harness` under
+  | its own worktree). Host after: `git worktree list` shows only `main`, no `feat/rate-limit` in
+  | `git branch -a`, lock free, 0 chrome processes.
+  | docs=ledger row 66 · this board.
+
 LANDED | row=65 | sha=66a3295 (the writer's CODE tip on the FINAL REBASED tree: `src/server/ratelimit.ts`,
   | `src/server/app.ts`, `src/server/config.ts`, `src/server/main.ts`, `src/core/errors.ts`,
   | `tests/ratelimit.test.ts`, `tests/helpers/server.ts`, `tests/cors.test.ts` and `docs/API.md` — the
