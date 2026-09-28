@@ -871,7 +871,19 @@ QUEUE-CLOSED | row=67 | **DESIGNED (ledger row 67) and DISPATCHED as row 68** �
   (`ps -eo comm= | grep -c '^chrome$'` → 0).
   Also deferred by owner decision, not forgotten: per-store permissions (`key_stores` + perms) — only
   if a game needs ONE mutable shared room object; editing `expiresAt`; edit history.
-QUEUE | row=72 | NEXT AFTER row 71 = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
+QUEUE | row=72 | **OPEN FORK, THE OWNER'S CHOICE (ledger row 72): items inside SQLite, one file per entry, or
+  both per store.** He is uneasy about one file per entry and asked why the items are not in the database
+  too. Measured answer: for HIS workload (small JSON objects) SQLite-for-items is simpler — one file to
+  back up, no inode budget, and NO orphan blobs at all (the mess row 71 is cleaning up) — while the real
+  costs are a write lock that would cover the bytes, no incremental blob API in `node:sqlite` (whole-value
+  binds only), a single file that must be backed up with `backup`/`VACUUM INTO` rather than `cp`, and one
+  corruption losing names AND content. SQLite's own limits are far off (1 GB per value; 16.0 TiB max DB
+  measured). The architecture already allows BOTH: `StoreKindHandler` + `store_kinds` exist for "each
+  store has its own format", `POST /stores` already takes a `kind`, and only `bytes` is registered — so a
+  second kind (`inline`) is an addition, not a rewrite. Named cost: two kinds to pin, and the kind seam
+  must first absorb DELETE (today the route runs `DELETE FROM objects` directly). NOT dispatched: this is
+  a product fork with a real cost either way, so it goes to the owner.
+QUEUE | row=73 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
   FOR — delete a key, look inside a store (names only) and delete an entry, empty a store, delete a
   store. UI-ONLY: `GET /stores/{store}/objects` already lists entries (and takes `prefix=`), and
   `DELETE /stores/{store}/objects/{name}` already deletes one, so this slice adds the new routes from
@@ -1008,7 +1020,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-70 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-72 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
