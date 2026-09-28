@@ -82,17 +82,12 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
-IN-FLIGHT | row=84 | session=(dispatching now) | worktree=worktrees/confirm-pin |
-  | branch=feat/confirm-pin | base=origin/main — resolved by the writer and recorded in its landing
-  | state=THE ONE WRITER. Scope: TEST-ONLY, and it exists because my OWN arm at row 83 went green
-  |   where it should have gone red. The console's whole-store gate is falsifiable (V4 fails when the
-  |   token is pre-filled), but the SINGLE-ITEM two-step is not: V1/V3 assert the end state and never
-  |   that the FIRST click destroys nothing, so a build that deletes a key on one unguarded click
-  |   passes everything. This slice adds the missing assertion (intermediate state after the first
-  |   click, for BOTH controls that share `armGuard`: key Delete and entry Delete), plus the ONE arm
-  |   that proves the new pin FAILS when the guard's action runs on the first click — the exact defect
-  |   my harness injected. No product change is expected; if one is needed, that is a BLOCKED report.
-  |   Brief `docs/briefs/slice-19-confirm-pin.md`.
+(The row=84 `IN-FLIGHT` block is FOLDED by the LANDED row=84 record in `## Landed` — the
+writer's own record, added in the docs child of landing `0410a87`. Its scope statement is
+unchanged and now has a landing: the intermediate-state assertion for BOTH single-item
+controls that share `armGuard` (key Delete, entry Delete), ONE shared helper
+`assertArmedNotActed`, the request-count backstop, and the ONE arm (G) that reddens PIN V1
+and PIN V3 — with NO product change.)
 
 (The row=82 `IN-FLIGHT` block is FOLDED by the LANDED row=82 record in `## Landed` — the
 writer's own record, added in the docs child of landing `5bf080a`. Its scope statement is
@@ -1175,6 +1170,49 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=84 | sha=0410a87 (the WRITER'S TEST-ONLY tip: `tests/browser.test.ts` and
+  | `checkpoints/confirm-pin-differential.sh`; the docs commit carrying THIS line, ledger row 84,
+  | `docs/TESTING.md` and the transcript `checkpoints/confirm-pin-differential.out` is its child)
+  | verify=THE WRITER'S OWN, in-turn, on the committed tree: base origin/main = 87b6d38 (resolved);
+  | `bash scripts/gate.sh` → exit 0 GREEN · 18 files · 179 tests · 4.13s, with
+  | `tests/browser.test.ts (15 tests)` at 3664ms against the measured baseline 3686ms (raw logs: the
+  | worktree's `.gate-logs/writer-gate-s19-before.log` and the gate's own `.gate-logs/gate.log`). The
+  | suite's cost is FLAT: no new page, no new service, no new mint — the fixture's existing throwaway
+  | key and seeded entries are reused.
+  | scope=TEST-ONLY, and it exists because the DISPATCHER'S OWN arm W at row 83 ran a one-item destroy
+  | WITHOUT its confirmation and went GREEN everywhere. V1/V3 now assert the INTERMEDIATE state through
+  | ONE shared helper `assertArmedNotActed`: after the FIRST click the key is still in `GET /keys` and
+  | its credential still authenticates (the entry still listed by `GET …/objects` and still readable)
+  | AND the Confirm affordance is ON SCREEN; only the CONFIRM click may act, and every existing
+  | end-state assertion is intact. A race-free backstop counts the flow's DELETE requests
+  | (`requestUrls`/`requestCount`; V2's resource-timing read folded into the same seam). NO product
+  | byte changed (`git diff --name-only 87b6d38..HEAD` → `tests/`, `checkpoints/`, docs only).
+  | arms=`checkpoints/confirm-pin-differential.sh`, transcript `checkpoints/confirm-pin-differential.out`,
+  | per-arm logs `.diff-harness-confirm-pin/` (*.log, gitignored), the gate lock held across the control
+  | and the ONE arm, `web/app.js`'s sha256 printed before and after, restore from HEAD in an
+  | `EXIT INT TERM` trap with the hash asserted back, `error TS` = VOID, OUR chrome count 0 after every
+  | run (scoped to our own profile; the brief's literal command self-matches its own grep — TRAP t8,
+  | measured and printed):
+  |   G `armGuard` runs `options.onConfirm()` on the FIRST click (the guard bypassed, so one unguarded
+  |     click destroys; `56bd8f70…ed2c` → `f36bd822…b7b1`) → **RED on PIN V1 and PIN V3** — V1 "the
+  |     FIRST click on Delete already removed the key from GET /keys", V3 "the FIRST click on Delete
+  |     already removed the entry from the store's listing", BOTH thrown from `assertArmedNotActed` —
+  |     with V2, V4, V5, V6, V7, B1–B3, B6 and U1–U4 GREEN (the typed-name whole-store flows and the
+  |     static scans do not touch the one-item guard). V5 is DECLARED COLLATERAL (it deletes its
+  |     blocking key through the SAME guard): green in this run, measured and printed rather than
+  |     asserted, because that timing is not the rule under test.
+  |   NEGATIVE CONTROL: BOTH runs of the unmodified committed tree GREEN (18 files · 179 tests, browser
+  |     file 3654ms then 3724ms), so the new assertion is not merely always-red; `web/app.js` restored
+  |     byte-identical (`56bd8f70…ed2c`).
+  | docs=ledger row 84 · `docs/TESTING.md` (the V1/V3 rows, the intermediate-state note and the new
+  | differential section) · this board.
+  | COPIES: 3→1 — the intermediate-state rule is ONE helper (`assertArmedNotActed`) used by BOTH
+  | single-item controls; the page's resource timing is read in ONE place (`requestUrls`, now shared by
+  | V2 and `requestCount`) and cleared in ONE place (`clearRequests`).
+  | unproven=the `requestCount` backstop (2 vs 1) was not exercised — both pins failed on the API
+  | read-back half because the arm's DELETE landed before it; a scripted click is not a layout claim;
+  | one browser engine; the live host was never touched. THE DISPATCHER'S OWN VERIFICATION IS OWED.
+
 LANDED | row=83 | sha=5bf080a (the VERIFIED CODE tip; the slice-18 landing itself is row 82 below)
   | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 18 files · 179 tests ·
   | 4.10s, with `tests/browser.test.ts (15 tests)` at 3656ms — the console flows add ~2.0s to every

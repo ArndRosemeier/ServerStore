@@ -981,13 +981,28 @@ EFFECT through the API or the filesystem-visible store, never from the DOM alone
 
 | # | Pin | Where |
 | ---: | --- | --- |
-| V1 | **deleting a KEY through the UI kills its credential** — a throwaway key is minted through the UI, its row's Delete is trusted-clicked and confirmed, the row disappears from the refreshed list, the key is gone from `GET /keys`, and the deleted key's OWN raw credential answers `401` | `tests/browser.test.ts` (`PIN V1`) |
+| V1 | **deleting a KEY through the UI does NOTHING on the first click, and kills its credential only after Confirm** — a throwaway key is minted through the UI, its row's Delete is trusted-clicked and the pin asserts the INTERMEDIATE state FIRST (the label is STILL in `GET /keys`, its own raw credential STILL answers `200` to `/whoami`, and the inline `Confirm delete` button IS on screen), then Confirm is clicked, the row disappears from the refreshed list, the key is gone from `GET /keys`, its OWN raw credential answers `401`, and the flow sent the key's DELETE exactly ONCE (the page's resource timing) | `tests/browser.test.ts` (`PIN V1`) |
 | V2 | **the console shows a store's ENTRIES and the prefix filter is SERVER-side** — opening the store lists exactly its seeded names; typing a prefix narrows the visible list AND the pin asserts the request that produced it carried `prefix=<prefix>` (read from the page's resource timing). A client-side filter renders the same list and FAILS this pin | `tests/browser.test.ts` (`PIN V2`) |
-| V3 | **deleting ONE entry leaves the other readable** — the row's Delete is confirmed, the entry disappears from the refreshed list, the API answers `404` for it and `200` for the OTHER entry | `tests/browser.test.ts` (`PIN V3`) |
+| V3 | **deleting ONE entry destroys nothing on the first click, then leaves the other readable** — the row's Delete is trusted-clicked and the SAME intermediate-state rule as V1 holds for the entry (still listed by `GET …/objects`, still readable, and the `Confirm delete` button on screen), then Confirm is clicked, the entry disappears from the refreshed list, the API answers `404` for it and `200` for the OTHER entry, and the flow sent its DELETE exactly ONCE | `tests/browser.test.ts` (`PIN V3`) |
 | V4 | **emptying needs the TYPED name; a wrong name changes nothing** — the field is asserted EMPTY first, a WRONG name produces the client's own `confirm_mismatch` refusal with every entry still listed through the API, and the RIGHT name sends the typed text as the token and empties the store (`GET …/objects` is `[]`) | `tests/browser.test.ts` (`PIN V4`) |
 | V5 | **a BLOCKED store delete is shown, then succeeds once the key is gone** — with a key scoped to the store the delete renders the server's `409` (the message NAMES the blocking key), the store SURVIVES, then the blocking key is deleted through the UI (V1's flow), the delete is retried, and `GET /stores` no longer lists the store | `tests/browser.test.ts` (`PIN V5`) |
 | V6 | **the console's promises hold with the new controls** — after a FAILING destructive action the pane refreshed, the row is still there and the status surface does NOT claim a deletion; and no key material reached `localStorage`, `sessionStorage`, a cookie, the query or the fragment during any of it | `tests/browser.test.ts` (`PIN V6`) |
 | V7 | **the outcomes are legible** — the `409` (blocked), a genuine `400` (`invalid_name`, from an illegal prefix typed into the filter), the `403` (a non-master key cannot list stores) and a genuine `429` each render the SERVER's own `{error:{code,message}}` through the console's ONE error surface | `tests/browser.test.ts` (`PIN V7`) |
+
+**The INTERMEDIATE state is now pinned for BOTH single-item controls (ledger row 84).**
+V1/V3 used to assert only the END state, so a build whose inline two-step ran the action on
+its FIRST click passed every pin — exactly the defect the row-83 injection fired, and the
+trap row 39 deleted an unreachable subset check for. Both pins now go through ONE helper,
+`assertArmedNotActed(page, {containerExpression, what, unchanged})`: it reads the effect
+back through the API (the key still in `GET /keys` and its credential still authenticating;
+the entry still listed and still readable) and then requires the
+`button[data-confirm="yes"]` affordance to be ON SCREEN, so "nothing happened because the
+control is broken" cannot pass either. Because a NEGATIVE assertion in an async UI needs a
+fixed observation point, a race-free backstop counts the page's own requests to the flow's
+DELETE URL (`clearRequests` before the flow, `requestCount` after it): a first click that
+acts sends the DELETE twice — or removes the row, which makes the later Confirm unfindable.
+V2's inline resource-timing read was folded into the same `requestUrls` seam rather than
+copied.
 
 **The 429 is REAL, and it needs a second service.** The main browser service runs with
 `SERVERSTORE_RATE_LIMIT=0` — the operator kill-switch — because a browser test must never
@@ -1071,6 +1086,40 @@ its PIN O2 collateral.
   so the injection, and nothing else, was the difference.
 - **What these arms do NOT prove** is the honest unknown above: neither arm is a layout or
   phone claim, and both mutate `web/app.js` only.
+
+## The single-item-confirmation differential (ONE arm + two controls)
+
+Machinery: `checkpoints/confirm-pin-differential.sh`. Raw transcript:
+`checkpoints/confirm-pin-differential.out` (per-arm logs under
+`.diff-harness-confirm-pin/`, `*.log`, so gitignored). Same shape as the earlier
+differentials: the slice is COMMITTED FIRST (the CONTROL line names the code tip `0410a87`),
+the lock `scripts/gate.sh` takes is held across the control and the ONE arm, `web/app.js`'s
+sha256 is printed before and after, the restore is `git checkout HEAD --` inside an
+`EXIT INT TERM` trap with the hash asserted back, `error TS` = VOID, and a control runs
+BEFORE **and** AFTER.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| G | **`armGuard` runs `options.onConfirm()` on the FIRST click** — the one-item guard is bypassed, so ONE unguarded click destroys | `web/app.js` | `56bd8f70…ed2c` → `f36bd822…b7b1` | `PIN V1` — `AssertionError: the FIRST click on Delete already removed the key from GET /keys` — and `PIN V3` — `AssertionError: the FIRST click on Delete already removed the entry from the store's listing` — both thrown from `assertArmedNotActed`. **V2, V4, V5, V6, V7, B1–B3, B6 and U1–U4 stayed GREEN** |
+| control | none — the committed tree | — | — | **GREEN**: 18 files · 179 tests; `tests/browser.test.ts (15 tests) 3654ms` |
+| control | none — the restored tree, `app.js` back at its before hash | — | `56bd8f70…ed2c` | **GREEN**: 18 files · 179 tests; `tests/browser.test.ts (15 tests) 3724ms` |
+
+- The arm is the SAME defect the row-83 injection fired — the one the suite could not see —
+  and it now reddens the two controls that share `armGuard` and nothing else: the typed-name
+  whole-store flows (`armTypedConfirm`) and the static scans are genuinely untouched by it.
+- **V5 is DECLARED COLLATERAL, measured rather than asserted:** it deletes its blocking key
+  through the SAME guard, so the arm CAN redden it too; in this run its Confirm click still
+  found the row and it was green. The harness prints which happened instead of asserting
+  either way, because that timing is not the rule under test.
+- **The negative control is BOTH runs of the unmodified tree** (before and after the arm):
+  GREEN at 18 files · 179 tests, so the new assertion is not merely always-red.
+- **What the arm did not have to exercise, stated:** its DELETE landed before the
+  intermediate read, so both pins failed on the API read-back half; the `requestCount`
+  (2 vs 1) backstop is reasoned, not measured, in a run. It guards the slow-refresh timing,
+  it is not the primary statement.
+- **What this arm does NOT prove** is the honest unknown: a scripted click is not a layout
+  or phone claim, one browser engine is all that runs, and no product byte changed
+  (`git diff --name-only 87b6d38..HEAD` touches `tests/` and `checkpoints/` only).
 
 ## The destructive-lifecycle pins (slice 16, X1–X9)
 

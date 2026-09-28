@@ -1,0 +1,52 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+chrome-count control (t8): scoped+bracketed=0  brief's-literal=1
+  the literal command counts the grep THAT IS RUNNING IT (its pattern is in that argv); the bracketed one cannot.
+=== CONTROL — the committed tree (0410a87) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/confirm-pin/.diff-harness-confirm-pin/control)
+  control GREEN:  Test Files  18 passed (18)       Tests  179 passed (179) 
+ ✓ tests/browser.test.ts (15 tests) 3654ms
+=== ARM G — armGuard runs options.onConfirm() on the FIRST click: one click destroys ===
+  file:   web/app.js
+  sha256: 56bd8f70639bdaff417a660f412cb15d3ac7d5d19284c2c6cf44080ff0e5ed2c  (before)
+  sha256: f36bd82272ba9fb3365704cb625d34a9d1f95965d7b3bd3166fde1c6f396b7b1  (after injection)
+  ARM G: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/confirm-pin/.diff-harness-confirm-pin/arm-g)
+     × PIN V1: the console deletes a KEY, and the credential dies 181ms
+     ✓ PIN V2: the console shows a store's ENTRIES, and the prefix filter is server-side 172ms
+     × PIN V3: the console deletes ONE entry, and the other survives 23ms
+     ✓ PIN V4: emptying needs the TYPED name, and a wrong name changes nothing 165ms
+     ✓ PIN V5: a BLOCKED store delete is shown, and then succeeds once the key is gone 298ms
+     ✓ PIN V6: the console's promises hold with the new controls 99ms
+     ✓ PIN V7: the outcomes are legible — 409, 400, 403 and 429 render the server's message 651ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser.test.ts > the console's destructive actions, executed in a real browser (pins V1-V7) > PIN V1: the console deletes a KEY, and the credential dies
+AssertionError: the FIRST click on Delete already removed the key from GET /keys: expected [ 'browser-test-master', …(4) ] to include 'browser-test-throwaway'
+ ❯ Object.unchanged tests/browser.test.ts:918:11
+     × PIN V3: the console deletes ONE entry, and the other survives 23ms
+     ✓ PIN V4: emptying needs the TYPED name, and a wrong name changes nothing 165ms
+     ✓ PIN V5: a BLOCKED store delete is shown, and then succeeds once the key is gone 298ms
+     ✓ PIN V6: the console's promises hold with the new controls 99ms
+     ✓ PIN V7: the outcomes are legible — 409, 400, 403 and 429 render the server's message 651ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser.test.ts > the console's destructive actions, executed in a real browser (pins V1-V7) > PIN V1: the console deletes a KEY, and the credential dies
+AssertionError: the FIRST click on Delete already removed the key from GET /keys: expected [ 'browser-test-master', …(4) ] to include 'browser-test-throwaway'
+ ❯ Object.unchanged tests/browser.test.ts:918:11
+    916|           labelsNow,
+    917|           "the FIRST click on Delete already removed the key from GET …
+ ❯ tests/browser.test.ts (15 tests | 2 failed) 3573ms
+ FAIL  tests/browser.test.ts > the console's destructive actions, executed in a real browser (pins V1-V7) > PIN V1: the console deletes a KEY, and the credential dies
+  DECLARED COLLATERAL (measured, not asserted): PIN V5: a BLOCKED store delete is shown, and then succeeds once the key is gone -> green in this run — its confirm click still found the row
+RESTORED: web/app.js back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/confirm-pin/.diff-harness-confirm-pin/control2)
+  control GREEN:  Test Files  18 passed (18)       Tests  179 passed (179) 
+ ✓ tests/browser.test.ts (15 tests) 3724ms
+  sha256: 56bd8f70639bdaff417a660f412cb15d3ac7d5d19284c2c6cf44080ff0e5ed2c  (web/app.js back to its before hash)
+
+DIFFERENTIAL COMPLETE: ARM G — armGuard running options.onConfirm() on the FIRST click — went RED on PIN V1 and PIN V3, the two controls that share the seam (a key Delete and an entry Delete), with V2, V4, V6, V7, B1-B3, B6 and U1-U4 GREEN and V5 measured as the declared collateral. Both controls GREEN, so the pin is not merely always-red. Our own chrome processes after every run: 0 (count scoped to ServerStore/*browser-scratch; the brief's literal command self-matches its own grep, measured). No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/confirm-pin/.diff-harness-confirm-pin/{control,arm-g,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/confirm-pin/checkpoints/confirm-pin-differential.out
+RESTORED: web/app.js back at HEAD; lock released
