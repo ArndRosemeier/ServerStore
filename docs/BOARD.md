@@ -45,54 +45,100 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: bd55b7e · 2026-09-28T07:15Z — the CORS (D1/row 57) VERIFIED CODE tip ON THE REBASED
-  TREE, re-checked against reality at the row-61 dispatch (this session sat idle ~9 hours between
-  the row-58 landing and the owner's object-lookup question; the marker is unchanged because no code
-  landed in between, and the LIVE database, git and the service clock were re-measured, not
-  remembered). The docs commit carrying THIS marker is its child, so the marker is the code tip and
-  not itself — a commit cannot name its own sha. `bash scripts/board.sh` must report this marker as
-  an ancestor of origin/main. verify=THE
-  DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 13 files · 119 tests · 2.24s; plus
-  the LIVE perimeter (GUARD g5: pulled, restarted, probe PASS exit 0, and a live preflight answers
-  204 with the headers a browser needs while `allow-credentials` appears 0 times); plus two own arms
-  neither of them the writer's (R drops `authorization` from Allow-Headers → O1 ALONE; T
-  neutralises the allowlist inside the CORS step → O3 with D7 as honest collateral). (History:
-  this line read "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27) and "bec97e1" (row 26,
-  LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than quietly).)
+reconciled: 695ba2e · 2026-09-28T07:22Z — the slice-13 (`prefix=` object filter) VERIFIED CODE tip.
+  The docs commit carrying THIS marker is its child, so the marker is the code tip and not itself —
+  a commit cannot name its own sha. `bash scripts/board.sh` must report this marker as an ancestor of
+  origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 13 files ·
+  127 tests · 2.35s; plus THREE own arms, none of them the writer's (D the prefix validation
+  neutralised → P3+P4; E the prefix parsed BEFORE authorization → P6 ALONE; F an empty listing turned
+  into a 404 → P2 ALONE), each with a control before and after; plus GUARD g5 on the LIVE service
+  (restarted, probe PASS exit 0, and the route with a query string answers 401 — not 400 — for an
+  empty or illegal prefix, which is the ordering claim confirmed on the real host). (History: this
+  line read "bd55b7e" (row 57/58, CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27)
+  and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
+  quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (row 61: the `prefix=` object filter, worktree worktrees/object-prefix,
-  |   branch feat/object-prefix). Slice 12 (D1: CORS) is LANDED, VERIFIED and RETIRED (row 58).
-  |   LIVE at https://store.futuremagic.de/ with the console, key editing (C2) and CORS; service on
-  |   main@e39b5aa (CORS code tip bd55b7e), re-probed after the restart; EXACTLY ONE live admin key.
-  |   A turn-based browser game is being built from ANOTHER ORIGIN and is UNBLOCKED; it holds 3 test
-  |   objects in store `colossus` under `g.<game>.*` names, which it will rename kind-first now that
-  |   the owner chose (A) (ledger row 60).
-  |   NEXT after row 61: rate limiting, then the OWED headless-browser test.
+  | state=NO writer in flight — slice 13 (the `prefix=` object filter) is LANDED, VERIFIED and
+  |   RETIRED (row 62). Slice 12 (D1: CORS) likewise (row 58). LIVE at
+  |   https://store.futuremagic.de/ with the console, key editing (C2), CORS and the prefix filter;
+  |   service restarted onto the prefix tip and re-probed; EXACTLY ONE live admin key. A turn-based
+  |   browser game from ANOTHER ORIGIN is UNBLOCKED and can now name objects kind-first
+  |   (`game.<id>`, `player.<id>.<tag>`, `snap.<id>.<turn>.<seq>.<tag>`) and read one namespace per
+  |   request; it holds 3 test objects in store `colossus`.
+  |   NEXT: row 64 = rate limiting on the public endpoint; row 65 = the OWED headless-browser test.
+  |   (Row 63 is CLOSED with no code change — my "board.sh counts the service" claim was RETRACTED:
+  |   the count was my own shell's command line self-matching `pgrep -af`, see QUEUE-CLOSED row 63
+  |   and TRAP t6.)
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
-(STALE, the dispatcher's to drop: the row=61 IN-FLIGHT block below, superseded by the LANDED row=61
-record that follows it — slice 13 landed and was verified by its writer; worktree
-worktrees/object-prefix and branch feat/object-prefix are the dispatcher's to retire. It is kept
-here, marked stale, rather than deleted by a writer. Its P7 sentence repeats the BRIEF's wording,
-which was WRONG — see the LANDED row and ledger row 61: `substr`/`LIKE` do NOT produce `SCAN
-objects`, so "no SCAN" cannot fail; the landed pin asserts the index's `name>? AND name<?` range.)
+(The row=61 `IN-FLIGHT` block, dropped by the dispatcher at row 62 as superseded and stale: slice 13
+landed, was independently verified with three own arms, and its worktree worktrees/object-prefix,
+branch feat/object-prefix and session fc919615… are RETIRED. The dropped block repeated the BRIEF's
+P7 wording, which was WRONG — `substr`/`LIKE` do NOT produce `SCAN objects`, so "no SCAN" could not
+fail for the arm the brief demanded turn red; the landed pin asserts the index's `name>? AND name<?`
+range, and the dispatcher reproduced the plans on 2000 rows to confirm it.)
 
-IN-FLIGHT | row=61 | session=(dispatching now) | worktree=worktrees/object-prefix |
-  | branch=feat/object-prefix | base=origin/main — resolved by the writer and recorded in its landing
-  | state=THE ONE WRITER. Scope: a `prefix=` filter on `GET /stores/:store/objects` — a RANGE query
-  |   on the objects primary key inside `StoreKindHandler.list` (never `LIKE`/`substr`: not scanning is
-  |   the point), the prefix validated by the EXISTING `parseName` rule with `what` = "object name
-  |   prefix" (the legal-name language is prefix-closed, so ONE rule refuses exactly the strings that
-  |   can never match — code `invalid_name`, 400), `200 {"objects":[]}` when a valid prefix matches
-  |   nothing, the UNCHANGED full listing when `prefix` is absent, and no new route/error code/schema.
-  |   Pins P1-P8, of which P7 holds an `EXPLAIN QUERY PLAN` that must show NO `SCAN objects`. Brief
-  |   `docs/briefs/slice-13-object-prefix.md`, ledger row 61. NOT in scope: `since=`/`limit`/`ETag`,
-  |   server-assigned ids, lookup by `sha256`, and any change to a point read.
+LANDED | row=62 | sha=695ba2e (the VERIFIED CODE tip; the slice-13 landing itself is row 61 below.
+  | Pulled to the remote tip and re-probed BEFORE my own gate and arms, per GUARD g5)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 13 files · 127 tests ·
+  | 2.35s (raw log `.gate-logs/dispatcher-gate-s13.log`), matching the writer's own count.
+  | arms=`.gate-logs/dispatcher-arms-s13.sh`, transcript `.gate-logs/dispatcher-arms-s13.out`, the
+  | gate lock held across the control and ALL THREE arms, sha256 printed before and after each
+  | mutation, restore from HEAD in an EXIT/INT/TERM trap with the hash asserted back, a control BEFORE
+  | and AFTER, and a NEW rule in this harness: an arm whose cheap tier carries `error TS` is VOID
+  | (the row-46 lesson). Arms, none of them the writer's (the writer armed A the exclusive lower bound
+  | → P1, B `substr` → P7, C the doc rotted → P8):
+  |   D the prefix VALIDATION neutralised (`parseObjectPrefix` returns the raw string),
+  |     src/core/validate.ts `dcfe6fa9…0687` → `73716791…84f4` → **RED on PIN P3 AND PIN P4** — an
+  |     empty `?prefix=` returned the WHOLE store and an unmatchable prefix was silently empty, which
+  |     is the fallback AGENTS.md rule 1 forbids. Both are validation pins, so this is honest
+  |     coverage of ONE mechanism by two assertions, not noise; P1/P5 stayed GREEN.
+  |   E the prefix parsed BEFORE the authorization decision, src/server/app.ts `0d389edf…1f2f` →
+  |     `6e50f86b…fcbd` → **RED on PIN P6 ALONE**: an illegal prefix from a key that cannot read the
+  |     store became 400 where it must stay 403 — the writer's judgement call 1 is genuinely pinned.
+  |   F an empty listing turned into a `404`, app.ts `0d389edf…1f2f` → `5dbf9418…f66c` → **RED on PIN
+  |     P2 ALONE**, which is the error-vs-empty direction the other five arms never touched.
+  |   both controls GREEN (13 files · 127 tests), every mutated file back at its before-hash, no VOID
+  |   probe. Arms D and E/F mutate different files; the two app.ts arms carry DIFFERENT after-hashes
+  |   from the SAME before-hash.
+  | THE WRITER'S P7 CORRECTION IS CONFIRMED BY MY OWN MEASUREMENT, and it corrects MY brief: I
+  | reproduced the plans on an in-memory database with 2000 rows and ANALYZE —
+  | `… name >= ? AND name < ?` → `SEARCH objects USING INDEX sqlite_autoindex_objects_1 (store=? AND
+  | name>? AND name<?)`, while `substr(name,1,length(?)) = ?` and `name LIKE ?` both → `SEARCH objects
+  | USING INDEX … (store=?)`. So the brief's P7 ("contains NO `SCAN objects`") could NOT fail for the
+  | arm the same brief demanded turn RED. The landed pin asserts the displacing signal (the index
+  | search carries the `name>? AND name<?` bounds and the statement has no LIKE/substr), and the
+  | writer's arm B proves it. **This is the DISPATCHER'S error, recorded rather than quietly
+  | corrected.** The stale `IN-FLIGHT | row=61` block, which repeated the wrong wording, is DROPPED
+  | (mine to drop; it was superseded by the row-61 landing record).
+  | THE MANDATORY `COPIES:` LINE IS MISSING FROM THE DOCS and this row carries it instead: the writer
+  | put it in its REPORT but in no amended file (`grep -rn COPIES docs/` finds none for slice 13,
+  | where every earlier landing has one in its board record — AGENTS.md rule 5's grep-ability is the
+  | point). Ratified from its report and VERIFIED by me: **`COPIES: 3→1`** — the objects column list
+  | `store, name, sha256, size, created_at` was written out three times and is now ONE `OBJECT_COLUMNS`
+  | constant (`src/storage/kinds.ts:102`) behind all three SELECTs (all-list :110, prefix-list :113,
+  | point read :150, checked by grep); **`COPIES: 1`** for the charset rule (`NAME_PATTERN` is the only
+  | regex in `src/core/validate.ts:19`, and `parseObjectPrefix` routes through `parseName`) and for the
+  | range bound (`objectPrefixRange()` is the ONE place the prefix+U+FFFF bound is built, and PIN P7
+  | binds the production parameters rather than re-deriving them).
+  | LIVE (GUARD g5)=restarted onto the prefix tip at 09:22:17 CEST, `scripts/probe-live.sh
+  | https://store.futuremagic.de` → PASS exit 0, and the new shape checked on the REAL host WITHOUT a
+  | key: `GET /stores/colossus/objects` answers 401 with and without `?prefix=game.`, and an EMPTY
+  | (`?prefix=`) or ILLEGAL (`?prefix=GAME`, `?prefix=game%2F42`) prefix is **401, not 400** — the
+  | authorization-before-parse ordering, confirmed end to end on the live service rather than only in
+  | process. The key-bearing filtered listing (a 200 `{objects:[…]}` under a prefix) is the OWNER's
+  | / his game agent's acceptance step: the dispatcher holds no key.
+  | retired=worktree worktrees/object-prefix · branch feat/object-prefix (was 2e0dd5d, verified fully
+  | merged with `git branch --merged main`) · writer session fc919615… — salvage-checked BEFORE
+  | deletion (tracked-clean worktree, tip == origin/main, only untracked scratch was its own
+  | `.diff-harness` under its own worktree). Host after: `git worktree list` shows only `main`,
+  | `git branch -a` has no `feat/object-prefix`, lock free, 0 browser processes.
+  | docs=ledger row 62 · this board.
 
 LANDED | row=61 | sha=695ba2e (the VERIFIED CODE tip: `src/storage/kinds.ts`, `src/core/validate.ts`,
   | `src/server/app.ts`, `tests/objects.test.ts`, `tests/api-doc.test.ts`, `docs/API.md` and
@@ -755,17 +801,23 @@ QUEUE-CLOSED | row=59 | **FORK CLOSED — the owner chose (A) on his game agent'
   a match-nothing prefix, `400 invalid_name` for one that can never match, no schema change.
   Deferred unchanged: `since=`/`limit`/`ETag` (row 28), server-assigned ids (option B), lookup by
   `sha256` (option C), blob GC.
-QUEUE | row=62 | SMALL, DISPATCHER-OWNED, RIGHT AFTER row 61 LANDS (do not touch `scripts/` while a
-  writer is appending its own row to the docs): `scripts/board.sh`'s host audit reports
-  "suites: 1 matching process(es)" on a QUIET box, because `SUITE_PATTERN` matches the LIVE SERVICE
-  itself — the unit's `ExecStart` is `node --experimental-strip-types …/src/server/main.ts`
-  (observed PID 4168711, uptime 9h). The count is the guard the dispatcher uses before starting an
-  expensive run, so a permanent phantom is a real (if benign) defect: fix the pattern so it cannot
-  match the service's own argv, and prove it with a self-match check (`ps -eo comm=` by executable
-  name, never a `pgrep -f` from a shell whose own argv contains the pattern).
-QUEUE | row=63 | RATE LIMITING on the public endpoint — the only queued item that PROTECTS the
+QUEUE-CLOSED | row=63 | **RETRACTED AND CLOSED WITH NO CODE CHANGE — my own dispatch-turn audit
+  diagnosis was WRONG.** I recorded here that `scripts/board.sh`'s host line reported "suites: 1" on a
+  quiet box "because `SUITE_PATTERN` matches the LIVE SERVICE". Measured properly, that is FALSE:
+  `SUITE_PATTERN` is `vites[t]|jest|pytest` (`scripts/board.sh:25`), which does NOT match the
+  service's argv (`/proc/<MainPID>/cmdline` = `node --experimental-strip-types …/src/server/main.ts`,
+  tested FALSE by a probe whose own argv carries no pattern), and a self-match-free enumeration over
+  ALL of `/proc` reports **0** matching processes while the service is UP and healthy (MainPID 92039,
+  active 09:22:17 CEST, NRestarts=0; probe PASS). The one hit was the CALLER: `pgrep -af` matches a
+  shell whose own command line contains the literal text `vitest`/`jest`/`pytest`, and that audit ran
+  in the same `bash -c` as my own `pgrep … "vitest|…"` — reproduced deterministically
+  (`bash -c 'echo vitest; <audit>'` → exactly 1 hit, the caller itself). So there is nothing to fix in
+  `scripts/board.sh` when a caller is clean; the lesson is a TRAP (t6), and the honest correction is
+  that a guard is only as good as the shell that reads it. Evidence and the probe:
+  `.gate-logs/suite-audit.py`.
+QUEUE | row=64 | RATE LIMITING on the public endpoint — the only queued item that PROTECTS the
   surface rather than extending it (rows 28 and 43 both name it), and more pressing now that the API
-  answers cross-origin browsers. Then the OWED HEADLESS-BROWSER test (row=64), which closes the same
+  answers cross-origin browsers. Then the OWED HEADLESS-BROWSER test (row=65), which closes the same
   gap for both the console (rows 49/54) and CORS (rows 57/58): nothing automated drives a real
   browser, and a browser is a process TREE whose kill belongs in a trap. Also deferred by owner
   decision, not forgotten: per-store permissions (`key_stores` + perms) — only if a game needs ONE
@@ -837,6 +889,19 @@ TRAP | t5 | A dispatcher board patch anchored on a WRITER'S IN-FLIGHT block abor
   |   half-applied — and the missing records were noticed and added in the next commit. RULE: anchor
   |   a dispatcher board edit on a field the DISPATCHER owns (the SESSION `state=` field, the
   |   `decisions=` field, or the insert point in `## Landed`); never on a writer's IN-FLIGHT block.
+TRAP | t6 | **A `pgrep`-based guard is inflated by the SHELL THAT READS IT**, and I misdiagnosed it as
+  |   a defect in the guard. `scripts/board.sh`'s host line is
+  |   `pgrep -af "vites[t]|jest|pytest"`, so it counts any process whose command line contains the
+  |   literal text `vitest`, `jest` or `pytest` — including the `bash -c` that ran board.sh when that
+  |   same command line also ran my own `pgrep … "vitest|…"`. I saw "suites: 1", then found the service
+  |   with a WIDER pattern of my own (`vitest|node --experimental-strip-types`, which also
+  |   self-matched my shell) and recorded "the service is being counted" as a fact — a mechanism
+  |   asserted from plausibility, which cost a queue entry and would have cost a pointless patch to a
+  |   guard that works. RULE: measure a process count with a probe whose OWN argv carries no pattern
+  |   (this project's is `.gate-logs/suite-audit.py`, which reads `/proc/*/cmdline` and takes the
+  |   service's PID from systemd), reproduce a suspected self-match by MAKING one on purpose, and
+  |   never diagnose a guard from a pattern that is also literal text in the reading shell — the same
+  |   family as the host rule about pattern-kills.
 
 GUARD | g1 | Never bind to 0.0.0.0. Loopback + tunnel is how every service on this box is exposed
   | (precedent: apps-web.service).
@@ -867,6 +932,7 @@ retired_branch=feat/key-lifecycle
 retired_branch=feat/admin-ui
 retired_branch=feat/key-edit
 retired_branch=feat/cors
+retired_branch=feat/object-prefix
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   | remote=https://github.com/ArndRosemeier/ServerStore.git (PUBLIC; origin/main carries slices 1-3
@@ -874,7 +940,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-60 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-62 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -885,7 +951,10 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   point read EXISTS, entries are NAMED not id'd, the gap is a FILTERED listing — fork to the
   |   owner, 60 = the owner chose (A) `prefix=` and his game's kind-first renaming was VERIFIED free
   |   against the live database; the prefix rule fixed there too (a prefix must be a valid name —
-  |   the name language is prefix-closed); row 61 is in flight)
+  |   the name language is prefix-closed), 61 = the prefix filter LANDED (P1-P8, three writer arms),
+  |   62 = it is VERIFIED with three DISPATCHER arms (validation, authorization order, empty-vs-404),
+  |   the live ordering confirmed, the worktree/branch/session retired, and the brief's own P7 error
+  |   corrected — the prefix tip is what the live service now runs)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
