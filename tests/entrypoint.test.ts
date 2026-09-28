@@ -31,175 +31,46 @@
  * Two rules from AGENTS.md §Host hygiene shape the machinery here:
  *
  *   - **Nothing outlives the writer.** Every spawn is registered and killed in
- *     `afterEach`, even if a test threw; `SIGKILL` is the escalation for a child that
- *     ignores `SIGTERM`. A backgrounded server that outlives the suite is exactly the
- *     orphan the standing "reap what you start" rule exists for.
+ *     `afterEach` (`reapSpawnedServices()`), even if a test threw; `SIGKILL` is the
+ *     escalation for a child that ignores `SIGTERM`. A backgrounded server that outlives
+ *     the suite is exactly the orphan the standing "reap what you start" rule exists for.
  *   - **No silent fallbacks.** If `/proc/net/tcp` cannot be read, the loopback pin
  *     FAILS with that reason. It is never skipped: a skipped pin is a pin that cannot
  *     fail, and this project has already been burned by one of those (ledger row 25).
+ *
+ * The SPAWN itself (free port, the child, the boot poll, the reap) is
+ * `tests/helpers/entrypoint.ts` — ONE module, shared with `tests/browser.test.ts`.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, test } from "vitest";
-
-/** The repo root, derived from THIS file — never from `process.cwd()`. */
-const REPO = resolvePath(fileURLToPath(new URL("../", import.meta.url)));
-
-/** Exactly what `pnpm run serve` and `deploy/serverstore.service` execute. */
-const ENTRYPOINT = "src/server/main.ts";
-
-/** The one liveness surface the live probe script also uses. */
-const HEALTHZ = "/healthz";
-
-/** The whole bounded wait for a booting service. No unbounded loop, no sleep-and-hope. */
-const BOOT_BUDGET_MS = 5_000;
-const POLL_INTERVAL_MS = 50;
-/** One poll may not hang: a socket that accepts and never answers is still a failure. */
-const REQUEST_TIMEOUT_MS = 1_000;
-const EXIT_BUDGET_MS = 5_000;
-
-/** Every child this file has started, reaped in `afterEach` whatever the test did. */
-const spawned = new Set<ChildProcess>();
-
-afterEach(() => {
-  for (const child of spawned) {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-  }
-  spawned.clear();
-});
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+import {
+  HEALTHZ,
+  POLL_INTERVAL_MS,
+  REQUEST_TIMEOUT_MS,
+  reapSpawnedServices,
+  sleep,
+  startEntrypoint,
+  waitForHealthz,
+} from "./helpers/entrypoint.ts";
 
 /**
- * Ask the OS for a free ephemeral port.
+ * The process seam itself — the free port, the spawn of `src/server/main.ts`, the boot
+ * poll and the reap — is `tests/helpers/entrypoint.ts`, because the headless-browser
+ * test (slice 15, pins B1–B8) needs exactly the same machinery. It used to live in this
+ * file; it is ONE module now, so the two process-level suites cannot drift apart.
  *
- * A bind-then-close probe is racy in principle (the port can be taken between the
- * close and the child's bind); in practice that race is what the boot poll below
- * catches, and the alternative — teaching the entrypoint to open port 0 — is a change
- * to production code the brief does not ask for.
+ * Reaped in `afterEach` whatever the test did, so no backgrounded service outlives the
+ * suite (AGENTS.md §Host hygiene, "reap what you start").
  */
-async function freePort(): Promise<number> {
-  return new Promise<number>((resolve, reject) => {
-    const probe = createServer();
-    probe.on("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const address = probe.address();
-      if (address === null || typeof address === "string") {
-        probe.close(() => reject(new Error("the ephemeral-port probe bound nothing")));
-        return;
-      }
-      const port = address.port;
-      probe.close(() => resolve(port));
-    });
-  });
-}
+afterEach(reapSpawnedServices);
 
-interface Spawned {
-  readonly child: ChildProcess;
-  readonly port: number;
-  readonly dataRoot: string;
-  /** Everything the child wrote, for a failure message that can be read. */
-  output(): string;
-  /** SIGTERM, then wait (bounded by the caller's test) for the exit. */
-  stop(signal?: NodeJS.Signals): Promise<NodeJS.Signals | null>;
-  cleanup(): void;
-}
-
-async function startEntrypoint(extraEnv: Record<string, string> = {}): Promise<Spawned> {
-  const port = await freePort();
-  const dataRoot = mkdtempSync(join(tmpdir(), "serverstore-entrypoint-"));
-  const child = spawn("node", ["--experimental-strip-types", ENTRYPOINT], {
-    cwd: REPO,
-    env: {
-      ...process.env,
-      SERVERSTORE_PORT: String(port),
-      SERVERSTORE_DATA_ROOT: dataRoot,
-      ...extraEnv,
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  spawned.add(child);
-
-  let output = "";
-  const record = (chunk: Buffer): void => {
-    output += chunk.toString();
-    if (output.length > 16_384) output = output.slice(-16_384);
-  };
-  child.stdout?.on("data", record);
-  child.stderr?.on("data", record);
-
-  // The boot poll resolves on the exit event, so this cannot run to its full budget
-  // after the child is already dead.
-  let settleExit: () => void = () => undefined;
-  const exited = new Promise<void>((resolve) => {
-    settleExit = resolve;
-  });
-  child.once("exit", () => settleExit());
-  child.once("error", () => settleExit());
-
-  return {
-    child,
-    port,
-    dataRoot,
-    output: () => output,
-    stop: (signal: NodeJS.Signals = "SIGTERM") => {
-      if (child.exitCode === null && child.signalCode === null) child.kill(signal);
-      return exited.then(() => child.signalCode);
-    },
-    cleanup: () => {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-      spawned.delete(child);
-      rmSync(dataRoot, { recursive: true, force: true });
-    },
-  };
-}
+/** The whole bounded wait for a service that exits on SIGTERM. */
+const EXIT_BUDGET_MS = 5_000;
 
 interface FetchOutcome {
   status: number;
   body: string;
-}
-
-/**
- * Poll `GET /healthz` until it answers 200, or fail loudly.
- *
- * Bounded: `BOOT_BUDGET_MS` total, one attempt every `POLL_INTERVAL_MS`. A transport
- * error (the child has not bound yet) or a non-200 answer is retried; a child that
- * has EXITED is not — that is a crash, and waiting five seconds to say so would
- * destroy the diagnosis.
- */
-async function waitForHealthz(server: Spawned): Promise<FetchOutcome> {
-  const deadline = Date.now() + BOOT_BUDGET_MS;
-  let attempts = 0;
-  let last = "no attempt was made";
-
-  while (Date.now() < deadline) {
-    if (server.child.exitCode !== null || server.child.signalCode !== null) {
-      throw new Error(
-        `the entrypoint exited (code=${server.child.exitCode}, signal=${server.child.signalCode}) before it served ${HEALTHZ}\n--- child output ---\n${server.output()}`,
-      );
-    }
-    attempts += 1;
-    try {
-      const response = await fetch(`http://127.0.0.1:${server.port}${HEALTHZ}`, {
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-      const body = await response.text();
-      if (response.status === 200) return { status: response.status, body };
-      last = `HTTP ${response.status} ${body}`;
-    } catch (error) {
-      last = (error as Error).message;
-    }
-    await sleep(POLL_INTERVAL_MS);
-  }
-
-  throw new Error(
-    `${HEALTHZ} did not answer 200 within ${BOOT_BUDGET_MS}ms (${attempts} attempts; last: ${last})\n--- child output ---\n${server.output()}`,
-  );
 }
 
 /** A request with its own timeout, so one hung response cannot outlive the test. */
@@ -395,7 +266,9 @@ describe("the real entrypoint, spawned as the service runs it (pins D1-D4, D7)",
   }, 15_000);
 
   test("PIN D7: the running service's CORS allowlist comes from SERVERSTORE_CORS_ORIGINS", async () => {
-    const server = await startEntrypoint({ SERVERSTORE_CORS_ORIGINS: "https://game.example.com" });
+    const server = await startEntrypoint({
+      extraEnv: { SERVERSTORE_CORS_ORIGINS: "https://game.example.com" },
+    });
     try {
       await waitForHealthz(server);
       const base = `http://127.0.0.1:${server.port}`;

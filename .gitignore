@@ -7,6 +7,10 @@ dist/
 data/
 /.gate-logs/
 /.gate-lock/
+# The headless-browser seam's scratch: the Chrome profile AND the spawned service's
+# data root. Under the worktree, never `/tmp` (AGENTS.md §Host hygiene), and never
+# committed. `tests/helpers/browser.ts` deletes each profile when it kills the browser.
+/.browser-scratch/
 
 # The data root lives OUTSIDE the repo (ledger row 13). These are the preventive
 # half of PIN S6; the tripwire in tests/secrets.test.ts is the enforcing half.
