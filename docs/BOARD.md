@@ -75,6 +75,13 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
 
+(STALE, the dispatcher's to drop: the row=61 IN-FLIGHT block below, superseded by the LANDED row=61
+record that follows it — slice 13 landed and was verified by its writer; worktree
+worktrees/object-prefix and branch feat/object-prefix are the dispatcher's to retire. It is kept
+here, marked stale, rather than deleted by a writer. Its P7 sentence repeats the BRIEF's wording,
+which was WRONG — see the LANDED row and ledger row 61: `substr`/`LIKE` do NOT produce `SCAN
+objects`, so "no SCAN" cannot fail; the landed pin asserts the index's `name>? AND name<?` range.)
+
 IN-FLIGHT | row=61 | session=(dispatching now) | worktree=worktrees/object-prefix |
   | branch=feat/object-prefix | base=origin/main — resolved by the writer and recorded in its landing
   | state=THE ONE WRITER. Scope: a `prefix=` filter on `GET /stores/:store/objects` — a RANGE query
@@ -86,6 +93,64 @@ IN-FLIGHT | row=61 | session=(dispatching now) | worktree=worktrees/object-prefi
   |   Pins P1-P8, of which P7 holds an `EXPLAIN QUERY PLAN` that must show NO `SCAN objects`. Brief
   |   `docs/briefs/slice-13-object-prefix.md`, ledger row 61. NOT in scope: `since=`/`limit`/`ETag`,
   |   server-assigned ids, lookup by `sha256`, and any change to a point read.
+
+LANDED | row=61 | sha=695ba2e (the VERIFIED CODE tip: `src/storage/kinds.ts`, `src/core/validate.ts`,
+  | `src/server/app.ts`, `tests/objects.test.ts`, `tests/api-doc.test.ts`, `docs/API.md` and
+  | `checkpoints/prefix-differential.sh`; the docs commit carrying THIS line, the ledger row 61,
+  | `docs/SEAM-INDEX.md` and `docs/TESTING.md` is its child — a commit cannot name its own sha)
+  | THE PREFIX FILTER: `GET /stores/:store/objects?prefix=`, an OPTIONAL narrowing that is a RANGE on
+  | the objects primary key (never `LIKE`, never `substr`) so the store is never scanned. Writer
+  | session (a subagent of dispatcher session dcd6176e-b4b9-4759-b64d-4c90d3495dfa), worktree
+  | `worktrees/object-prefix`, branch `feat/object-prefix`, base
+  | origin/main **0afb273** (resolved with `git rev-parse --short origin/main` at dispatch time).
+  |   scope=ONE seam (`StoreKindHandler.list(db, store, prefix?)` in `src/storage/kinds.ts`), ONE
+  |   parser (`parseObjectPrefix()` routes through the existing `parseName` with `what` = "object name
+  |   prefix"; the legal-name language is prefix-closed, so the ONE rule refuses exactly the
+  |   unmatchable strings with the EXISTING `invalid_name` 400), ONE route (authorization decided FIRST
+  |   and for the store). Absent prefix = the unchanged full listing; valid-but-empty = `200
+  |   {"objects":[]}`, never 404; empty/whitespace = LOUD 400, never the whole store. No new route,
+  |   error code, schema, or authorization rule (PIN A1–A3 green). NOT in scope, named in docs/API.md:
+  |   `since=`, `limit=`, pagination, cursors, `ETag`/`If-Match`, server-assigned ids, lookup by
+  |   `sha256`, and any `prefix` on `GET /stores` or `GET /keys`.
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` → exit 0 (GREEN) · 13 test files · 127
+  | tests · 2.32s · raw log `.gate-logs/gate.log`; no memory ceiling needed (GUARD g3 still open and
+  | still honest). The DISPATCHER's independent gate and its own arms are OWED.
+  | arms=checkpoints/prefix-differential.sh, the gate lock held across ALL THREE arms, sha256 printed
+  | before and after, restore from HEAD in an EXIT/INT/TERM trap, a control BEFORE and AFTER, raw
+  | transcript checkpoints/prefix-differential.out (key-shaped strings scrubbed — ledger row 21):
+  |   A the range's lower bound made EXCLUSIVE (`name >= ?` → `name > ?`), src/storage/kinds.ts
+  |     7b17b9a6…07fe9 → 1c7746a3…ef6b, RED on `PIN P1: ?prefix= returns exactly the matching entries`
+  |     — `expected [ Array(3) ] to deeply equal [ 'room-4', 'room-42.a', …(2) ]`; P2–P7 stayed GREEN.
+  |   B the filter re-implemented as `substr(name, 1, length(?)) = ?` with its own bind parameters,
+  |     src/storage/kinds.ts 7b17b9a6…07fe9 → 40d7bda1…96ad, RED on `PIN P7: the prefix query is a
+  |     RANGE on the primary key` — `["SEARCH objects USING INDEX sqlite_autoindex_objects_1
+  |     (store=?)"]` — while **P1–P6 stayed GREEN: every returned row is still correct**, which is
+  |     exactly why P7 exists.
+  |   C the API doc's "`prefix` is the ONE filter" truth replaced by the stale "a store with many
+  |     objects returns them all", docs/API.md 8742a568…da7e → 241348a5…3ced, RED on `PIN P8: the API
+  |     doc's stated \`prefix\` behaviour matches the code`; PIN A1–A3 stayed GREEN.
+  |   Both controls GREEN (13 files · 127 tests), both mutated files restored to their before hashes.
+  |   The harness found its OWN bug on its FIRST run: arm B's anchor replaced only the `${…}` inside a
+  |   template literal, leaving the literal string `prefix`, which matched nothing and ALSO reddened
+  |   P1 — the harness refused the arm as unattributable and it is recorded in docs/TESTING.md.
+  | brief_correction=THE BRIEF'S P7 WORDING WAS WRONG, recorded here because the STALE IN-FLIGHT block
+  |   and the brief both repeat it: P7 cannot be "EXPLAIN QUERY PLAN contains NO `SCAN objects`",
+  |   because a `substr`/`LIKE` implementation produces `SEARCH … (store=?)`, not a SCAN, so that
+  |   assertion cannot fail for the arm the brief requires it to fail for. P7 asserts the displacing
+  |   signal instead: the index search must carry `name>? AND name<?`. This is a correction of the
+  |   brief's PIN, not of its design — the range query the brief asked for is what landed.
+  | docs_amended=docs/DECISION-LEDGER.md (row 61), docs/SEAM-INDEX.md (the listing row + gotcha 16),
+  |   docs/TESTING.md (pins P1–P8 + the 3-arm differential + honest unknowns), docs/API.md (route row,
+  |   listing bullet, Names rule, Non-goals, curl walkthrough).
+  | copies=COPIES: 3→1 — the objects column list (`store, name, sha256, size, created_at`) in
+  |   `src/storage/kinds.ts` is now one constant (`OBJECT_COLUMNS`) behind the all-list, prefix-list and
+  |   point-read SELECTs; the charset regex stays COPIES: 1 (`NAME_PATTERN` in `src/core/validate.ts`,
+  |   with `parseObjectPrefix()` routing through `parseName`), and the range bound stays COPIES: 1
+  |   (`objectPrefixRange()`, which PIN P7 binds instead of re-deriving).
+  | retire_owed=worktree worktrees/object-prefix and branch feat/object-prefix are the DISPATCHER's
+  |   to retire after it verifies this landing. NOT claimed retired here: the branch still exists
+  |   (the writer is on it), so the `retired_branch=` key must not be used (board.sh would correctly
+  |   report BOARD STALE, board.sh:110-125).
 
 LANDED | row=46 | sha=7cc3afe (the VERIFIED CODE tip: `src/core/keys.ts`, `src/server/app.ts`,
   | `tests/keys.test.ts`, plus `docs/API.md` and `docs/SEAM-INDEX.md`; the docs commit carrying

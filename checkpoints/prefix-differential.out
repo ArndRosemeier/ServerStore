@@ -1,0 +1,80 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (695ba2e) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/object-prefix/.diff-harness/control)
+  control GREEN:  Test Files  13 passed (13)       Tests  127 passed (127) 
+=== ARM A — the range lower bound is EXCLUSIVE (name >= ? -> name > ?) ===
+  file:   src/storage/kinds.ts
+  sha256: 7b17b9a601f83a2616a9506e0d564a52117aceace3e819370a0d92d404b07fe9  (before)
+  sha256: 1c7746a38c8162f769192a10825341efefa823999c4b9a8ecea6cdcacd1eef6b  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/object-prefix/.diff-harness/arm-a)
+     × PIN P1: ?prefix= returns exactly the matching entries 29ms
+     ✓ PIN P2: a prefix that matches nothing is 200 with an empty list, never 404 17ms
+     ✓ PIN P3: an empty or whitespace prefix is refused 400 invalid_name — NOT the whole store 19ms
+     ✓ PIN P4: an unmatchable prefix is refused, never silently empty 17ms
+     ✓ PIN P5: with NO prefix the listing is byte-for-byte what it was 11ms
+     ✓ PIN P6: the filter changes no authorization 13ms
+     ✓ PIN P7: the prefix query is a RANGE on the primary key 13ms
+   ✓ the raw key is never stored (pin 5) (2)
+     ✓ PIN 5: the presented key string never appears in the database file 4ms
+--
+ FAIL  tests/objects.test.ts > the object-listing prefix filter (pins P1-P7, ledger row 61) > PIN P1: ?prefix= returns exactly the matching entries
+AssertionError: expected [ Array(3) ] to deeply equal [ 'room-4', 'room-42.a', …(2) ]
+
+- Expected
++ Received
+
+RESTORED: src/storage/kinds.ts and docs/API.md back at HEAD; lock released
+=== ARM B — the filter is re-implemented as substr(name, 1, length(?)) = ? ===
+  file:   src/storage/kinds.ts
+  sha256: 7b17b9a601f83a2616a9506e0d564a52117aceace3e819370a0d92d404b07fe9  (before)
+  sha256: 40d7bda19378678c62e02d965405f5f385982ada96b3e3e5f5e09b4cb38696ad  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/object-prefix/.diff-harness/arm-b)
+     × PIN P7: the prefix query is a RANGE on the primary key 20ms
+   ✓ the raw key is never stored (pin 5) (2)
+     ✓ PIN 5: the presented key string never appears in the database file 4ms
+     ✓ PIN 5: the key registered by the CLI is hashed at rest too 144ms
+   ✓ named boundary refusals (pin 8) (6)
+     ✓ PIN 8: a path-traversal attempt is refused 400 and writes nothing 6ms
+     ✓ PIN 8: an over-cap body is refused 413 and stores nothing 4ms
+     ✓ PIN 8: a body exactly at the cap is accepted 5ms
+     ✓ PIN 8: an illegal store or object name is 400 invalid_name 6ms
+--
+ FAIL  tests/objects.test.ts > the object-listing prefix filter (pins P1-P7, ledger row 61) > PIN P7: the prefix query is a RANGE on the primary key
+AssertionError: the filtered statement is not a (store, name) index range: ["SEARCH objects USING INDEX sqlite_autoindex_objects_1 (store=?)"]: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+RESTORED: src/storage/kinds.ts and docs/API.md back at HEAD; lock released
+=== ARM C — the API doc says "a store with many objects returns them all" again ===
+  file:   docs/API.md
+  sha256: 8742a5682d4707fce7efc7cada9b57c8956277c237032e02361cc36861f7da7e  (before)
+  sha256: 241348a5eee2e6fee8eb8d2308dc44787d867b8e325c069da553935c5a53eced  (after injection)
+  ARM C: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/object-prefix/.diff-harness/arm-c)
+     × PIN P8: the API doc's stated `prefix` behaviour matches the code 7ms
+ ✓ tests/secrets.test.ts (11 tests) 47ms
+ ✓ tests/keys.test.ts (25 tests) 359ms
+ ✓ tests/objects.test.ts (23 tests) 435ms
+ ✓ tests/entrypoint.test.ts (5 tests) 1146ms
+ ✓ tests/admin-key.test.ts (6 tests) 1738ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+     ✓ PIN 9: pnpm run admin:key mints a key the HTTP API accepts as admin 721ms
+     ✓ PIN 9: the CLI prints the key once and the database holds only its hash 635ms
+--
+ FAIL  tests/api-doc.test.ts > the client contract (docs/API.md, pins A1-A3) > PIN P8: the API doc's stated `prefix` behaviour matches the code
+AssertionError: PIN P8: docs/API.md still carries the stale 'returns them all' sentence: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+RESTORED: src/storage/kinds.ts and docs/API.md back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/object-prefix/.diff-harness/control2)
+  control GREEN:  Test Files  13 passed (13)       Tests  127 passed (127) 
+  sha256: 7b17b9a601f83a2616a9506e0d564a52117aceace3e819370a0d92d404b07fe9  (kinds.ts, back to its before hash)
+  sha256: 8742a5682d4707fce7efc7cada9b57c8956277c237032e02361cc36861f7da7e  (API.md, back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN P1 (an exclusive lower bound drops the entry whose name IS the prefix); arm B RED on PIN P7 while every RESULT pin stayed GREEN (substr keeps the store-equality probe but loses the name range); arm C RED on PIN P8 (the doc rotted back to the stale sentence) with the route/error contract pins GREEN. Both controls GREEN. No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/object-prefix/.diff-harness/{control,arm-a,arm-b,arm-c,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/object-prefix/checkpoints/prefix-differential.out
+RESTORED: src/storage/kinds.ts and docs/API.md back at HEAD; lock released

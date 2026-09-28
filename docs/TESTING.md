@@ -672,6 +672,91 @@ identical hash would be refused as a VOID probe.
   hashes in the same file, the file was restored byte-identical, and both controls are
   GREEN — so the injection, and nothing else, was the difference.
 
+## The prefix-filter pins (slice 13, P1–P8, `GET /stores/{store}/objects?prefix=`)
+
+The object listing's OPTIONAL filter (ledger rows 60, 61). The behaviour half is driven
+through the real app on the ONE fixture set; the plan half runs `EXPLAIN QUERY PLAN` on
+the **exported production statement** bound with the **production parameters**
+(`objectPrefixRange()`), because a pin that re-typed the SQL would prove nothing about
+what the server executes.
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| P1 | `?prefix=` returns exactly the matching entries: `room-4` matches the stored `room-4`, `room-42.a`, `room-420.x` and `room-4x`, while `room-42.` stops at `room-42.a` and does NOT reach `room-420.x`; the field set is unchanged | `tests/objects.test.ts` (`PIN P1`) |
+| P2 | a valid prefix that matches nothing is `200 {"objects":[]}`, never `404` | `tests/objects.test.ts` (`PIN P2`) |
+| P3 | an empty (`?prefix=`) or whitespace prefix is `400 invalid_name` — the response is never the whole store (the no-prefix listing is asserted separately, so a silent fallback cannot hide) | `tests/objects.test.ts` (`PIN P3`) |
+| P4 | an unmatchable prefix is refused `400 invalid_name`, never silently empty: uppercase, `/`, a leading `.`, `..`, 65 characters, whitespace, a leading `-`, and `;` | `tests/objects.test.ts` (`PIN P4`) |
+| P5 | with NO prefix the listing is **byte-for-byte** what it was: the fixed clock makes the whole JSON body deterministic, and it is compared as TEXT | `tests/objects.test.ts` (`PIN P5`) |
+| P6 | the filter changes no authorization: `read` → 200 with and without a prefix; a key scoped elsewhere → `403` with and without one (and even with an ILLEGAL prefix — authorization is decided before the prefix is parsed); no key → `401`; an unknown store → `404`; `prefix=shared` on `master` returns only `shared.x` while `other` still returns only `shared.y` | `tests/objects.test.ts` (`PIN P6`) |
+| P7 | the prefix query is a RANGE on the primary key: the plan uses the index WITH `name>? AND name<?` and contains no `SCAN objects`, and the statement carries no `LIKE`/`substr` | `tests/objects.test.ts` (`PIN P7`) |
+| P8 | the API doc's route row and listing bullet state the `prefix` parameter, the `400 invalid_name` refusal and the empty result, the stale "returns them all" sentence is GONE, and `prefix` is named as the ONE filter — with PIN A1–A3 still green in the same file | `tests/api-doc.test.ts` (`PIN P8`) |
+
+**P7's assertion is deliberately NOT the brief's literal wording, and that is the one
+place this slice corrects its own specification.** The brief says P7 must assert
+`EXPLAIN QUERY PLAN` "contains NO `SCAN objects`". That assertion **cannot fail** for the
+`substr`/`LIKE` arm the same brief requires it to fail for: both produce
+`SEARCH objects USING INDEX sqlite_autoindex_objects_1 (store=?)`, which is a `SEARCH`, not
+a `SCAN`. P7 therefore pins the signal that actually distinguishes an index RANGE from a
+store probe plus a row-by-row filter — the `name>? AND name<?` bounds on the index search.
+Measured on this box, with `ANALYZE` and 0–5000 rows:
+
+| statement | plan |
+| --- | --- |
+| `… WHERE store = ? AND name >= ? AND name < ?` | `SEARCH objects USING INDEX sqlite_autoindex_objects_1 (store=? AND name>? AND name<?)` |
+| `… AND substr(name, 1, length(?)) = ?` | `SEARCH objects USING INDEX sqlite_autoindex_objects_1 (store=?)` |
+| `… AND name LIKE ?` | `SEARCH objects USING INDEX sqlite_autoindex_objects_1 (store=?)` |
+
+## The prefix-filter differential (3 arms + two controls)
+
+Machinery: `checkpoints/prefix-differential.sh`. Raw transcript:
+`checkpoints/prefix-differential.out` (per-arm raw logs are `*.log`, so gitignored).
+
+Same shape as the CORS differential — committed first (code tip `695ba2e`), the same lock
+held across every arm, each file's sha256 printed before and after, restore from `HEAD` in
+an `EXIT INT TERM` trap, a control BEFORE **and** AFTER. **The harness found its OWN bug on
+its first run:** arm B's bind-parameter anchor replaced only the `${…}` interpolation
+*inside* a template literal (`` `${prefix}${PREFIX_RANGE_HIGH_SENTINEL}` ``), leaving the
+literal string `prefix` as the bound value. The arm then matched NOTHING, which reddened
+P1 as well as P7 — and the harness **refused the arm as unattributable** (`arm B ALSO
+reddened PIN P1`) instead of recording it. The anchor now names the whole template
+literal, and the transcript is from the fixed harness.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| A | the range's lower bound is made EXCLUSIVE (`name >= ?` → `name > ?`), so the entry whose name IS the prefix is dropped | `src/storage/kinds.ts` | `7b17b9a6…07fe9` → `1c7746a3…ef6b` | `PIN P1: ?prefix= returns exactly the matching entries` — `expected [ Array(3) ] to deeply equal [ 'room-4', 'room-42.a', …(2) ]`. P2–P7 stayed GREEN (P5 proves the no-prefix listing untouched; P7 proves it is still a range) |
+| B | the filter is re-implemented as `substr(name, 1, length(?)) = ?` with its own bind parameters | `src/storage/kinds.ts` | `7b17b9a6…07fe9` → `40d7bda1…96ad` | `PIN P7: the prefix query is a RANGE on the primary key` — `["SEARCH objects USING INDEX sqlite_autoindex_objects_1 (store=?)"]`. **P1–P6 stayed GREEN: every row returned is still correct**, which is exactly why P7 exists |
+| C | the API doc's "`prefix` is the ONE filter" truth is replaced by the stale "a store with many objects returns them all" | `docs/API.md` | `8742a568…da7e` → `241348a5…3ced` | `PIN P8: the API doc's stated \`prefix\` behaviour matches the code` — `docs/API.md still carries the stale 'returns them all' sentence`. PIN A1–A3 stayed GREEN (the route set and error vocabulary did not change) |
+| control | none — the committed tree, same lock held | — | — | **GREEN**: 13 files · 127 tests |
+| control | none — the restored tree, both files back at their before hashes | — | `7b17b9a6…07fe9` / `8742a568…da7e` | **GREEN**: 13 files · 127 tests |
+
+- Every arm ran the cheap tier GREEN (`cheap exit=0`, no `error TS`) and the full tier RED
+  (`full exit=1`), and each arm's failure block names the pin above — so no arm is a probe
+  that "went red somewhere".
+- Arms A and B mutate the SAME file from the same before-hash; their after-hashes DIFFER
+  (`1c7746a3…` vs `40d7bda1…`) and they redden DIFFERENT pins, so neither is a duplicate
+  arm. Arm C is a third file and a fourth hash.
+- The writer's own gate on the identical tree: `bash scripts/gate.sh` → **exit 0 GREEN ·
+  13 files · 127 tests · 2.32s** (raw log `.gate-logs/gate.log`).
+
+### Honest unknowns (this slice)
+
+- **No benchmark at scale.** The plan IS the claim being pinned: "the store is not
+  scanned". No measurement was taken against a store with millions of rows; SQLite chose
+  the index search at every size tried (0–5000 rows, with `ANALYZE`), and a cost-based
+  planner *can* choose a full scan for a query it thinks returns most of the table — that
+  cannot happen for a prefix on `(store, name)` above a handful of rows, but it is
+  asserted by reasoning and the plan, not by a load.
+- **P8 is a doc-TEXT pin.** It proves the contract states the rules; the rules themselves
+  are proven by P1–P4 and A1–A3. Nothing checks that a human reads the prose as intended.
+- **The `\uffff` bound assumes the ASCII name charset and the BINARY collation.** Both are
+  structural (the schema declares no collation; `parseName` refuses non-ASCII) and the
+  bound is stated in three comments, but nothing asserts that pairing independently — if a
+  future slice relaxes the charset, P7's regex and the bound must be re-derived together
+  (`docs/SEAM-INDEX.md`, gotcha 16).
+- **`?prefix` (no `=`) and repeated `prefix` parameters are not pinned.** The first parses
+  as the empty string and is refused by P3's rule; the second is resolved by Hono to one
+  value. Neither is asserted, and neither is documented.
+
 ## The full gate
 
 `bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.

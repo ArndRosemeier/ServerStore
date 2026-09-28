@@ -79,6 +79,7 @@ checked against the minter's at all (the minter holds `admin`, which implies the
 | Name/scope/permission parsing | `src/core/validate.ts` | Store names, object names, scopes, permissions, expiry |
 | The store registry | `src/stores/registry.ts` | `master` is seeded idempotently here |
 | The store-kind dispatch point | `src/storage/kinds.ts` `handlerFor()` | Add a kind HERE and nowhere else |
+| **The object LISTING and its ONE filter** (`prefix=`) | the SQL lives in `src/storage/kinds.ts` (`StoreKindHandler.list(db, store, prefix?)`, with `OBJECT_LIST_PREFIX_SQL` and `objectPrefixRange()`); the prefix is parsed by `src/core/validate.ts` `parseObjectPrefix()`; the route is `GET /stores/:store/objects` in `src/server/app.ts` | ONE filter, in ONE kind handler — the route only reads the query parameter and never builds SQL (ledger row 61). The filter is a **RANGE on the objects primary key**: `WHERE store = ? AND name >= ? AND name < ?`, upper bound `prefix + U+FFFF` (`objectPrefixRange()` computes it, so the handler and PIN P7 cannot disagree). It is never `LIKE` and never `substr(name, 1, length(?)) = ?` — both still say `SEARCH objects USING INDEX … (store=?)`, an index probe followed by a row-by-row filter, which is exactly the full-store work this slice exists to avoid. The prefix must ITSELF be a valid object name through the SAME `parseName`, because the legal-name language is **prefix-closed**: that one rule accepts every string that can match and refuses every string that can never match (empty/whitespace, uppercase, `/`, a leading `.`, `..`, over 64 chars) with the existing `invalid_name` (400). Absent `prefix` is the unchanged full listing; a valid prefix matching nothing is `200 {"objects":[]}`, never `404`. Pinned P1–P8 (`tests/objects.test.ts`, `tests/api-doc.test.ts`). |
 | Bytes on disk | `src/storage/fs.ts` | Content-addressed, atomic temp-file + rename |
 | Minting an admin key | `src/admin/mint-key.ts` (`pnpm run admin:key`) | Local, direct-to-SQLite. **No HTTP route may do this** |
 | **Starting the service** (the PROCESS seam) | `src/server/main.ts`, started as `node --experimental-strip-types src/server/main.ts` | The ONLY way the server starts: `pnpm run serve`, `deploy/serverstore.service` and `tests/entrypoint.test.ts` all run exactly this. Do not add a second entrypoint, a `--daemon` mode, or a wrapper script |
@@ -186,6 +187,21 @@ this slice implements `token` only; a `user` row fails LOUDLY today (ledger row 
     there in the SAME commit (PIN O1 checks `authorization` as a whole word). Related, and
     deliberate: `Access-Control-Allow-Credentials` is NEVER sent, because this API has no
     cookies and there must never appear to be.
+16. **A `prefix=` filter must stay a RANGE on the primary key — and "no `SCAN objects`" is
+    NOT the assertion that proves it.** A `substr(name, 1, length(?)) = ?` (or `LIKE 'p%'`)
+    implementation EXPLAINs as `SEARCH objects USING INDEX sqlite_autoindex_objects_1
+    (store=?)`: it probes the index for the store and then filters every one of that
+    store's rows, so it is still a `SEARCH`, never a `SCAN`. PIN P7 therefore asserts the
+    DISPLACING signal — the index search must carry the `name>? AND name<?` range
+    (`SEARCH objects USING INDEX sqlite_autoindex_objects_1 (store=? AND name>? AND
+    name<?)`) and the statement must contain no `LIKE`/`substr`. Both shapes were measured
+    on this box, and differential arm B (`checkpoints/prefix-differential.sh`) reddens P7
+    while every result row stays correct. The upper bound is `prefix + "\uffff"`, which is
+    EXACT here and not a fudge: the name charset is ASCII (greatest code point `z`), U+FFFF
+    encodes as `EF BF BF` and sorts after every ASCII byte under the BINARY collation, and
+    no legal name can contain it — so `< prefix+U+FFFF` selects exactly the names that
+    start with the prefix. If the charset or the collation ever changes, this bound and
+    P7's regex are the two things to re-derive together.
 
 ## Known debt (and where it is recorded)
 
