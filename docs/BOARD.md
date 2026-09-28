@@ -64,7 +64,9 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   |   EXACTLY ONE live admin key. A turn-based browser game being built from ANOTHER ORIGIN is now
   |   UNBLOCKED and has NOTHING further to wait for from this project; the store ships no
   |   `SERVERSTORE_CORS_ORIGINS`, so every origin is answered (safe: no cookies/ambient credentials).
-  |   NEXT: rate limiting on the public endpoint, then the OWED headless-browser test.
+  |   NEXT: the owner's OBJECT-LOOKUP fork (row 59) — his choice, then either a `prefix=` filter on
+  |   the list route (recommended) or server-assigned ids; then rate limiting, then the OWED
+  |   headless-browser test.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -653,14 +655,26 @@ QUEUE-CLOSED | row=56 | LANDED as row 57 (writer's own gate GREEN · 13 files ·
   the no-new-feature design for turn-based play is per-player OBJECTS whose room state each client
   derives, and real enforcement would need one store per player (already enforced) or per-store
   permissions (row 41's deferred extension).
-QUEUE | row=59 | NEXT (nothing in flight): RATE LIMITING on the public endpoint — the only queued
-  item that PROTECTS the surface rather than extending it (rows 28 and 43 both name it), and it is
-  more pressing now that the API answers cross-origin browsers. Then the OWED HEADLESS-BROWSER test,
-  which closes the same gap for both the console (rows 49/54) and CORS (rows 57/58): nothing
-  automated drives a real browser, and a browser is a process TREE whose kill belongs in a trap.
-  Deferred by owner decision, not forgotten: per-store permissions (`key_stores` + perms) — only if a
-  game needs ONE mutable shared room object; `since=`/ETag concurrency (row 28); editing `expiresAt`;
-  edit history; blob GC.
+QUEUE | row=59 | **OWNER ASK, AWAITING HIS CHOICE ON THE FORK (ledger row 59): reading ONE entry
+  already works (`GET /stores/{store}/objects/{name}`); entries are identified by their NAME (`PRIMARY
+  KEY(store, name)`, `[a-z0-9][a-z0-9._-]{0,63}`), NOT by a server-assigned id; the real gap is that
+  `GET /stores/{store}/objects` takes NO query parameter and returns the WHOLE store, so a client
+  cannot ask for a SUBSET.** Owner, verbatim: *"For gaming it would be nice if a store could be
+  queried for a specific ID so that the game would not need to search through all entries. … Does
+  each entry have an ID already?"* (A) `prefix=` on the existing list route — RECOMMENDED: no schema
+  change, names stay client-chosen, and a game names moves under one prefix (`room-42.0007.tom`) so
+  one request returns the room. (B) server-assigned ids via a new `POST …/objects` — a second
+  identity kind: needs an `id` column + unique index, costs idempotent PUT-by-name unless both
+  exist, and buys a game nothing a prefix does not. (C) lookup by `sha256` — rejected: the hash
+  addresses CONTENT, so it is useless as "the same entry after an update". NOT dispatched until he
+  chooses. Deferred unchanged: `since=`/`ETag` (row 28), blob GC.
+QUEUE | row=60 | RATE LIMITING on the public endpoint — the only queued item that PROTECTS the
+  surface rather than extending it (rows 28 and 43 both name it), and more pressing now that the API
+  answers cross-origin browsers. Then the OWED HEADLESS-BROWSER test, which closes the same gap for
+  both the console (rows 49/54) and CORS (rows 57/58): nothing automated drives a real browser, and a
+  browser is a process TREE whose kill belongs in a trap. Also deferred by owner decision, not
+  forgotten: per-store permissions (`key_stores` + perms) — only if a game needs ONE mutable shared
+  room object; editing `expiresAt`; edit history.
 QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
   the two the live store needs NOW, because the live database holds THREE master admin keys (two
   unused, created before the service existed) and revocation is currently operator-only. Then C
@@ -765,14 +779,16 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-58 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-59 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
   |   54 = C1 verified with the console LIVE, 55 = C2 verified with the audit stamp LIVE,
   |   56 = CORS is the blocker for the turn-based game, 57 = CORS LANDED — the step precedes the
   |   key guard, so a preflight is answered 2xx without a key, 58 = CORS VERIFIED against the LIVE
-  |   perimeter with own arms, retired, and the game unblocked)
+  |   perimeter with own arms, retired, and the game unblocked, 59 = the object-lookup intake: a
+  |   point read EXISTS, entries are NAMED not id'd, the gap is a FILTERED listing — fork to the
+  |   owner)
   | deploy=docs/DEPLOYMENT.md (install · loopback verify · the ONE ingress line · TRAP t1 restart
   |   warning · the owner's master key · the probe · rollback); unit=deploy/serverstore.service;
   |   probe=scripts/probe-live.sh
