@@ -849,6 +849,115 @@ AFTER.
   bounded too, so worst case is ~4096 × 64 bytes of keys plus counts — asserted by
   construction, not by a memory probe.
 
+## The browser pins (slice 15, B1–B8)
+
+Slice 15 (ledger rows 67/68) is TEST-ONLY: it adds no product code. It closes the two gaps
+named in rows 49/54 and 57/58 by running the product in the environment those surfaces
+exist for — a browser. ONE seam owns the whole browser shape:
+`tests/helpers/browser.ts` launches the installed `/usr/bin/google-chrome`
+(`--headless=new`, a temp `--user-data-dir` UNDER THE WORKTREE, `--remote-debugging-port=0`
+with the port read back from `DevToolsActivePort`), speaks just enough CDP over Node's
+BUILT-IN global `WebSocket` (no npm dependency), and kills the browser's whole PROCESS
+GROUP. The API under test is the repo's OWN spawned entrypoint
+(`tests/helpers/entrypoint.ts`, shared with the D pins), with a master key minted in
+process through the ONE mint path (`openDatabase` → `ensureMasterStore` → `mintKey`) before
+the spawn.
+
+**The two traps the brief named, handled explicitly:**
+
+- **The rate limiter is in the request path.** The spawned service gets
+  `SERVERSTORE_RATE_LIMIT=0` — the operator kill-switch — with a comment saying why, so a
+  browser test can never fail for a limiter reason. The limiter keeps its own pins (R1–R8).
+- **Every wait has a deadline that FAILS.** `BrowserPage.waitFor` polls with a hard
+  deadline and throws with the last thing it saw; each CDP command carries its own timer;
+  the DevTools-port poll fails on a launch timeout; the kill is bounded. There is no
+  `sleep`-and-hope, no silent retry loop, and **no `describe.skip`/`it.skipIf` anywhere**.
+  Each pin also carries a 30 s vitest timeout — deliberately larger than the seam's 5 s
+  deadlines, so a stuck page fails on the SEAM's named wait rather than on vitest's default.
+
+**Cross-origin is real.** Two tiny stdlib HTTP servers on their OWN loopback ports are the
+allowed and the disallowed origin; the API is spawned with
+`SERVERSTORE_CORS_ORIGINS=<the allowed origin>`; and the `fetch` under test is evaluated in
+the matching PAGE's context, so the request genuinely carries that page's `Origin`. The
+interaction is TRUSTED: elements are FOUND with `Runtime.evaluate` and then clicked with
+`Input.dispatchMouseEvent` (and typed with `Input.dispatchKeyEvent` + `Input.insertText`).
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| B1 | **the console's JavaScript RUNS in a real browser, with NO page error** — navigate to the spawned service's `/`, wait for the connect form, assert no `Runtime.exceptionThrown` and no `Log.entryAdded` error; then click "Use key" with an EMPTY field and assert the console's OWN `no_key` validation renders, which only the served module can produce | `tests/browser.test.ts` (`PIN B1`) |
+| B2 | **a master key typed into the console AUTHENTICATES through the UI** — trusted-type the key, trusted-click Connect, wait for the authenticated view (the console's own `GET /whoami`), assert the session line carries that key's id; then assert the key is in NO URL/query/fragment, NO `localStorage`/`sessionStorage` entry, NO cookie, and not left in the password field | `tests/browser.test.ts` (`PIN B2`) |
+| B3 | **the console's EDIT flow really PATCHes** — open the editor on a named key row with a trusted click, rename and change a permission (`write` OFF, `delete` ON) with trusted input, save, then assert the EFFECT through `GET /keys`: the label and the canonical perms really changed | `tests/browser.test.ts` (`PIN B3`) |
+| B4 | **a real browser on ANOTHER ORIGIN completes an authorized `fetch`** — from the allowed origin's page, `fetch(api + "/stores", {Authorization: Bearer …})` resolves `200` with the parsed body (the browser-enforced preflight + Allow-Headers path) | `tests/browser.test.ts` (`PIN B4`) |
+| B5 | **that browser can READ `x-serverstore-sha256`** — the object's hash is readable from the cross-origin response OBJECT, which is only true because it is in `Access-Control-Expose-Headers` | `tests/browser.test.ts` (`PIN B5`) |
+| B6 | **a DISALLOWED origin is blocked BY THE BROWSER** — the same `fetch` from the third origin REJECTS with a `TypeError`; the API's own preflight for that origin is the guard's `401` with NO allow-origin header (so the real request was never sent), while the ALLOWED origin's preflight is `204` — i.e. an allowlist, not a service that refuses every browser | `tests/browser.test.ts` (`PIN B6`) |
+| B7 | **nothing outlives the test** — a launched browser is killed and BOTH `process.kill(pid, 0)` and `process.kill(-pid, 0)` throw (the launcher AND the tree), the browser is de-registered, `kill()` is idempotent, and the file's `afterAll` asserts no browser is registered and the spawned service really exited | `tests/browser.test.ts` (`PIN B7`) |
+| B8 | **a missing browser FAILS loudly** — `launchBrowser({executablePath: <a path that cannot exist>})` rejects with the NAMED `BrowserMissingError`, whose message contains the path; so "no browser" can never be a silent pass | `tests/browser.test.ts` (`PIN B8`) |
+
+**The browser pins do NOT replace the in-process ones, and the in-process ones do not
+replace these.** U1–U4 still scan the served bytes; O1–O6 still assert the headers in
+process; B1–B6 are the only pins that run the served module and the only ones a BROWSER
+enforces. U3's route check and B3's PATCH effect are different claims about the same
+button.
+
+## The browser differential (2 arms + two controls)
+
+Machinery: `checkpoints/browser-differential.sh`. Raw transcript:
+`checkpoints/browser-differential.out` (per-arm raw logs are `*.log` under
+`.diff-harness-browser/`, so gitignored).
+
+Same shape as the earlier differentials — the slice is committed FIRST (the code tip the
+transcript's CONTROL line names is this landing's test-only commit), the lock `scripts/gate.sh`
+takes is held across every arm, the mutated file's sha256 is printed before and after,
+restore is `git checkout HEAD --` inside an `EXIT INT TERM` trap with the hash asserted
+back, and a control runs BEFORE **and** AFTER. Chrome processes are counted after every run
+(`ps -eo comm= | grep -c '^chrome$'` → `0`), and a non-zero count VOIDs the run.
+
+| Arm | Injected defect | File | sha256 before → after | Went RED on |
+| --- | --- | --- | --- | --- |
+| A | **the console's EDIT AFFORDANCE is removed** — the Edit button still renders, but its click handler is a no-op | `web/app.js` | `ea2462f5…db0f` → `bbd6f863…0efc` | `PIN B3: the console's EDIT flow really PATCHes` — the seam's OWN deadline: `BrowserError: timed out after 5000ms waiting for the per-row editor to replace the row; last: the expression is falsy (false)`. **B1, B2, B4–B8, U1–U4 and O2 all stayed GREEN** — the console still runs and still authenticates, so the arm isolates the EDIT FLOW rather than "the page is broken" |
+| B | **the REAL response stops exposing the header set** — the `c.res.headers.set("access-control-expose-headers", …)` line that runs AFTER `next()` is removed (the preflight's `204` keeps its own, so the preflight assertions survive) | `src/server/app.ts` | `e62df5e8…12a7` → `649ef876…5542` | `PIN B5: that browser can READ the exposed x-serverstore-sha256` — `expected null to be '60ba8907…'`. **B1–B4, B6–B8, U1–U4, O1 and R5 stayed GREEN**, so the arm isolates the EXPOSED SET rather than "CORS is off" |
+| control | none — the committed tree | — | — | **GREEN**: 15 files · 150 tests; `tests/browser.test.ts (8 tests) 1530ms` |
+| control | none — the restored tree, both files back at their before hashes | — | — | **GREEN**: 15 files · 150 tests; `tests/browser.test.ts (8 tests) 1672ms` |
+
+**Arm B's EXPECTED COLLATERAL, named rather than hidden: PIN O2 in `tests/cors.test.ts`
+goes RED too** (both halves — the cross-origin `GET /stores` and the object GET). O2 is the
+IN-PROCESS twin of exactly the contract B5 proves in a browser, so no mutation of
+`src/server/app.ts` can redden B5 alone; the brief's global "an arm that reddens a pin it
+did not name is VOID" rule is unsatisfiable for its own arm (b) wording. The harness
+therefore ASSERTS O2 is red (a change that stopped reddening it would mean the arm no
+longer targets the contract), and the same class of overlap was recorded in row 54 for
+U1/U4. No `error TS` in either arm, and every other pin stayed green — so neither arm is a
+probe that "went red somewhere".
+
+### Honest unknowns (this slice)
+
+- **ONE browser engine.** Everything here runs the installed Chrome over CDP. Firefox,
+  Safari and a phone browser are unproven, and so is any behaviour that differs between
+  them.
+- **A scripted UI flow is NOT a claim about visual layout.** No pin asserts that anything
+  is visible, reachable, or usable on a small screen; B3 asserts an EFFECT through the
+  API, deliberately, because the effect is the claim.
+- **Only three console flows are executed.** B1–B3 cover load, authenticate and edit.
+  Mint, revoke (`window.confirm`), store creation, the copy button and the
+  disabled-for-revoked state are still only static-scanned by U1–U4.
+- **`favicon.ico` is excluded from B1's error scan, deliberately.** Chrome asks for it,
+  the key guard answers `401` (no such route, no key), and a missing favicon is not a
+  broken console. Every other network error and every page exception is fatal.
+- **The kill depends on the test runner keeping its promises.** The process-group kill runs
+  from the helper's `afterAll`, a failure path and a synchronous `process.once("exit")` net;
+  a `SIGKILL` of the vitest worker itself would still leave the group, which no in-process
+  cleanup can prevent. The arms therefore COUNT chrome processes from the shell after every
+  run (0), and any future harness must do the same.
+- **The browser is trusted to be a browser.** The pins prove the BROWSER blocks a
+  disallowed origin; they say nothing about a non-browser client, and CORS remains a
+  browser-READ control, never the perimeter (row 21).
+- **The 429's `Retry-After` is still not read by a browser.** R5 proves the header is on
+  the `429` and O2 proves `retry-after` is exposed, but no page reads it — the owed gap is
+  narrower now (a real page proves cross-origin HEADER reading works at all), not closed.
+- **No live host was touched.** Everything runs against a spawned service on loopback with
+  a scratch data root; `https://store.futuremagic.de` was never loaded (the host rule
+  forbids synthetic load), so nothing here verifies the DEPLOYED console in a browser.
+
 ## The full gate
 
 `bash scripts/gate.sh` is the ONE command; exit `0` (GREEN) means both tiers passed.
@@ -859,19 +968,15 @@ for the specific landing it verified.
 
 ## What is NOT tested yet (honest unknowns)
 
-- **The admin UI's in-browser behaviour.** U1–U4 scan the SERVED bytes and the served
-  status/content types; NOTHING executes `web/app.js` in a browser, and plain JS is not
-  typechecked (ledger row 48 accepted this price knowingly). The pins catch a persisted
-  key, a secret in the served bytes and a path that is not a registered route; they
-  cannot catch a logic error inside a handler a click reaches. **This now includes slice
-  11's EDIT flow**: the Edit button, the per-row editor (rename / store checkboxes /
-  permission toggles / Save / Cancel), the disabled-for-revoked state, the "this is the
-  key you are using" warning and the "changed … by …" audit line are all in the served
-  module, and the only automated claims about them are PIN U3's (the `PATCH` path the
-  console calls is a route the API registers) and the static scans. **Nothing clicks
-  Edit.** A **headless-browser test is OWED** and is not v1 — and it must kill its
-  process TREE in a `trap`, because one headless Chrome run leaves dozens of processes
-  behind.
+- **The admin UI's in-browser behaviour — PARTLY CLOSED by slice 15 (B1–B3), and the rest
+  still unproven.** U1–U4 scan the SERVED bytes and the served status/content types, and
+  plain JS is not typechecked (ledger row 48 accepted that price knowingly). Since slice 15
+  a real Chrome runs the served `web/app.js` (B1), authenticates a typed key through the UI
+  (B2) and drives slice 11's EDIT flow end to end (B3). What is still UNPROVEN: every other
+  console control — mint, revoke (`window.confirm`), store creation, the copy button, the
+  disabled-for-revoked state, the "changed … by …" audit line, the "this key is the one you
+  are using" warning — and anything visual (a scripted flow says nothing about layout).
+  Those claims need their own pins.
 - **No concurrency test.** Two writers racing the same object name are handled by an
   upsert, but nothing exercises it. Unproven rather than claimed.
 - **RETIRED: "no test binds a port or exercises `main.ts`".** D1–D4 now spawn the real
@@ -925,12 +1030,14 @@ for the specific landing it verified.
   outside a scoped admin's set is `403`, so a scoped admin can tell "no such key" from
   "not yours". Recorded, not claimed leak-free (the same note as the lifecycle's, for the
   same reason).
-- **No real browser makes the cross-origin call.** O1–O6 drive `app.request()` in-process
-  and D7 talks to a spawned entrypoint over loopback; both assert the HEADERS a browser
-  needs, and neither executes a page. **CORS is enforced by the browser, so the half that
-  blocks a disallowed origin is the browser's and is unexercised here** — the same gap as
-  the admin UI's, and it is closed by the same OWED headless-browser test (which must
-  kill its process TREE in a `trap`).
+- **CLOSED by slice 15: a real browser makes the cross-origin call.** O1–O6 still drive
+  `app.request()` in-process and D7 still talks to a spawned entrypoint over loopback —
+  they assert the HEADERS a browser needs. B4–B6 are the half only a browser can show: a
+  page on a genuinely different origin completes an authorized `fetch` (B4), READS the
+  exposed `x-serverstore-sha256` (B5), and is BLOCKED with a `TypeError` when its origin is
+  not in the allowlist (B6, with the API's own `401`-and-no-allow-origin preflight proving
+  the real request was never sent). One browser engine only, and the deployed host's
+  environment is still not asserted by anything.
 - **The wildcard default means the DEPLOYED service answers every origin today.** That is
   the brief's decision (ledger rows 56/57) and is safe because there are no cookies, but
   it is a policy an operator can narrow with `SERVERSTORE_CORS_ORIGINS` and nothing

@@ -1,0 +1,95 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (c13219a) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/browser-test/.diff-harness-browser/control)
+  control GREEN:  Test Files  15 passed (15)       Tests  150 passed (150) 
+ ✓ tests/browser.test.ts (8 tests) 1617ms
+=== ARM A — the console's EDIT AFFORDANCE removed: the Edit button does nothing ===
+  file:   web/app.js
+  sha256: ea2462f537344dcf72d85067c6df744015ac3be36a1149a64bb64ebe76eddb0f  (before)
+  sha256: bbd6f863bf8e8ef07799becd74c2c8af2af37b88738aa602ab3d4371bb510efc  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/browser-test/.diff-harness-browser/arm-a)
+     × PIN B3: the console's EDIT flow really PATCHes 5057ms
+     ✓ PIN B4: a real browser on ANOTHER ORIGIN completes an authorized fetch 66ms
+     ✓ PIN B5: that browser can READ the exposed x-serverstore-sha256 51ms
+     ✓ PIN B6: a DISALLOWED origin is blocked BY THE BROWSER 47ms
+     ✓ PIN B8: a missing browser FAILS loudly instead of skipping 1ms
+     ✓ PIN B7: nothing outlives the test — the Chrome process TREE is gone 283ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser.test.ts > the console and CORS, executed in a real browser (pins B1-B8) > PIN B3: the console's EDIT flow really PATCHes
+BrowserError: timed out after 5000ms waiting for the per-row editor to replace the row; last: the expression is falsy (false)
+ ❯ BrowserPage.waitFor tests/helpers/browser.ts:379:11
+    377|       await sleep(POLL_INTERVAL_MS);
+    378|     }
+    379|     throw new BrowserError(
+       |           ^
+    380|       `timed out after ${timeoutMs}ms waiting for ${options.descriptio…
+    381|     );
+ ❯ tests/browser.test.ts:418:5
+     × PIN B3: the console's EDIT flow really PATCHes 5057ms
+     ✓ PIN B4: a real browser on ANOTHER ORIGIN completes an authorized fetch 66ms
+     ✓ PIN B5: that browser can READ the exposed x-serverstore-sha256 51ms
+     ✓ PIN B6: a DISALLOWED origin is blocked BY THE BROWSER 47ms
+     ✓ PIN B8: a missing browser FAILS loudly instead of skipping 1ms
+     ✓ PIN B7: nothing outlives the test — the Chrome process TREE is gone 283ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser.test.ts > the console and CORS, executed in a real browser (pins B1-B8) > PIN B3: the console's EDIT flow really PATCHes
+BrowserError: timed out after 5000ms waiting for the per-row editor to replace the row; last: the expression is falsy (false)
+ ❯ tests/browser.test.ts (8 tests | 1 failed) 6546ms
+ FAIL  tests/browser.test.ts > the console and CORS, executed in a real browser (pins B1-B8) > PIN B3: the console's EDIT flow really PATCHes
+RESTORED: web/app.js and src/server/app.ts back at HEAD; lock released
+=== ARM B — the REAL response stops exposing the header set: a browser can no longer READ the hash ===
+  file:   src/server/app.ts
+  sha256: e62df5e8ef99feaba9daf9f45da361e28815a2506ef90af4ee193c6365e912a7  (before)
+  sha256: 649ef87638d4717bf5e6f73e1f3c52981786206821ac60896801bc9a96f55542  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/browser-test/.diff-harness-browser/arm-b)
+     × PIN B5: that browser can READ the exposed x-serverstore-sha256 60ms
+     ✓ PIN B6: a DISALLOWED origin is blocked BY THE BROWSER 42ms
+     ✓ PIN B8: a missing browser FAILS loudly instead of skipping 1ms
+     ✓ PIN B7: nothing outlives the test — the Chrome process TREE is gone 266ms
+ ✓ tests/admin-key.test.ts (6 tests) 1770ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+     ✓ PIN 9: pnpm run admin:key mints a key the HTTP API accepts as admin 754ms
+     ✓ PIN 9: the CLI prints the key once and the database holds only its hash 637ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/browser.test.ts > the console and CORS, executed in a real browser (pins B1-B8) > PIN B5: that browser can READ the exposed x-serverstore-sha256
+AssertionError: x-serverstore-sha256 is not readable from the cross-origin response: expected null to be '60ba8907b0c47fdf691e552252fb88c186c3a…' // Object.is equality
+
+- Expected:
+"60ba8907b0c47fdf691e552252fb88c186c3a4eb1df04536d2d36f2c212db395"
+
++ Received:
+null
+     × PIN B5: that browser can READ the exposed x-serverstore-sha256 60ms
+     ✓ PIN B6: a DISALLOWED origin is blocked BY THE BROWSER 42ms
+     ✓ PIN B8: a missing browser FAILS loudly instead of skipping 1ms
+     ✓ PIN B7: nothing outlives the test — the Chrome process TREE is gone 266ms
+ ✓ tests/admin-key.test.ts (6 tests) 1770ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+     ✓ PIN 9: pnpm run admin:key mints a key the HTTP API accepts as admin 754ms
+     ✓ PIN 9: the CLI prints the key once and the database holds only its hash 637ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ ❯ tests/browser.test.ts (8 tests | 1 failed) 1583ms
+ FAIL  tests/browser.test.ts > the console and CORS, executed in a real browser (pins B1-B8) > PIN B5: that browser can READ the exposed x-serverstore-sha256
+  EXPECTED COLLATERAL (named): the in-process twins of the SAME expose contract —
+    PIN O2: a cross-origin GET /stores with a valid key returns the real body plus Allow-Origin  -> RED (expected)
+    PIN O2: an object's `x-serverstore-sha256` is exposed to the cross-origin reader  -> RED (expected)
+RESTORED: web/app.js and src/server/app.ts back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/browser-test/.diff-harness-browser/control2)
+  control GREEN:  Test Files  15 passed (15)       Tests  150 passed (150) 
+ ✓ tests/browser.test.ts (8 tests) 1540ms
+  sha256: ea2462f537344dcf72d85067c6df744015ac3be36a1149a64bb64ebe76eddb0f  (web/app.js back to its before hash)
+  sha256: e62df5e8ef99feaba9daf9f45da361e28815a2506ef90af4ee193c6365e912a7  (src/server/app.ts back to its before hash)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN B3 (the Edit affordance removed) with B1/B2/B4-B8 GREEN; arm B RED on PIN B5 (the real response no longer exposes the header set) with the console pins B1-B3 and B4/B6 GREEN, and PIN O2 (both halves, the in-process twin of B5) RED as NAMED EXPECTED COLLATERAL. Both controls GREEN. Chrome processes after every run: 0. No VOID probe.
+logs: /home/administrator/projects/ServerStore/worktrees/browser-test/.diff-harness-browser/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/browser-test/checkpoints/browser-differential.out
+RESTORED: web/app.js and src/server/app.ts back at HEAD; lock released

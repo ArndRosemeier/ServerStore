@@ -1024,6 +1024,89 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=68 | sha=c13219a (the TEST-ONLY CODE tip: `tests/helpers/browser.ts`,
+  | `tests/browser.test.ts`, `tests/helpers/entrypoint.ts`, the `tests/entrypoint.test.ts`
+  | refactor onto it, and the `.gitignore` scratch line. The docs record commit carrying the
+  | LANDED row you are reading is that commit's CHILD, so this sha is the code tip and not
+  | itself.)
+  | base=18f8fe5 — the tip of `origin/main` that carried the brief, RESOLVED by the writer
+  | (`git rev-parse --short origin/main`) rather than trusted from memory; the pre-push
+  | `git pull --rebase origin main` was a no-op, so the code tip was never rewritten.
+  | scope=TEST-ONLY, no product code changed. ONE browser seam: `/usr/bin/google-chrome
+  | --headless=new`, a temp `--user-data-dir` UNDER THE WORKTREE, `--remote-debugging-port=0`
+  | with the port read back from `DevToolsActivePort`, CDP over Node's BUILT-IN global
+  | `WebSocket` (no npm dependency), TRUSTED `Input.*` for every click and keystroke, and a
+  | PROCESS-GROUP kill from the helper's own `afterAll`, a failure path and a
+  | `process.once("exit")` net. Pins B1–B8: the console's JS RUNS with no page error; a typed
+  | master key AUTHENTICATES through the UI and is in no URL/storage/cookie/field; the EDIT
+  | flow really PATCHes (asserted through the API, not the DOM); a real browser on ANOTHER
+  | ORIGIN completes an authorized fetch; it can READ the exposed `x-serverstore-sha256`; a
+  | DISALLOWED origin is blocked BY THE BROWSER; nothing outlives the test; and a missing
+  | browser FAILS loudly. The spawned service gets `SERVERSTORE_RATE_LIMIT=0` (the limiter is
+  | in the request path) and `SERVERSTORE_CORS_ORIGINS=<the allowed mini-origin>`; two stdlib
+  | HTTP servers on their own loopback ports are the allowed and the disallowed origin.
+  | verify=THE WRITER'S OWN, run IN-TURN and FOREGROUND: `bash scripts/gate.sh` -> **exit 0
+  | GREEN · 15 files · 150 tests · 2.18s**, with `tests/browser.test.ts (8 tests) 1665ms` —
+  | so the new browser file costs the gate about 1.7s (raw log `.gate-logs/writer-gate-s15.log`).
+  | arms=`checkpoints/browser-differential.sh`, transcript `checkpoints/browser-differential.out`,
+  | the gate lock held across a control and BOTH arms, each mutated file's sha256 printed
+  | before and after, restore from HEAD in an `EXIT INT TERM` trap with the hash asserted
+  | back, a control BEFORE and AFTER, `error TS` = VOID, and the chrome count asserted `0`
+  | after EVERY run:
+  |   ARM A the console's EDIT AFFORDANCE removed (`web/app.js` `ea2462f5…db0f` →
+  |     `bbd6f863…0efc`) -> **RED on PIN B3 ALONE**, and on the SEAM's own deadline:
+  |     `BrowserError: timed out after 5000ms waiting for the per-row editor to replace the
+  |     row; last: the expression is falsy (false)`. B1/B2, B4–B8 and U1–U4 stayed GREEN — the
+  |     console still RUNS and still AUTHENTICATES, so the arm isolates the EDIT FLOW.
+  |   ARM B the REAL response stops exposing the header set (the `access-control-expose-headers`
+  |     line that runs after `next()`; the preflight's own copy is untouched)
+  |     (`src/server/app.ts` `e62df5e8…12a7` → `649ef876…5542`) -> **RED on PIN B5**
+  |     (`expected null to be '60ba8907…'`), with B1–B4, B6–B8, U1–U4, O1 and R5 GREEN.
+  |     **EXPECTED COLLATERAL, NAMED: PIN O2 (both halves) also goes RED**, because O2 is the
+  |     IN-PROCESS twin of exactly the contract B5 proves in a browser — no mutation of
+  |     `src/server/app.ts` can redden B5 alone. The harness ASSERTS O2 is red, so it is
+  |     observed rather than hoped for; the same overlap class was recorded in row 54 for U1/U4.
+  |   both controls GREEN (15 files · 150 tests), both files restored byte-identical, 0 chrome
+  |   processes after every run, no VOID arm.
+  | BRIEF FLAW, reported rather than worked around: the brief's global rule "an arm that
+  | reddens a pin it did not name, or that breaks the typecheck, is VOID" is UNSATISFIABLE for
+  | the brief's own arm (b) — dropping `x-serverstore-sha256` (or `authorization`) reddens the
+  | in-process pin that asserts the SAME contract, by design (row 64f). The arm was run as
+  | written, its collateral named in the harness and here.
+  | judgement calls (all reported, none silent): (a) the API-process seam (free port, the
+  | entrypoint spawn, the boot poll, the reap) was EXTRACTED to `tests/helpers/entrypoint.ts`
+  | so the D pins and the B pins share ONE copy — a second spawn site would have been the
+  | duplication AGENTS.md rule 4 forbids; (b) B1 PROVES the module ran by clicking "Use key"
+  | with an EMPTY field and asserting the console's own `no_key` validation, because the
+  | connect form is in the HTML and its presence proves nothing about the script; (c)
+  | `favicon.ico` is excluded from B1's error scan — Chrome asks for it, the guard answers
+  | 401, and a missing favicon is not a broken console; every other network error and every
+  | page exception is fatal; (d) `BrowserPage.clickElement` is the escape hatch for a target
+  | CSS cannot name (a key `<li>` whose label is a text node): the LOOKUP is scripted, the
+  | CLICK is still `Input.dispatchMouseEvent`; (e) each pin carries a 30s vitest timeout so the
+  | SEAM's 5s deadline is what fails, with its last observation, instead of vitest's default;
+  | (f) B6 additionally asserts the API's own preflight for the disallowed origin is the
+  | guard's `401` with no allow-origin header — the corroboration that the real request was
+  | never sent — and that the ALLOWED origin's preflight is `204`, so it is an allowlist and
+  | not a service that refuses every browser; (g) `.browser-scratch/` is gitignored as the
+  | preventive half of "scratch lives under the worktree, never `/tmp`".
+  | COPIES: 2->1 — `tests/helpers/entrypoint.ts` is now the ONE process-level test seam
+  | (freePort + the `src/server/main.ts` spawn + the boot poll + the reap), read by BOTH
+  | `tests/entrypoint.test.ts` and `tests/browser.test.ts`. `tests/helpers/browser.ts` is the
+  | ONE place a browser is launched, driven and its process TREE killed (grepped: `google-chrome`,
+  | `puppeteer`, `playwright`, `detached`, `process.kill(-` across `tests/`, `src/` and `scripts/`).
+  | docs=the SAME landing: `docs/DECISION-LEDGER.md` row 68, `docs/SEAM-INDEX.md` (the browser
+  | seam row, the process-seam row, gotcha 18 and the re-scoped known-debt bullet),
+  | `docs/TESTING.md` (B1–B8, both arms with hashes, the cost of the file in the gate, the
+  | honest unknowns), `docs/BOARD.md` (this record).
+  | unproven (the writer's honest unknowns, in `docs/TESTING.md`): ONE browser engine only;
+  | a scripted UI flow is NOT a claim about visual layout; only load/authenticate/edit of the
+  | console are executed; a `SIGKILL` of the vitest worker itself would still leave the group
+  | (no in-process cleanup can prevent that — hence the shell-side chrome count); the 429's
+  | `Retry-After` is still not read by a page; and the live host was never loaded, by rule.
+  | retire=NOT the writer's: worktree `worktrees/browser-test`, branch `feat/browser-test` and
+  | the writer session are the DISPATCHER's to retire after its own verification.
+
 LANDED | row=66 | sha=66a3295 (the VERIFIED CODE tip on the FINAL REBASED tree; the slice-14 landing
   | itself is row 65 below. Pulled to the remote tip and re-probed BEFORE my own gate and arms, per
   | GUARD g5)
