@@ -183,12 +183,34 @@ survives every step above. Deleting it destroys every store and every key.
 | The entrypoint it runs | `/home/administrator/projects/ServerStore/src/server/main.ts` |
 | The working directory | `/home/administrator/projects/ServerStore` (the `main` checkout) |
 | The data root | `/home/administrator/serverstore-data` (OUTSIDE the repo) |
-| The database | `<data root>/serverstore.db` |
-| The blob floor | `<data root>/stores/<store>/blobs/<sha[0:2]>/<sha>` |
+| The database | `<data root>/serverstore.db` — stores, entries AND their bytes, keys, scopes |
+| The database sidecars | `<data root>/serverstore.db-wal` and `<data root>/serverstore.db-shm` (WAL mode is always on; the newest commits live in the `-wal` until a checkpoint) |
 | The probe | `scripts/probe-live.sh <base-url>` |
 | The tunnel config | `/etc/cloudflared/config.yml` (root-owned) |
 | The service logs | `journalctl --user -u serverstore -f` |
 | The port | `8477` (`SERVERSTORE_PORT` in the unit) |
+
+### Backup — copy all three files, or let SQLite make the copy
+
+Since slice 17 the item bytes live IN the database (ledger rows 78/79), so the database **is** the
+data. It runs in WAL mode, which means the newest committed writes are in `serverstore.db-wal` until
+SQLite checkpoints them — **a plain copy of `serverstore.db` alone can silently lose them.**
+
+```bash
+# Either: stop the service and copy all three files together.
+systemctl --user stop serverstore
+cp -p /home/administrator/serverstore-data/serverstore.db     /path/to/backup/
+cp -p /home/administrator/serverstore-data/serverstore.db-wal /path/to/backup/ 2>/dev/null || true
+cp -p /home/administrator/serverstore-data/serverstore.db-shm /path/to/backup/ 2>/dev/null || true
+systemctl --user start serverstore
+
+# Or: a consistent single-file snapshot, with or without the service running.
+sqlite3 /home/administrator/serverstore-data/serverstore.db \
+  "VACUUM INTO '/path/to/serverstore-backup.db'"
+```
+
+The `VACUUM INTO` file is self-contained (the WAL is folded in) and is the right thing to move
+off-box. **Take a backup before any boot that runs a migration** — see step 8.
 
 ### Environment variables (what the unit may set)
 
@@ -233,6 +255,20 @@ migration runs when a process **opens** the database — the service at boot, or
 `pnpm run admin:key` in the owner's shell. Minting a key between the landing and the
 restart would migrate the live database while the running process still held the old code,
 and the live API would fail until restarted.
+
+**Slice 17 raised the stakes, and this is the one landing where the backup is not optional.**
+Opening the database now also runs the **boot import** (`src/storage/migrate.ts`): it reads every
+pre-slice-17 blob file, **re-verifies its hash against the row**, writes the bytes into the row, and
+only then removes the `stores/` tree. A missing, wrong-sized or mismatched file makes the boot FAIL
+loudly — the process does not serve, and no file is deleted — but the import is a one-way move of the
+only copy of the bytes, so:
+
+1. take the **three-file backup (or `VACUUM INTO`)** from the Backup section FIRST;
+2. restart the unit and watch `journalctl --user -u serverstore -n 50` for the boot; a failure exits
+   non-zero and leaves the old layout intact, which is the signal to restore the backup;
+3. only after the service is `active` and the probe passes, delete the backup — and remember the old
+   `stores/` directory is gone by then, so a rollback of the CODE alone cannot bring it back; the
+   backup is the rollback.
 
 ```bash
 systemctl --user restart serverstore

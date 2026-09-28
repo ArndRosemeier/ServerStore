@@ -1,0 +1,89 @@
+lock: acquired /home/administrator/projects/ServerStore/.gate-lock (held across every arm; gate.sh would refuse itself here)
+=== CONTROL — the committed tree (620a71b) ===
+  CONTROL: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/sqlite-core/.diff-harness/control)
+  control GREEN:  Test Files  18 passed (18)       Tests  172 passed (172) 
+  sha256: 0edb252ba3587bd69687d726dfd3513d84c559110753bfb2e590878248810dc3  (src/core/db.ts, the pristine hash)
+=== ARM A — journal_mode = DELETE (the rollback journal slice 17 replaced) ===
+  file:   src/core/db.ts
+  sha256: 0edb252ba3587bd69687d726dfd3513d84c559110753bfb2e590878248810dc3  (before)
+  sha256: 1e6814a52777f6bbf09f56d2da321cc319f4c65bcdf490d4a7a2016a01bbd90e  (after injection)
+  ARM A: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/sqlite-core/.diff-harness/arm-a)
+     × PIN Y5: a reader in a second process is never BLOCKED while a writer is working 1243ms
+     ✓ PIN Y6: a SIGKILL mid-transaction leaves an openable, uncorrupted database with the uncommitted rows ABSENT 152ms
+     × PIN Y7: the configuration is what the claim rests on 29ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/concurrency.test.ts > the SQLite core under concurrency (pins Y4-Y7, ledger rows 77/78) > PIN Y5: a reader in a second process is never BLOCKED while a writer is working
+AssertionError: the reader was blocked while a writer worked (bound 250 ms): READY
+READS 1 MAX 931 ERRORS 0
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
+     × PIN Y7: the configuration is what the claim rests on 29ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/concurrency.test.ts > the SQLite core under concurrency (pins Y4-Y7, ledger rows 77/78) > PIN Y5: a reader in a second process is never BLOCKED while a writer is working
+AssertionError: the reader was blocked while a writer worked (bound 250 ms): READY
+READS 1 MAX 931 ERRORS 0
+: expected 1 to be +0 // Object.is equality
+
+--
+ FAIL  tests/concurrency.test.ts > the SQLite core under concurrency (pins Y4-Y7, ledger rows 77/78) > PIN Y7: the configuration is what the claim rests on
+AssertionError: expected '/**\n * The database: one SQLite file…' to contain 'PRAGMA journal_mode = WAL'
+
+- Expected
++ Received
+
+RESTORED: src/core/db.ts back at HEAD; lock released
+=== ARM B — the busy timeout is SET and then DISABLED (timeout 0 in force) ===
+  file:   src/core/db.ts
+  sha256: 0edb252ba3587bd69687d726dfd3513d84c559110753bfb2e590878248810dc3  (before)
+  sha256: 9f390820aa34fa3c18b861b9d692a9922474d1d098ec3276cd5b0d6bafd4cd99  (after injection)
+  ARM B: cheap exit=0 full exit=1 (logs: /home/administrator/projects/ServerStore/worktrees/sqlite-core/.diff-harness/arm-b)
+     × PIN Y7: the configuration is what the claim rests on 35ms
+ ✓ tests/browser.test.ts (8 tests) 2515ms
+   ✓ the console and CORS, executed in a real browser (pins B1-B8) (8)
+     ✓ PIN B7: nothing outlives the test — the Chrome process TREE is gone 320ms
+ ✓ tests/admin-key.test.ts (6 tests) 2451ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+     ✓ PIN 9: pnpm run admin:key mints a key the HTTP API accepts as admin 1293ms
+     ✓ PIN 9: the CLI prints the key once and the database holds only its hash 752ms
+
+--
+ FAIL  tests/concurrency.test.ts > the SQLite core under concurrency (pins Y4-Y7, ledger rows 77/78) > PIN Y7: the configuration is what the claim rests on
+AssertionError: expected +0 to be 5000 // Object.is equality
+
+- Expected
++ Received
+
+     × PIN Y4: two PROCESSES writing at once both complete, every committed row is present, and integrity_check is ok 393ms
+     ✓ PIN Y5: a reader in a second process is never BLOCKED while a writer is working 1229ms
+     ✓ PIN Y6: a SIGKILL mid-transaction leaves an openable, uncorrupted database with the uncommitted rows ABSENT 159ms
+     × PIN Y7: the configuration is what the claim rests on 35ms
+ ✓ tests/browser.test.ts (8 tests) 2515ms
+   ✓ the console and CORS, executed in a real browser (pins B1-B8) (8)
+     ✓ PIN B7: nothing outlives the test — the Chrome process TREE is gone 320ms
+ ✓ tests/admin-key.test.ts (6 tests) 2451ms
+   ✓ the local bootstrap (pin 9, ledger row 7) (6)
+--
+ FAIL  tests/concurrency.test.ts > the SQLite core under concurrency (pins Y4-Y7, ledger rows 77/78) > PIN Y4: two PROCESSES writing at once both complete, every committed row is present, and integrity_check is ok
+AssertionError: writer alpha:
+file:///home/administrator/projects/ServerStore/worktrees/sqlite-core/src/core/db.ts:284
+    db.exec(statement);
+       ^
+
+RESTORED: src/core/db.ts back at HEAD; lock released
+
+=== CONTROL — the restored tree ===
+  CONTROL 2: cheap exit=0 full exit=0 (logs: /home/administrator/projects/ServerStore/worktrees/sqlite-core/.diff-harness/control2)
+  control GREEN:  Test Files  18 passed (18)       Tests  172 passed (172) 
+  sha256: 0edb252ba3587bd69687d726dfd3513d84c559110753bfb2e590878248810dc3  (db.ts, back to its before hash: 0edb252ba3587bd69687d726dfd3513d84c559110753bfb2e590878248810dc3)
+
+DIFFERENTIAL COMPLETE: arm A RED on PIN Y5 (a rollback-journal reader BLOCKS on a writer's lock), with PIN Y7 falling as the DECLARED TWIN of the same journal-mode mechanism, and Y1/Y4/Y6 GREEN. Arm B RED on PIN Y7 (the timeout on the real connection is 0, not BUSY_TIMEOUT_MS) with PIN Y4 falling as the DECLARED TWIN (the second process's writes fail instead of queueing), and Y3/Y5/Y6 GREEN. Both controls GREEN. No VOID probe, no TypeScript error.
+logs: /home/administrator/projects/ServerStore/worktrees/sqlite-core/.diff-harness/{control,arm-a,arm-b,control2}/{cheap,full}.log — raw transcript: /home/administrator/projects/ServerStore/worktrees/sqlite-core/checkpoints/sqlite-core-differential.out
+RESTORED: src/core/db.ts back at HEAD; lock released

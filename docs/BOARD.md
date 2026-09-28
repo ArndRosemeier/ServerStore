@@ -100,6 +100,12 @@ IN-FLIGHT | row=79 | session=(dispatching now) | worktree=worktrees/sqlite-core 
   |   touches only `objects`. NOT in scope: the console (row 80), any change to the API contract, and
   |   any change to the key/auth model.
 
+(The row=79 `IN-FLIGHT` block is FOLDED by the LANDED row=79 record in `## Landed` — the writer's
+own record, added in the docs child of landing 620a71b. Its scope statement is unchanged and now has
+a landing: item bytes in `objects.content`, WAL/`busy_timeout`/`synchronous = FULL`/`BEGIN IMMEDIATE`,
+the verified boot import, the removal of the blob layout and the shared-blob check, pins Y1–Y8, the
+rewritten STORAGE/DEPLOYMENT docs, and NO change to the API contract, the key model or the console.)
+
 (The row=71 `IN-FLIGHT` block is FOLDED by the LANDED row=71 record in `## Landed` — a
 mechanical union; docs/BOARD.md is the only file the fold touched, and no other landing's
 record was altered. Its scope statement is unchanged and now has a landing: the three
@@ -1863,6 +1869,30 @@ LANDED | row=15 | sha=2e44eaf | verify=MY OWN: `git rev-parse no-such-remote/mai
   | case, where it previously blamed the record | arms=the cannot-look PIN was RED before the fix
   | and GREEN after | retired=nothing | docs=ledger row 15
   | note=DIVERGENCE: our board.sh is no longer byte-identical to the Toolbox scaffold.
+LANDED | row=79 | sha=620a71b (the WRITER'S CODE tip; the docs child naming it follows on this branch)
+  | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` exit 0 GREEN · 18 files · 172 tests ·
+  | 3.56s · raw log .gate-logs/gate.log. DISPATCHER'S INDEPENDENT GATE IS OWED.
+  | arms=checkpoints/sqlite-core-differential.sh — the gate lock held across BOTH arms, a CONTROL at
+  | each end, src/core/db.ts sha256 0edb252b…10dc3 printed before/after and asserted back. ARM A
+  | (`journal_mode = WAL` -> `DELETE`, 1e6814a5…bd90e): PIN Y5 RED (`READS 1 MAX 931 ERRORS 0` against
+  | the 250 ms bound — the reader waited) and PIN Y7 RED as the DECLARED TWIN of the same mechanism;
+  | Y1/Y4/Y6 GREEN. ARM B (busy timeout set then DISABLED to 0, 9f390820…4cd99): PIN Y7 RED
+  | (`expected +0 to be 5000`) and PIN Y4 RED as the DECLARED TWIN (the second PROCESS fails instead
+  | of queueing); Y3/Y5/Y6 GREEN. No `error TS`, no VOID probe, both controls GREEN, hashes restored.
+  | docs=ledger row 79 · SEAM-INDEX (the medium is ONE handler; the transaction is ONE seam; the WAL
+  | rules and WHY; verify-then-delete; the removed shared-blob concept; the async-medium trade named)
+  | · STORAGE.md REWRITTEN (one database file, WAL sidecars, the three-file/`VACUUM INTO` backup rule,
+  | the boot import, measured engine limits) · DEPLOYMENT.md (the sidecar row, the backup section, the
+  | first-boot migration ordering) · TESTING.md (Y1–Y8, both arms with hashes, the multi-process cost,
+  | honest unknowns) · API.md storage sentences ONLY — the wire contract is unchanged and PIN A1–A3
+  | stayed green.
+  | note=the live data root /home/administrator/serverstore-data was NEVER touched and is NOT migrated
+  | by this landing: the dispatcher takes the three-file backup and restarts the unit, and THAT boot
+  | runs the import (loud on any missing/corrupt/mismatched blob). COPIES: 4->1 — the ONE
+  | `withImmediateTransaction()` seam; the item DML is the ONE `handlerFor()` handler under
+  | `src/storage/`.
+  | retired=OWED — worktree worktrees/sqlite-core · branch feat/sqlite-core stay until the dispatcher
+  | verifies this landing.
 ```
 
 ## Guards

@@ -22,12 +22,20 @@ Each pin's NAME is the contract. `tests/` maps to them as follows.
 | 1 | No key → **401**, and nothing is written to the data root | `tests/auth.test.ts` (`PIN 1`) |
 | 2 | A key scoped to store A cannot read/write B (**403**), and B's bytes are untouched | `tests/auth.test.ts` (`PIN 2`) |
 | 3 | A **revoked** key is refused 401; an **expired** key is refused 401 | `tests/auth.test.ts` (`PIN 3`) |
-| 4 | `PUT` then `GET` is byte-identical (sha256 equal), and the blob on disk hashes to the same value | `tests/objects.test.ts` (`PIN 4`) |
-| 5 | The presented raw key never appears in `serverstore.db` (checked as BYTES) | `tests/objects.test.ts` (`PIN 5`) |
+| 4 | `PUT` then `GET` is byte-identical (sha256 equal), and the **content column** holds exactly those bytes and hashes to the same value | `tests/objects.test.ts` (`PIN 4`) |
+| 5 | The presented raw key never appears in the **database bytes** — the main file AND its WAL sidecars, which is where a just-committed row lives now | `tests/objects.test.ts` (`PIN 5`) |
 | 6 | `master` exists after first boot; a second and third boot do not duplicate it | `tests/core.test.ts` (`PIN 6`) |
 | 7 | `GET /healthz` needs no key; every other route is 401 without one | `tests/auth.test.ts` (`PIN 7`) |
 | 8 | Path traversal and an over-cap body each produce their named error code (`invalid_name`, `payload_too_large`) | `tests/objects.test.ts` (`PIN 8`) |
 | 9 | `pnpm run admin:key` mints a key the HTTP API accepts as admin; **no HTTP route mints an admin key without one** | `tests/admin-key.test.ts` (`PIN 9`) |
+| Y1 | An entry's bytes live in the database and the blob files are gone | `tests/sqlite-core.test.ts` (`PIN Y1`) |
+| Y2 | The boot import carries existing content across, re-verifies every hash, and a missing/corrupt/mismatched blob **fails the boot** | `tests/sqlite-core.test.ts` (`PIN Y2`) |
+| Y3 | The boot import preserves every key (rows, scopes, timestamps) and a key still authenticates | `tests/sqlite-core.test.ts` (`PIN Y3`) |
+| Y4 | Two **PROCESSES** writing at once both complete, every committed row is present, `integrity_check` = ok | `tests/concurrency.test.ts` (`PIN Y4`) |
+| Y5 | A reader in a **second process** is never BLOCKED while a writer works (bounded latency) | `tests/concurrency.test.ts` (`PIN Y5`) |
+| Y6 | A `SIGKILL` mid-transaction cannot corrupt: the database opens, `integrity_check` = ok, uncommitted rows ABSENT | `tests/concurrency.test.ts` (`PIN Y6`) |
+| Y7 | The configuration the claim rests on: WAL, a non-zero `busy_timeout`, `synchronous = FULL`, and a mutation that WAITS for another process's lock | `tests/concurrency.test.ts` (`PIN Y7`) |
+| Y8 | The medium is encapsulated: no item SQL or blob/path knowledge outside `src/storage/` | `tests/sqlite-core.test.ts` (`PIN Y8`) |
 | D1 | The real entrypoint **boots and serves `/healthz`** from the repo's own start command | `tests/entrypoint.test.ts` (`PIN D1`) |
 | D2 | The entrypoint listens on **`127.0.0.1` and NOT on `0.0.0.0`** (read from `/proc/net/tcp` + `/proc/net/tcp6`) | `tests/entrypoint.test.ts` (`PIN D2`) |
 | D3 | An unauthenticated API call is **refused 401 by the running service** | `tests/entrypoint.test.ts` (`PIN D3`) |
@@ -38,10 +46,10 @@ Each pin's NAME is the contract. `tests/` maps to them as follows.
 | — | The SOURCE TREE runs under strip-only Node (this is what `pnpm run serve` executes) | `tests/runtime.test.ts` |
 
 Supporting tests that are pins in their own right: the empty body is refused (no
-object is finalised from nothing); a missing blob fails **loudly** (500 `internal`,
-never empty bytes); a store row whose kind has no handler is a named 500, never a
-fallback to `bytes`; `x-api-key` behaves exactly like `Authorization: Bearer`; an
-illegal name that only *looks* like a traversal (`a..b`) is still a legal name.
+object is finalised from nothing); an object row whose **content** is missing fails
+**loudly** (500 `internal`, never empty bytes); a store row whose kind has no handler is a
+named 500, never a fallback to `bytes`; `x-api-key` behaves exactly like `Authorization:
+Bearer`; an illegal name that only *looks* like a traversal (`a..b`) is still a legal name.
 
 ## The secret tripwire pins (slice 3)
 
@@ -972,12 +980,12 @@ asserted the debt this slice closes (it now asserts reclamation of an UNSHARED b
 | X1 | `DELETE /keys/:id` removes the key row AND its `key_stores` rows (asserted in the SQLite file, not by counting responses), the key disappears from `GET /keys`, and the credential answers `401` on the **NEXT** request; a **REVOKED** key is deletable too | `tests/destructive.test.ts` (`PIN X1`) |
 | X2 | deleting a key is **revoke's boundary**: a store-scoped admin cannot delete a key outside its scope (`403`) nor one holding `admin` (`403`), a master can, **self-deletion is allowed**, and a NON-admin key is `403` even for its own id | `tests/destructive.test.ts` (`PIN X2`) |
 | X3 | the **LAST live admin key** is refused `409 conflict` and still works; with TWO live admins either may be deleted and the survivor still authenticates; a **REVOKED** admin does not count (and is itself deletable); an **EXPIRED** admin does not count either | `tests/destructive.test.ts` (`PIN X3`) |
-| X4 | emptying a store removes every entry, reclaims its blob FILES from disk (not merely unreferencing them), leaves a sibling store's bytes alone, leaves the store and every key's scope untouched, and emptying an already-empty store is `200` with `deleted: 0` | `tests/destructive.test.ts` (`PIN X4`) |
-| X5 | a store with a key scoped to it cannot be deleted: `409 conflict` NAMING the blocking key (id and label), the store still lists, its objects still read, its directory is still there; delete the key and the store delete succeeds and the directory is gone | `tests/destructive.test.ts` (`PIN X5`) |
-| X6 | the confirm token is SERVER-side: missing, empty and mismatched `confirm` are `400 bad_request` on BOTH bulk routes and NOTHING is deleted (objects, bytes, stores and the scoped key all still there); the correct token works | `tests/destructive.test.ts` (`PIN X6`) |
-| X7 | two names with IDENTICAL bytes share one blob file; deleting one leaves the survivor's bytes intact and the file present; deleting the LAST row removes both the row and the file | `tests/destructive.test.ts` (`PIN X7`) |
+| X4 | emptying a store removes every entry — and therefore every byte, because the row IS the content — leaves a sibling store's bytes alone, leaves the store and every key's scope untouched, and emptying an already-empty store is `200` with `deleted: 0` (asserted on the `objects` rows and on `listBlobFiles()` being empty) | `tests/destructive.test.ts` (`PIN X4`) |
+| X5 | a store with a key scoped to it cannot be deleted: `409 conflict` NAMING the blocking key (id and label), the store still lists, its objects still read and still hold their bytes; delete the key and the store delete succeeds, with the `stores` row and the objects asserted GONE in the database | `tests/destructive.test.ts` (`PIN X5`) |
+| X6 | the confirm token is SERVER-side: missing, empty and mismatched `confirm` are `400 bad_request` on BOTH bulk routes and NOTHING is deleted (rows, bytes, stores and the scoped key all still there); the correct token works | `tests/destructive.test.ts` (`PIN X6`) |
+| X7 | two names with IDENTICAL bytes are two INDEPENDENT rows: each holds its own content, deleting one leaves the survivor byte-identical (so nothing shared can be corrupted), and deleting the LAST removes its row and its bytes — the shared-blob trap (and the whole orphan-blob class) is GONE rather than handled | `tests/destructive.test.ts` (`PIN X7`) |
 | X8 | authorization and the error surface are unchanged in kind: emptying needs `delete` (a `read`-only key is `403`), deleting a store needs a master (a store-scoped admin AND a `["*"]` key without `admin` are `403`), an unknown store/key is `404`, every destructive route without a key is `401`, and a traversal attempt is `400 invalid_name` (the store name goes through the ONE parser before any path is built) | `tests/destructive.test.ts` (`PIN X8`) |
-| X9 | the docs match the code: the three routes are in `docs/API.md`'s table with their permissions, statuses and the confirm token, the app REGISTERS them, `conflict` is in the error table at `409`, and the last-live-admin, confirm and shared-content rules are all stated — with PIN A1–A3 green in the same gate | `tests/destructive.test.ts` (`PIN X9`) |
+| X9 | the docs match the code: the three routes are in `docs/API.md`'s table with their permissions, statuses and the confirm token, the app REGISTERS them, `conflict` is in the error table at `409`, and the last-live-admin, confirm and **item-bytes-in-the-database** rules are all stated — with PIN A1–A3 green in the same gate | `tests/destructive.test.ts` (`PIN X9`) |
 
 ## The destructive-lifecycle differential (2 arms + two controls)
 
@@ -1031,6 +1039,84 @@ AFTER.
   data root under the test's own scratch, and `https://store.futuremagic.de` was never
   loaded (the host rule forbids synthetic load). Whether the deployed service is restarted
   onto this code is the dispatcher's step under GUARD g5, not a claim here.
+
+## The SQLite-core pins (slice 17, I1 — Y1–Y8, ledger rows 78/79)
+
+Slice 17 moved an entry's bytes INTO the database. The pins below are what makes "the
+medium is the database and the migration is safe" a fact rather than a description.
+
+| # | Pin | Where |
+| ---: | --- | --- |
+| Y1 | an entry written through the real app reads back byte-identical, its `sha256` matches the bytes and `x-serverstore-sha256`, the `content` column holds exactly those bytes, and **no file under the data root holds that content** (the only files are `serverstore.db` and its WAL sidecars) | `tests/sqlite-core.test.ts` (`PIN Y1`) |
+| Y2 | a data root in the OLD layout (real schema minus `content`, rows plus blob files) boots: every entry is imported with its ORIGINAL hash, the add-if-absent column lands, the `stores/` tree is gone, a second boot is a no-op — and a **MISSING**, **HASH-MISMATCHED** or **SIZE-MISMATCHED** blob makes `createApp` THROW, with the row still empty and the files still on disk | `tests/sqlite-core.test.ts` (`PIN Y2`) |
+| Y3 | every `access_keys` row and every `key_stores` row is byte-identical across the import, and the seeded raw key still authenticates with the same id/scope/perms and can read the imported content | `tests/sqlite-core.test.ts` (`PIN Y3`) |
+| Y4 | two CHILD PROCESSES write 60 objects each through the real handler against the same database: both exit 0, all 120 committed rows are present, `PRAGMA integrity_check` = `ok` | `tests/concurrency.test.ts` (`PIN Y4`) |
+| Y5 | a reader CHILD connects first, waits for a handshake, then measures every read while a second child holds a write lock: every read answers (0 errors) and the worst stays under the 250 ms bound. The reader connects BEFORE the writer locks on purpose — opening runs boot DDL, which is a write, and a reader that connected under rollback-journal mode would block in its OPEN, outside the measurement | `tests/concurrency.test.ts` (`PIN Y5`) |
+| Y6 | a child is SIGKILLed inside `BEGIN IMMEDIATE` after two uncommitted inserts; the database then opens, `integrity_check` = `ok`, the committed baseline row survives, both uncommitted rows are ABSENT, and a new write succeeds | `tests/concurrency.test.ts` (`PIN Y6`) |
+| Y7 | the source sets `PRAGMA journal_mode = WAL`, `busy_timeout = ${BUSY_TIMEOUT_MS}` and `synchronous = FULL` and uses no plain `BEGIN` anywhere; the FILE reports `wal` and a connection from the real open path reports timeout 5000 and sync 2; and with another PROCESS holding the write lock, a real multi-statement mutation (`POST /keys`) WAITS ≥150 ms and answers `201` | `tests/concurrency.test.ts` (`PIN Y7`) |
+| Y8 | grep-level: no file outside `src/storage/` runs item DML (`FROM`/`INTO`/`UPDATE`/`JOIN objects`) or names `blobs/` or a storage path helper, while `src/storage/` DOES contain the item DML; behavioural: the routes name only `handlerFor(store.kind)`, never a handler object, and the item route set is intact | `tests/sqlite-core.test.ts` (`PIN Y8`) |
+
+The rewritten pins are named too, because their MEANING changed: **PIN 4** now asserts the content
+column instead of a blob file; **PIN 5** reads the database bytes INCLUDING the `-wal`/`-shm`
+sidecars (a just-committed row lives in the WAL now — reading only the main file would make both
+"present" and "absent" fail for the journal's reason); **X4/X5/X6/X7/X9** assert rows and content
+instead of files, and X7 records that the shared-blob trap is gone; `tests/auth.test.ts`'s
+"untouched" witness reads `length(content)` rather than the database file length, for the same WAL
+reason.
+
+## The SQLite-core differential (2 arms + two controls)
+
+`checkpoints/sqlite-core-differential.sh` (raw transcript `checkpoints/sqlite-core-differential.out`,
+per-arm logs `.diff-harness/`). The slice is committed first, so `HEAD` is the pristine copy. The
+harness holds the gate's own lock across BOTH arms (calling `gate.sh` here would refuse itself with
+exit 9 — VOID, not evidence), prints the mutated file's sha256 before and after, and restores from
+`HEAD` in an `EXIT INT TERM` trap with every hash asserted back.
+
+**CONTROL** — committed tree `620a71b`: `pnpm run typecheck` exit 0; `pnpm test` exit 0 ·
+**18 files, 172 tests**, GREEN. `src/core/db.ts` sha256 `0edb252b…10dc3` (pristine).
+
+| Arm | Injection | File sha256 before → after | Result |
+| --- | --- | --- | --- |
+| **A** | `PRAGMA journal_mode = WAL` → `DELETE` (the rollback journal slice 17 replaced) | `0edb252b…10dc3` → `1e6814a5…bd90e` | **PIN Y5 RED** — `READS 1 MAX 931 ERRORS 0` against the 250 ms bound: the reader WAITED for the writer's lock. **PIN Y7 RED as a DECLARED TWIN** of the same mechanism (`expected '…' to contain 'PRAGMA journal_mode = WAL'`). Y1, Y4 and Y6 stayed GREEN (queueing and atomicity are not reader properties). |
+| **B** | the busy timeout is SET and then DISABLED (`PRAGMA busy_timeout = 0` injected after the real statement) | `0edb252b…10dc3` → `9f390820…4cd99` | **PIN Y7 RED** — `expected +0 to be 5000`: the timeout on the real connection is not `BUSY_TIMEOUT_MS`. **PIN Y4 RED as a DECLARED TWIN** — with no timeout in force the second PROCESS's writer dies (`database is locked` at its first statement) instead of queueing, which is exactly Y4's claim. Y3, Y5 and Y6 stayed GREEN. |
+
+**CONTROL 2** — restored tree: `pnpm test` exit 0 · 18 files, 172 tests, GREEN; `src/core/db.ts` sha256
+back to `0edb252b…10dc3`. Both arms had `pnpm run typecheck` exit 0 and no `error TS`, so neither arm
+is VOID and each is attributable to its named pin. **The two pins that fell as declared twins are
+named rather than asserted away**: Y7 IS the journal-mode assertion in arm A, and Y4 IS the
+concurrent-writer claim in arm B.
+
+## The multi-process pins' cost, and their honest unknowns
+
+The four new multi-process pins are the only tests that spawn processes. Measured in the GREEN gate
+(2026-09-28, this box): the `tests/concurrency.test.ts` file takes **~2.95 s** wall — Y4 **0.63 s**,
+Y5 **1.27 s**, Y6 **~0.17 s**, Y7 **0.85 s**, plus ~0.3 s of child startup — and the whole suite went
+from **3.07 s / 16 files / 159 tests** (the same tree before those two files existed) to
+**3.56 s / 18 files / 172 tests**. The file runs in parallel with the other files, so the gate's
+critical path grew by ~0.5 s, not by the file's 2.95 s. Scratch lives under
+`<worktree>/.sqlite-scratch/<test-file>/` (never `/tmp`) and is deleted by each file's `afterAll`;
+every child is SIGKILLed by `afterEach`, by `reapChildren()` and by a synchronous `process.once("exit")`
+net.
+
+**What is NOT proven, said plainly:**
+
+- **Y5's bound is a latency margin, not a proof for arbitrary load.** 250 ms is >200× the ~1 ms a WAL
+  read costs and well under the ~900 ms a rollback-journal reader waited in arm A — but a machine
+  loaded far beyond this suite's normal contention could exceed it, and the pin would then be
+  reporting the host, not the design.
+- **The writer Y5/Y7 hold a lock with is a purpose-built child (`BEGIN EXCLUSIVE`), not a service
+  request.** It proves the LOCKING behaviour the configuration buys; it does not model a particular
+  route's duration, and no pin measures a real multi-second request.
+- **The boot import's behaviour on a root interrupted BETWEEN stores is reasoned, not pinned.** Y2
+  proves import-or-rollback for one store and idempotence across a whole boot; a kill in the middle
+  of a multi-store migration is not exercised (each store's transaction commits or rolls back, and
+  `content IS NULL` is the resume point, but no pin drives it).
+- **No async medium exists, so the transaction-seam trade is untested.** `withImmediateTransaction()`
+  is synchronous by construction; a future Postgres/PGlite handler would reintroduce promises and
+  would need a re-derived seam — recorded in `docs/SEAM-INDEX.md`, unproven here.
+- **The live data root was not touched and is not migrated by this landing.** Y2 builds its own
+  scratch old-layout roots; the dispatcher takes the three-file backup and restarts the unit, and
+  only that boot migrates `/home/administrator/serverstore-data`.
 
 ## The full gate
 
