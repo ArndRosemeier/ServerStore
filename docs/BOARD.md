@@ -918,7 +918,20 @@ QUEUE | row=72 | **OPEN FORK, THE OWNER'S CHOICE (ledger row 72): items inside S
   `@seald-io/nedb` and `lowdb` (pure JS, one JSON file, whole-DB in memory), `pouchdb` (the ONLY
   option with CouchDB-style SYNC — a client-side product decision, not a storage swap), `pglite`
   (Postgres in-process). Nothing decided; all candidates land behind the same kind seam.
-QUEUE | row=77 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
+  CONCURRENCY (ledger row 77): the owner's real objection is SQLite's locking, from experience years
+  ago — and MEASUREMENT CONFIRMS HIM: the live database is in `journal_mode = delete` (set explicitly
+  at `src/core/db.ts:175`) with NO `busy_timeout`, i.e. exactly the mode he remembers. Measured here:
+  with 200 small transactions in flight, a reader was BLOCKED/errored on **130 of 578 reads (~22%)**
+  in delete mode and **0 of 582** in WAL, while the writer ran **711 ms vs 316 ms**. Two writers
+  always SERIALIZE (SQLite allows one writer), and with NO busy timeout a second writer gets
+  `database is locked` instead of waiting — reachable today by running `pnpm run admin:key` under
+  load. FIX, recommended REGARDLESS of the backend: WAL + an explicit `busy_timeout` +
+  `BEGIN IMMEDIATE`, pinned by turning that probe into an assertion. LIMIT THAT REMAINS: no
+  concurrent WRITERS and no network access — and LMDB does not solve that either (it is also
+  single-writer); only Postgres does, and PGlite (single-connection) does not. TRADE: WAL adds
+  `-wal`/`-shm` sidecars, so a plain copy of `serverstore.db` can miss the newest commits — the
+  backup rule in `docs/STORAGE.md` becomes mandatory.
+QUEUE | row=78 | AFTER the storage-model decision = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
   FOR — delete a key, look inside a store (names only) and delete an entry, empty a store, delete a
   store. UI-ONLY: `GET /stores/{store}/objects` already lists entries (and takes `prefix=`), and
   `DELETE /stores/{store}/objects/{name}` already deletes one, so this slice adds the new routes from
@@ -1068,7 +1081,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-76 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-77 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
