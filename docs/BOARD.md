@@ -62,10 +62,13 @@ reconciled: c13219a · 2026-09-28T08:08Z — the slice-15 VERIFIED CODE tip (the
   LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=NO writer in flight. Slices 12 (CORS, row 58), 13 (the `prefix=` filter, row 62), 14 (rate
-  |   limiting, row 66) and 15 (the headless-browser test, row 69) are LANDED, VERIFIED and RETIRED.
-  |   The browser test now drives the installed Chrome INSIDE THE GATE, so the console's Connect/Edit
-  |   flow and the browser half of CORS are exercised on every gate run (it costs ~1.6 s). LIVE at
+  | state=ONE writer in flight (row 71: the DESTRUCTIVE LIFECYCLE API — delete a key, empty a store,
+  |   delete a store, plus byte reclamation; worktree worktrees/destructive, branch feat/destructive;
+  |   design fixed in ledger row 70). Slices 12 (CORS, row 58), 13 (the `prefix=` filter, row 62),
+  |   14 (rate limiting, row 66) and 15 (the headless-browser test, row 69) are LANDED, VERIFIED and
+  |   RETIRED. The browser test drives the installed Chrome INSIDE THE GATE, so the console's
+  |   Connect/Edit flow and the browser half of CORS are exercised on every gate run (~1.6 s) — and it
+  |   is what will verify the console slice (row 72) that follows this one. LIVE at
   |   https://store.futuremagic.de/ with the console, key editing (C2), CORS, the prefix filter and
   |   the rate limiter (default 600 requests per identity per 60 s, no `SERVERSTORE_RATE_LIMIT` in the
   |   unit); service restarted onto the limiter tip and re-probed; EXACTLY ONE live admin key. A
@@ -75,6 +78,20 @@ SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chi
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
   | remote=https://github.com/ArndRosemeier/ServerStore.git — PUBLIC, owner-created 2026-09-27.
   |   origin/main carries slices 1-3; the LANDED records below name their shas.
+
+IN-FLIGHT | row=71 | session=(dispatching now) | worktree=worktrees/destructive |
+  | branch=feat/destructive | base=origin/main — resolved by the writer and recorded in its landing
+  | state=THE ONE WRITER. Scope: the DESTRUCTIVE LIFECYCLE API (design = ledger row 70, the authority;
+  |   brief `docs/briefs/slice-16-destructive-lifecycle.md`). THREE new routes — `DELETE /keys/:id`
+  |   (revoke's boundary plus the row; the LAST live admin key is refused 409; a revoked key IS
+  |   deletable), `DELETE /stores/:store/objects?confirm=<store>` (empty; `delete` permission; server-side
+  |   confirm token; bytes reclaimed; idempotent) and `DELETE /stores/:store?confirm=<store>` (MASTER
+  |   admin; REFUSED 409 while any key's scope names the store — never a silent credential rewrite,
+  |   because `key_stores.store REFERENCES stores(name)` and `PRAGMA foreign_keys = ON`) — plus BYTE
+  |   RECLAMATION for the existing single-object delete, which must remove a blob only when no other row
+  |   in the store names the same sha256 (content-addressed storage shares blobs; `deleteBlob()` finally
+  |   gets its caller and row 19's GC debt closes). Pins X1–X9. NOT in scope: any console/UI change
+  |   (that is row 72), any schema change, and any change to `revoke`'s behaviour.
 
 IN-FLIGHT | row=68 | session=(dispatching now) | worktree=worktrees/browser-test |
   | branch=feat/browser-test | base=origin/main — resolved by the writer and recorded in its landing
@@ -860,6 +877,14 @@ QUEUE-CLOSED | row=67 | **DESIGNED (ledger row 67) and DISPATCHED as row 68** �
   (`ps -eo comm= | grep -c '^chrome$'` → 0).
   Also deferred by owner decision, not forgotten: per-store permissions (`key_stores` + perms) — only
   if a game needs ONE mutable shared room object; editing `expiresAt`; edit history.
+QUEUE | row=72 | NEXT AFTER row 71 = slice 17 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
+  FOR — delete a key, look inside a store (names only) and delete an entry, empty a store, delete a
+  store. UI-ONLY: `GET /stores/{store}/objects` already lists entries (and takes `prefix=`), and
+  `DELETE /stores/{store}/objects/{name}` already deletes one, so this slice adds the new routes from
+  row 71 to the console plus the CONFIRMATIONS the owner asked for (a typed name for whole-store
+  destruction, and a plain confirm for one item/key). It is SERIALIZED behind row 71 because both touch
+  the console, and the browser test landed at row 69 is what verifies it: B-pins already drive
+  Connect/Edit, so the new flows extend the same file rather than a new harness.
 QUEUE | row=44 | NEXT = B2: key LISTING and the REVOKE route — the two things step C's UI needs and
   the two the live store needs NOW, because the live database holds THREE master admin keys (two
   unused, created before the service existed) and revocation is currently operator-only. Then C
@@ -989,7 +1014,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-69 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-70 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
