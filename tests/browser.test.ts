@@ -20,9 +20,11 @@
  *   PIN B6: a DISALLOWED origin is blocked BY THE BROWSER
  *   PIN B7: nothing outlives the test — the Chrome process TREE is gone
  *   PIN B8: a missing browser FAILS loudly instead of skipping
- *   PIN V1: deleting a KEY through the UI kills its credential (it answers 401)
+ *   PIN V1: deleting a KEY through the UI does NOTHING on the FIRST click and kills the
+ *           credential only after the Confirm click (it then answers 401)
  *   PIN V2: a store's ENTRIES are listed on demand and the prefix filter is SERVER-side
- *   PIN V3: deleting ONE entry through the UI leaves the other entry readable
+ *   PIN V3: deleting ONE entry through the UI destroys nothing on the FIRST click,
+ *           leaves the other entry readable, and acts only on the Confirm click
  *   PIN V4: emptying needs the TYPED name; a wrong name changes NOTHING
  *   PIN V5: a BLOCKED store delete shows the 409 and the store survives; deleting the
  *           blocking key through the UI then lets the store delete succeed
@@ -250,6 +252,61 @@ function confirmInExpression(containerExpression: string): string {
     `(() => { const container = ${containerExpression}; if (container === null) return null; ` +
     `return container.querySelector('button[data-confirm="yes"]') ?? null; })()`
   );
+}
+
+/**
+ * THE INTERMEDIATE-STATE RULE for a ONE-ITEM destructive control (ledger row 84) — ONE
+ * seam, used by BOTH controls that share `armGuard` (a key's Delete and an entry's).
+ *
+ * After the FIRST click NOTHING may have happened AND the confirmation must be ON SCREEN.
+ * V1 and V3 used to assert only the END state (the key is gone and 401s; the entry has
+ * disappeared), so a build that ran the guard's action on its first click passed every
+ * pin — the exact defect the row-83 injection fired and the reason this slice exists.
+ *
+ * `unchanged` is supplied by the caller because the two controls read their effect back
+ * differently (a key's inventory row and its credential; an entry's listing and its
+ * bytes), while the RULE itself — and the affordance half that stops "nothing happened
+ * because the control is broken" from passing — is exactly one.
+ */
+async function assertArmedNotActed(
+  page: BrowserPage,
+  options: {
+    /** The row the Confirm button must appear inside (a key row, an entry row). */
+    readonly containerExpression: string;
+    /** Prose: which control this is, for the failure message. */
+    readonly what: string;
+    /** Read the effect back through the API; it must show NOTHING changed. */
+    readonly unchanged: () => Promise<void>;
+  },
+): Promise<void> {
+  // The EFFECT first: a first click that already destroyed the item fails HERE, naming
+  // what changed, rather than later on a DOM node a refresh happened to remove.
+  await options.unchanged();
+  // ...and the confirmation must be on screen, so "nothing happened" can never pass
+  // because the control did nothing at all.
+  await page.waitFor(`(${confirmInExpression(options.containerExpression)}) !== null`, {
+    description: `the confirmation affordance after the FIRST click on ${options.what}`,
+  });
+}
+
+/** Forget the page's resource-timing buffer, so a count is exactly THIS flow's. */
+async function clearRequests(page: BrowserPage): Promise<void> {
+  await page.evaluate<void>("performance.clearResourceTimings()");
+}
+
+/**
+ * Every URL this page has fetched, in order — the page's OWN resource timing, read in
+ * ONE place (V2's server-side-prefix assertion and the request counts below share it).
+ */
+async function requestUrls(page: BrowserPage): Promise<string[]> {
+  return page.evaluate<string[]>(
+    `performance.getEntriesByType("resource").map((entry) => entry.name)`,
+  );
+}
+
+/** How many requests the page has sent to exactly `url`. */
+async function requestCount(page: BrowserPage, url: string): Promise<number> {
+  return (await requestUrls(page)).filter((name) => name === url).length;
 }
 
 /** The `<li>` for the store named `name` in the stores list. */
@@ -836,10 +893,40 @@ describe("the console's destructive actions, executed in a real browser (pins V1
       description: "the minted key's row to appear in the refreshed list",
     });
 
-    // DELETE it through the UI: the plain two-step, then Confirm.
+    // DELETE it through the UI: the plain two-step, then Confirm — and the FIRST click
+    // must destroy NOTHING (ledger row 84). The page's resource timing is cleared first,
+    // so the count at the end is exactly THIS flow's.
+    const throwawayId = keyIdFromRaw(raw);
+    expect(throwawayId, "the minted key's id did not parse — the mint path drifted").not.toBeNull();
+    if (throwawayId === null) return;
+    await clearRequests(page);
     await page.clickElement(keyButtonExpression(THROWAWAY_LABEL, "Delete"), {
       description: `the Delete button on the "${THROWAWAY_LABEL}" row`,
     });
+    await assertArmedNotActed(page, {
+      containerExpression: rowExpression(THROWAWAY_LABEL),
+      what: `the "${THROWAWAY_LABEL}" key's Delete button`,
+      unchanged: async () => {
+        const inventoryNow = await apiJson(apiUrl, master, "/keys");
+        expect(inventoryNow.status).toBe(200);
+        const labelsNow = (inventoryNow.body as { keys: { label: string }[] }).keys.map(
+          (entry) => entry.label,
+        );
+        expect(
+          labelsNow,
+          "the FIRST click on Delete already removed the key from GET /keys",
+        ).toContain(THROWAWAY_LABEL);
+        const alive = await fetch(`${apiUrl}/whoami`, {
+          headers: { authorization: `Bearer ${raw}` },
+          signal: AbortSignal.timeout(5_000),
+        });
+        expect(
+          alive.status,
+          "the FIRST click on Delete already killed the key's credential",
+        ).toBe(200);
+      },
+    });
+    // The CONFIRM click is the ONLY click allowed to act.
     await page.clickElement(confirmInExpression(rowExpression(THROWAWAY_LABEL)), {
       description: "the inline Confirm delete button",
     });
@@ -863,6 +950,14 @@ describe("the console's destructive actions, executed in a real browser (pins V1
       "unauthorized",
     );
     expect(whoami.status, "the deleted key's credential did not answer 401").toBe(401);
+
+    // ...and the MECHANISM, race-free: this flow sent the key's DELETE exactly ONCE —
+    // from the Confirm click. A build that acted on the FIRST click sends it twice (or
+    // removes the row, making the Confirm unfindable — caught above).
+    expect(
+      await requestCount(page, `${apiUrl}/keys/${throwawayId}`),
+      "the flow sent the key's DELETE more than once — the FIRST click was not a no-op",
+    ).toBe(1);
   }, 30_000);
 
   test("PIN V2: the console shows a store's ENTRIES, and the prefix filter is server-side", async () => {
@@ -872,7 +967,7 @@ describe("the console's destructive actions, executed in a real browser (pins V1
 
     // A fresh resource-timing buffer, so the ONE request this pin reasons about cannot be
     // confused with an earlier one.
-    await page.evaluate<void>("performance.clearResourceTimings()");
+    await clearRequests(page);
 
     await page.clickElement(storeButtonExpression(STORE, "Open"), {
       description: `the Open button on the "${STORE}" store row`,
@@ -900,9 +995,7 @@ describe("the console's destructive actions, executed in a real browser (pins V1
     await waitForEntryNames(page, PREFIX_MATCHES, "the prefix-narrowed entries");
 
     // THE MECHANISM: the request that produced that list carried `prefix=<PREFIX>`.
-    const requested = await page.evaluate<string[]>(
-      `performance.getEntriesByType("resource").map((entry) => entry.name)`,
-    );
+    const requested = await requestUrls(page);
     const wanted = `/stores/${STORE}/objects?prefix=${PREFIX}`;
     expect(
       requested.filter((url) => url.includes(wanted)).length,
@@ -917,12 +1010,34 @@ describe("the console's destructive actions, executed in a real browser (pins V1
     expect(page).toBeDefined();
     if (page === undefined || apiUrl === undefined || master === undefined) return;
 
-    // V2 left the pane filtered to the `room-4` pair; delete one of them through the UI.
+    // V2 left the pane filtered to the `room-4` pair; delete one of them through the UI —
+    // and the FIRST click must destroy NOTHING (ledger row 84), the same rule V1 asserts
+    // for a key, through the ONE `assertArmedNotActed` seam both controls share.
     const doomed = PREFIX_MATCHES[0] as string;
     const survivor = PREFIX_MATCHES[1] as string;
+    await clearRequests(page);
     await page.clickElement(entryButtonExpression(doomed, "Delete"), {
       description: `the Delete button on the "${doomed}" entry`,
     });
+    await assertArmedNotActed(page, {
+      containerExpression: entryRowExpression(doomed),
+      what: `the "${doomed}" entry's Delete button`,
+      unchanged: async () => {
+        expect(
+          await listedEntries(apiUrl, master, STORE),
+          "the FIRST click on Delete already removed the entry from the store's listing",
+        ).toContain(doomed);
+        const readable = await fetch(`${apiUrl}/stores/${STORE}/objects/${doomed}`, {
+          headers: { authorization: `Bearer ${master}` },
+          signal: AbortSignal.timeout(5_000),
+        });
+        expect(
+          readable.status,
+          "the FIRST click on Delete already made the entry unreadable",
+        ).toBe(200);
+      },
+    });
+    // The CONFIRM click is the ONLY click allowed to act.
     await page.clickElement(confirmInExpression(entryRowExpression(doomed)), {
       description: "the entry's inline Confirm delete button",
     });
@@ -939,6 +1054,13 @@ describe("the console's destructive actions, executed in a real browser (pins V1
       signal: AbortSignal.timeout(5_000),
     });
     expect(kept.status, `the surviving entry ${survivor} was destroyed too`).toBe(200);
+
+    // ...and the MECHANISM, race-free (V1's other half): the entry's DELETE was sent
+    // exactly ONCE, by the Confirm click.
+    expect(
+      await requestCount(page, `${apiUrl}/stores/${STORE}/objects/${doomed}`),
+      "the flow sent the entry's DELETE more than once — the FIRST click was not a no-op",
+    ).toBe(1);
   }, 30_000);
 
   test("PIN V4: emptying needs the TYPED name, and a wrong name changes nothing", async () => {
