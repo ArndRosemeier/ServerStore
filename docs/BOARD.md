@@ -45,36 +45,36 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: 620a71b · 2026-09-28T12:35Z — the slice-17 (SQLite core) VERIFIED CODE tip; the docs
-  child naming it is `57b455d`. The docs commit carrying THIS marker is its child, so the marker is the
-  code tip and not itself — a commit cannot name its own sha. `bash scripts/board.sh` must report this
-  marker as an ancestor of origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0
-  GREEN · 18 files · 172 tests · 4.15s (the new concurrency file is 2.86s of it); plus THREE own arms,
-  none of them the writer's (R the import's HASH VERIFICATION removed → Y2 ALONE; S the legacy tree
-  deleted BEFORE the import → Y2 with Y3 as honest collateral, a failed boot failing everything that
-  needs the boot; T the loud NULL-content read turned into EMPTY BYTES → RED on the intended test
-  `a GET whose row has no content fails loudly, not with empty bytes`, `expected 200 to be >= 500`),
-  each with a control before and after, 0 of OUR chrome processes throughout; plus THE LIVE MIGRATION
-  ITSELF, verified by witness rather than by hope: the 6 key rows and their 3 scope rows are
-  BYTE-IDENTICAL before and after (witness `e73652f1…` / `8b14cb9b…` — the master key survives, which
-  is the owner's one stated must-survive), the 175 object rows are identical (`28b8a26e…`), content
-  went 0 → 175, blob FILES went 177 → 0, `journal_mode` delete → wal, `integrity_check` ok, and EVERY
-  one of the 175 rows' content re-hashes to its recorded `sha256` (0 size mismatches, 0 hash errors).
-  (History: this line read "f066f65" (slice 16), "c13219a" (slice 15), "66a3295" (slice 14), "695ba2e"
-  (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27) and
-  "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
+reconciled: 5bf080a · 2026-09-28T13:20Z — the slice-18 (console destructive actions) VERIFIED CODE
+  tip; the docs commits naming it are `c562bb3` and `81e901a`. The docs commit carrying THIS marker is
+  its child, so the marker is the code tip and not itself — a commit cannot name its own sha.
+  `bash scripts/board.sh` must report this marker as an ancestor of origin/main. verify=THE
+  DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 18 files · 179 tests · 4.10s, with
+  `tests/browser.test.ts (15 tests)` at **3656ms** (the console flows cost every gate run ~2.0s more
+  than slice 15's 8-pin file); plus THREE own arms, none of them the writer's (he armed A the
+  whole-store token PRE-FILLED → V4 alone, B the entry filter CLIENT-SIDE → V2 with V7 as its declared
+  twin): U a FAILED destructive action reported as SUCCESS → V5 with V6/V7 as the failure-reporting
+  family; V the affected pane NOT refreshed → V1 with V3/V5 (the stale-row rule lives in the pins that
+  assert the pane after acting, NOT in V6 — my first aim was wrong); W the single-item action run
+  WITHOUT its confirmation → **GREEN everywhere: the confirmation gate for a single key/entry delete
+  is UNFALSIFIABLE, which is a real gap this slice must close, not a pass**; plus the LIVE check: the
+  served `/app.js` sha256 equals HEAD's (`56bd8f70…`) and contains the new seams, i.e. the console is
+  live with NO restart (assets are read per request), and `probe-live.sh` → PASS exit 0. (History: this
+  line read "620a71b" (slice 17), "f066f65" (slice 16), "c13219a" (slice 15), "66a3295" (slice 14),
+  "695ba2e" (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27)
+  and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
   quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (row 82: THE CONSOLE'S FOUR DESTRUCTIVE ACTIONS — delete keys, look
-  |   inside a store and delete entries, empty a store, delete a store; worktree
-  |   worktrees/console-destructive, branch feat/console-destructive; design = ledger row 81, the
-  |   owner's ask = row 70). Slices 12–17 are LANDED, VERIFIED and RETIRED, and the routes this slice
-  |   drives are LIVE (row 73). LIVE at https://store.futuremagic.de/ on the MIGRATED SQLite core:
-  |   one database holds keys, scopes, stores and item bytes; WAL; every key survived; the
-  |   pre-migration copy stays at `/home/administrator/serverstore-data.backup-pre-migration` until the
-  |   owner confirms his key with a real call.
-  |   NEXT after row 82: nothing queued — the owner's four UI asks are the last open request.
+  | state=NO writer in flight. Slices 12–18 are LANDED, VERIFIED and RETIRED. THE OWNER'S FOUR UI ASKS
+  |   ARE DONE AND LIVE: delete a key (including a revoked one), look inside a store (names, with a
+  |   server-side prefix filter) and delete an entry, empty a store and delete a store (both requiring
+  |   the store name TYPED and sent as the server's token). The console is served from disk per request,
+  |   so a reload shows it — no restart, and the live `/app.js` matches HEAD byte-for-byte.
+  |   LIVE at https://store.futuremagic.de/ on the migrated SQLite core (one database, WAL, keys and
+  |   item bytes together); probe PASS.
+  |   NEXT: row 84 = a SMALL TEST-ONLY slice closing the gap my arm W found — no pin can fail on a
+  |   single-item destructive action that skips its confirmation.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -1112,6 +1112,7 @@ retired_branch=feat/object-prefix
 retired_branch=feat/rate-limit
 retired_branch=feat/browser-test
 retired_branch=feat/sqlite-core
+retired_branch=feat/console-destructive
 retired_branch=feat/destructive
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
@@ -1120,7 +1121,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-81 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-83 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -1161,6 +1162,44 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
 ## Landed
 
 ```
+LANDED | row=83 | sha=5bf080a (the VERIFIED CODE tip; the slice-18 landing itself is row 82 below)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 18 files · 179 tests ·
+  | 4.10s, with `tests/browser.test.ts (15 tests)` at 3656ms — the console flows add ~2.0s to every
+  | gate run, stated rather than discovered later (raw log `.gate-logs/dispatcher-gate-s18.log`).
+  | arms=`.gate-logs/dispatcher-arms-s18.sh`, transcript `.gate-logs/dispatcher-arms-s18.out`, the gate
+  | lock held across a control and ALL THREE arms, sha256 printed before and after, restore from HEAD in
+  | an `EXIT INT TERM` trap with the hash asserted back, a control BEFORE and AFTER, `error TS` = VOID,
+  | a VOID arm RECORDED while the run continues, OUR chrome count 0 after every run (scoped to our own
+  | profile — TRAP t8). Arms, none of them the writer's (he armed A the whole-store token PRE-FILLED
+  | from the store name → V4 alone, B the entry filter CLIENT-SIDE → V2 with V7 as its declared twin):
+  |   U a FAILED destructive action reported as a SUCCESS (`web/app.js` `56bd8f70…ed2c` → `b5c8a6ec…f34a`)
+  |     → **RED on PIN V5 with V6 and V7 as the failure-reporting family**: the store survives but the
+  |     owner is told nothing — the worst of both worlds, and every pin that asserts an error is shown
+  |     falls with the same mechanism.
+  |   V the affected pane NOT refreshed after a destructive action (`56bd8f70…ed2c` → `6de37209…d744`) →
+  |     **RED on PIN V1 with V3 and V5** — my FIRST aim was V6 and that was WRONG: the stale-row rule
+  |     lives in the pins that assert the pane after acting, not in V6. My error, corrected by re-running
+  |     the arm against the pin it actually reds rather than by bending the pin.
+  |   W the single-item destructive action run WITHOUT its confirmation (`56bd8f70…ed2c` →
+  |     `88ed8452…b683`) → **GREEN EVERYWHERE. This is a FINDING, not a pass: the two-step confirmation
+  |     for deleting ONE key or ONE entry cannot fail any pin**, because V1/V3 assert the END STATE (the
+  |     key is gone; the credential 401s) and never that the FIRST click destroys nothing. The console's
+  |     guard is real and works; it is simply unfalsifiable, which is the trap row 39 deleted an
+  |     unreachable subset check for. Recorded here and closed by the next slice (row 84).
+  |   both controls GREEN (18 files · 179 tests), every file back at its before-hash.
+  | LIVE, and a sharpened TRAP: the console's assets are read from DISK PER REQUEST, so a landed `web/`
+  | change is live with NO restart — verified, not assumed: the served `/app.js` sha256 is HEAD's
+  | (`56bd8f70…`) and contains the new seams (`armTypedConfirm`, `refreshEntries`, `withQuery`,
+  | `confirm_mismatch`), and `scripts/probe-live.sh https://store.futuremagic.de` → **PASS exit 0**.
+  | **This also REFINES TRAP t7:** the arms mutate the MAIN tree, and for `web/` that mutation is
+  | visible to any browser loading the console during the arm window (seconds) — `src/` only matters on
+  | a restart, `web/` matters immediately. Same mitigation (short windows, hash-verified restores), and
+  | a stronger reason to run arms in a worktree.
+  | retired=worktree worktrees/console-destructive · branch feat/console-destructive (was 81e901a,
+  | verified fully merged) · writer session 5495d145… — salvage-checked BEFORE deletion (tracked-clean
+  | worktree, tip == origin/main). Host after: only `main` in `git worktree list`, lock free.
+  | docs=ledger row 83 · this board.
+
 LANDED | row=82 | sha=5bf080a (the WRITER'S VERIFIED CODE tip — `web/index.html`, `web/app.js`,
   | `web/app.css`, `tests/browser.test.ts`, `tests/helpers/browser.ts` and
   | `tests/admin-ui.test.ts`; the docs commit carrying THIS line, ledger row 82,
