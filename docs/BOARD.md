@@ -45,38 +45,36 @@ answer is a line, not a paragraph.
 ## Board
 
 ```
-reconciled: f066f65 · 2026-09-28T11:49Z — the slice-16 (destructive lifecycle) VERIFIED CODE tip.
-  The docs commit carrying THIS marker is its child, so the marker is the code tip and not itself — a
-  commit cannot name its own sha. `bash scripts/board.sh` must report this marker as an ancestor of
-  origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 16 files ·
-  159 tests · 2.34s; plus THREE own arms, none of them the writer's (O the confirm token unchecked →
-  X6 ALONE; P the last-admin guard removed → X3 ALONE; Q emptying a store left the bytes on disk →
-  X4 ALONE), each with a control before and after; plus an END-TO-END run of the whole workflow on a
-  LOCAL SPAWN (mint → delete a key → whoami 401 → look inside → delete one entry with the blob files
-  observed 2→1 → wrong token 400 with nothing lost → empty with 0 blobs left → store delete REFUSED
-  409 naming the scoped key → clear it → store and directory GONE → 404); plus GUARD g5 on the LIVE
-  service (restarted 13:49:23 CEST, probe PASS exit 0, and the three new routes answer 401 rather
-  than 404). CORRECTION TO MY OWN METRIC, recorded rather than quietly dropped: a bare
-  `ps -eo comm= | grep -c '^chrome$'` counts the NEIGHBOURS on this shared box — a concurrent vitest
-  run in `~/projects/Imager` held 9-11 chrome processes during these arms while OUR runs held ZERO
-  (0 processes matching `ServerStore/.*browser-scratch`, and 0 matching `serverstore` in a
-  self-match-free /proc audit). The metric is now scoped to our own profile directory, and the "0"
-  figures quoted in rows 68/69 were measured when no neighbour happened to be running — true, but
-  luck as much as measurement. See TRAP t8. (History: this line read "c13219a" (slice 15), "66a3295"
-  (slice 14), "695ba2e" (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36),
-  "e1e363f" (row 27) and "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error,
-  corrected rather than quietly).)
+reconciled: 620a71b · 2026-09-28T12:35Z — the slice-17 (SQLite core) VERIFIED CODE tip; the docs
+  child naming it is `57b455d`. The docs commit carrying THIS marker is its child, so the marker is the
+  code tip and not itself — a commit cannot name its own sha. `bash scripts/board.sh` must report this
+  marker as an ancestor of origin/main. verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0
+  GREEN · 18 files · 172 tests · 4.15s (the new concurrency file is 2.86s of it); plus THREE own arms,
+  none of them the writer's (R the import's HASH VERIFICATION removed → Y2 ALONE; S the legacy tree
+  deleted BEFORE the import → Y2 with Y3 as honest collateral, a failed boot failing everything that
+  needs the boot; T the loud NULL-content read turned into EMPTY BYTES → RED on the intended test
+  `a GET whose row has no content fails loudly, not with empty bytes`, `expected 200 to be >= 500`),
+  each with a control before and after, 0 of OUR chrome processes throughout; plus THE LIVE MIGRATION
+  ITSELF, verified by witness rather than by hope: the 6 key rows and their 3 scope rows are
+  BYTE-IDENTICAL before and after (witness `e73652f1…` / `8b14cb9b…` — the master key survives, which
+  is the owner's one stated must-survive), the 175 object rows are identical (`28b8a26e…`), content
+  went 0 → 175, blob FILES went 177 → 0, `journal_mode` delete → wal, `integrity_check` ok, and EVERY
+  one of the 175 rows' content re-hashes to its recorded `sha256` (0 size mismatches, 0 hash errors).
+  (History: this line read "f066f65" (slice 16), "c13219a" (slice 15), "66a3295" (slice 14), "695ba2e"
+  (slice 13), "bd55b7e" (CORS), "1063e29" (row 39), "e1bd3cf" (row 36), "e1e363f" (row 27) and
+  "bec97e1" (row 26, LOCAL time mislabelled as Z, the dispatcher's error, corrected rather than
+  quietly).)
 
 SESSION | id=session-dcd6176e-b4b9-4759-b64d-4c90d3495dfa | role=dispatcher (chief of staff)
-  | state=ONE writer in flight (row 79: THE SQLITE CORE — items move into the database, worktree
-  |   worktrees/sqlite-core, branch feat/sqlite-core; the owner's decision is ledger row 78).
-  |   Slices 12–16 are LANDED, VERIFIED and RETIRED (CORS, the `prefix=` filter, rate limiting, the
-  |   headless-browser test, the destructive lifecycle). LIVE at https://store.futuremagic.de/ with
-  |   the console, key editing, CORS, the prefix filter, the rate limiter and the destructive routes.
-  |   The data root was BACKED UP before this slice (/home/administrator/serverstore-data.backup-pre-sqlite-core,
-  |   1.8 MB) because the master key must survive the rebuild; the live objects are disposable by the
-  |   owner's own statement and are migrated anyway.
-  |   NEXT after row 79: the console slice for the four destructive actions (row 80).
+  | state=NO writer in flight. Slices 12–17 are LANDED, VERIFIED and RETIRED (CORS, the `prefix=`
+  |   filter, rate limiting, the headless-browser test, the destructive lifecycle, and THE SQLITE
+  |   CORE). LIVE at https://store.futuremagic.de/ — and the live data root has BEEN MIGRATED: one
+  |   database holds keys, scopes, stores and item bytes; the 177 blob files are gone; the mode is WAL;
+  |   every key row survived byte-identically and every one of the 175 migrated rows re-hashes to its
+  |   recorded sha256. A pre-migration copy of the data root is kept at
+  |   `/home/administrator/serverstore-data.backup-pre-migration` (1.8 MB) — it can be deleted once the
+  |   owner confirms his key still works, and it is the fallback if he does not.
+  |   NEXT: row 81 = the console slice for the four destructive actions.
   | goal=goal-1f2f2e27-ed8d-470d-8499-c1eeed63b3b6 (paused; untouched since creation)
   | host=12 cores · 23Gi RAM · / has 506GB free · process audit after this landing: lock
   |   free, 0 suite processes, 0 entrypoint processes, 0 browser processes.
@@ -959,7 +957,7 @@ QUEUE-CLOSED | row=78 | **STORAGE MODEL SETTLED BY THE OWNER (ledger row 78): SQ
   | one durable piece of that research is the WAL/`busy_timeout`/`BEGIN IMMEDIATE` finding (row 77)
   | plus the boundary it names: SQLite serializes WRITERS, so "concurrent writers or a second app
   | instance" is the requirement that would reopen this, and LMDB would not satisfy it either.
-QUEUE | row=80 | AFTER the storage rebuild = slice 18 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
+QUEUE | row=81 | AFTER the storage rebuild = slice 18 (H2): THE CONSOLE FOR THE FOUR THINGS THE OWNER ASKED
   FOR — delete a key, look inside a store (names only) and delete an entry, empty a store, delete a
   store. UI-ONLY: `GET /stores/{store}/objects` already lists entries (and takes `prefix=`), and
   `DELETE /stores/{store}/objects/{name}` already deletes one, so this slice adds the new routes from
@@ -1101,6 +1099,7 @@ retired_branch=feat/cors
 retired_branch=feat/object-prefix
 retired_branch=feat/rate-limit
 retired_branch=feat/browser-test
+retired_branch=feat/sqlite-core
 retired_branch=feat/destructive
 
 RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
@@ -1109,7 +1108,7 @@ RECOVERY | repo=/home/administrator/projects/ServerStore | branch=main
   |   its own sha)
   | gate=bash scripts/gate.sh  (0 green · 1 red · 2 cheap only · 9 refused/VOID)
   | logs=.gate-logs/gate.log | board=bash scripts/board.sh | rules=AGENTS.md
-  | decisions=docs/DECISION-LEDGER.md rows 1-78 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
+  | decisions=docs/DECISION-LEDGER.md rows 1-80 (19, 23, 27, 33, 36, 39, 42, 46, 49 and 53 appended
   |   by writers, out of numeric order by design; 43 = store LIVE + bypass verified, 43b = the
   |   running-service-is-not-the-repo discovery (GUARD g5), 45 = stray master keys revoked, 47/48 =
   |   the admin UI requirement and forks, 50 = B2 verified, 51/52 = named + editable keys,
@@ -1869,6 +1868,53 @@ LANDED | row=15 | sha=2e44eaf | verify=MY OWN: `git rev-parse no-such-remote/mai
   | case, where it previously blamed the record | arms=the cannot-look PIN was RED before the fix
   | and GREEN after | retired=nothing | docs=ledger row 15
   | note=DIVERGENCE: our board.sh is no longer byte-identical to the Toolbox scaffold.
+LANDED | row=80 | sha=620a71b (the VERIFIED CODE tip; the slice-17 landing itself is row 79 below)
+  | verify=THE DISPATCHER'S OWN, on the INTEGRATED tree: gate exit 0 GREEN · 18 files · 172 tests ·
+  | 4.15s, of which `tests/concurrency.test.ts` is 2.86s — the multi-process pins' price on every gate
+  | run, stated rather than discovered later (raw log `.gate-logs/dispatcher-gate-s17.log`).
+  | arms=`.gate-logs/dispatcher-arms-s17.sh`, transcript `.gate-logs/dispatcher-arms-s17.out`, the gate
+  | lock held across a control and ALL THREE arms, sha256 printed before and after, restore from HEAD in
+  | an `EXIT INT TERM` trap with the hash asserted back, a control BEFORE and AFTER, `error TS` = VOID,
+  | a VOID arm RECORDED while the run continues. Arms, none of them the writer's (the writer armed A the
+  | journal mode back to DELETE → Y5 with Y7 as its declared twin, B the busy timeout disabled → Y7 with
+  | Y4 as its declared twin) — these three go after the OTHER half of the slice, the boot import whose
+  | whole job is to move live bytes without losing or inventing one:
+  |   R the import's SHA256 RE-VERIFICATION removed (`src/storage/migrate.ts` `26b3ab49…4e45` →
+  |     `72517785…c15d`) → **RED on PIN Y2 ALONE**: bytes that are NOT the entry would be imported
+  |     silently, i.e. the database would serve content the row does not name.
+  |   S the legacy tree deleted BEFORE the import (the order the module promises to keep,
+  |     `26b3ab49…4e45` → `ed4b1423…3ac2`) → **RED on PIN Y2 with PIN Y3 as HONEST COLLATERAL** (Y3 is
+  |     the keys-survive pin; a boot that fails takes every assertion that needs a boot with it, and the
+  |     failing test names confirm both are the same mechanism, not two defects).
+  |   T the loud NULL-content read replaced by EMPTY BYTES (`src/storage/kinds.ts` `c86b5cae…86ab` →
+  |     `b4f95100…296b`) → **RED on the intended test** (`a GET whose row has no content fails loudly,
+  |     not with empty bytes`, `expected 200 to be >= 500` — the empty-bytes fallback served a 200).
+  |     My harness's FAIL-line metric could not NAME it, because that pin lives in a file header
+  |     (`tests/objects.test.ts` declares "PIN 4, 5, 8" once) and not in the test name: the metric now
+  |     falls back to printing the failing test names, so an arm can never be silently unattributable
+  |     again. The arm was attributable from its log within a minute, and this is my own machinery
+  |     error recorded rather than a hole in the pins.
+  |   both controls GREEN (18 files · 172 tests), every mutated file back at its before-hash, 0 of OUR
+  |   chrome processes after every run (scoped, per TRAP t8).
+  | THE LIVE MIGRATION, VERIFIED BY WITNESS RATHER THAN BY HOPE (`.gate-logs/live-witness.py`, run
+  | before and after; digests only, no key material): a FRESH copy of the data root was taken first
+  | (`serverstore-data.backup-pre-migration`), then the unit was restarted at **14:34:54 CEST** and its
+  | boot ran the import. Result — **the 6 `access_keys` rows and their 3 scope rows are BYTE-IDENTICAL
+  | before and after (`e73652f1…` and `8b14cb9b…` unchanged: the master key survives, the owner's one
+  | stated must-survive)**, the 175 object rows are identical (`28b8a26e…`), `objects with content`
+  | went **0 → 175**, blob FILES went **177 → 0** (the `stores/` tree is gone), `journal_mode` went
+  | **delete → wal**, `integrity_check` = **ok**, and **all 175 rows' content re-hashes to its recorded
+  | `sha256` with 0 size mismatches and 0 hash/NULL problems** — the import moved the right bytes, not
+  | merely some bytes. `scripts/probe-live.sh https://store.futuremagic.de` → **PASS exit 0**, the
+  | public hostname is served, and the disk layout is now `serverstore.db` + `-wal` + `-shm` and
+  | nothing else. The key-bearing read is the OWNER's acceptance step (the dispatcher holds no key),
+  | and the pre-migration copy stays until he confirms it.
+  | retired=worktree worktrees/sqlite-core · branch feat/sqlite-core (was 57b455d, verified fully merged
+  | with `git branch --merged main`) · writer session bef2ab2d… — salvage-checked BEFORE deletion
+  | (tracked-clean worktree, tip == origin/main). Host after: only `main` in `git worktree list`, no
+  | `feat/sqlite-core` in `git branch -a`, 0 processes referencing the worktree, lock free.
+  | docs=ledger row 80 · this board.
+
 LANDED | row=79 | sha=620a71b (the WRITER'S CODE tip; the docs child naming it follows on this branch)
   | verify=THE WRITER'S OWN, in-turn: `bash scripts/gate.sh` exit 0 GREEN · 18 files · 172 tests ·
   | 3.56s · raw log .gate-logs/gate.log. DISPATCHER'S INDEPENDENT GATE IS OWED.
